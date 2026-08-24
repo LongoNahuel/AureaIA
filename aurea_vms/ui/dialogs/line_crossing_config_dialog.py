@@ -1,0 +1,69 @@
+from __future__ import annotations
+
+from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QWidget
+from qfluentwidgets import BodyLabel, CaptionLabel, CheckBox, LineEdit, SpinBox
+
+from aurea_vms.models.analytics_config import AnalyticsConfig
+from aurea_vms.ui.dialogs.analytics_config_dialog_base import AnalyticsConfigDialogBase
+from aurea_vms.ui.labels import display_class
+
+COMMON_CLASSES = ["person", "car", "motorcycle", "bicycle", "bus", "truck"]
+
+
+class LineCrossingConfigDialog(AnalyticsConfigDialogBase):
+    analyzer_name = "line_crossing"
+    display_name = "Cruce de Línea"
+    roi_mode = "line"
+
+    def build_extra_fields(self, form: QFormLayout, existing: AnalyticsConfig | None) -> None:
+        params = (existing.params if existing else {}) or {}
+        selected = set(existing.object_classes if existing and existing.object_classes else ["person"])
+
+        self.class_checks: dict[str, CheckBox] = {}
+        classes_row = QHBoxLayout()
+        for cls in COMMON_CLASSES:
+            check = CheckBox(display_class(cls))
+            check.setChecked(cls in selected)
+            self.class_checks[cls] = check
+            classes_row.addWidget(check)
+        classes_widget = QWidget()
+        classes_widget.setLayout(classes_row)
+        form.addRow("Clases a contar:", classes_widget)
+
+        self.label_in_edit = LineEdit()
+        self.label_in_edit.setText(params.get("label_in", "Entrada"))
+        self.label_out_edit = LineEdit()
+        self.label_out_edit.setText(params.get("label_out", "Salida"))
+        form.addRow("Etiqueta sentido A→B:", self.label_in_edit)
+        form.addRow("Etiqueta sentido B→A:", self.label_out_edit)
+
+        self.confirmation_spin = SpinBox()
+        self.confirmation_spin.setRange(1, 10)
+        self.confirmation_spin.setValue(params.get("confirmation_frames", 2))
+        form.addRow("Confirmación (muestras):", self.confirmation_spin)
+        form.addRow(
+            CaptionLabel(
+                "Un objeto solo puede disparar un cruce después de esta cantidad de muestras "
+                "seguidas detectado (1 = sin confirmación). Más alto = evita cruces falsos por "
+                "ruido de un solo frame."
+            )
+        )
+        form.addRow(BodyLabel("Dibujá la línea de cruce sobre la captura."))
+
+    def build_params(self) -> dict:
+        line = self.selector_widget.get_line()
+        return {
+            "line": [list(line[0]), list(line[1])] if line else None,
+            "label_in": self.label_in_edit.text().strip() or "Entrada",
+            "label_out": self.label_out_edit.text().strip() or "Salida",
+            "confirmation_frames": self.confirmation_spin.value(),
+        }
+
+    def object_classes(self) -> list[str]:
+        selected = [cls for cls, check in self.class_checks.items() if check.isChecked()]
+        return selected or ["person"]
+
+    def validate(self) -> str | None:
+        if self.enabled_check.isChecked() and self.selector_widget.get_line() is None:
+            return "Dibujá una línea de cruce sobre la captura antes de guardar."
+        return None

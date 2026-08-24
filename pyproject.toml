@@ -1,0 +1,31 @@
+[project]
+name = "aurea-vms"
+version = "0.1.0"
+description = "AureaIA VMS - SuperCliente LAN con analiticas de IA embebidas"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6>=6.7",
+    "opencv-python>=4.10",
+    "SQLAlchemy>=2.0",
+    "numpy>=1.26",
+    "onvif-zeep>=0.2.12",
+    "wsdiscovery>=2.0",
+    # >=1.0 elimino por completo la API legacy `mediapipe.solutions`; en Windows
+    # ni siquiera 0.10.x la incluye (solo trae la Tasks API), asi que fijamos
+    # la version usada durante el desarrollo/pruebas para reproducibilidad.
+    "mediapipe==0.10.35",
+    "psutil>=5.9",
+    "PySide6-Fluent-Widgets[full]>=1.11",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["aurea_vms*"]

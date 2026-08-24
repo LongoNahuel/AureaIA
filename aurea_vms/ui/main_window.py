@@ -1,0 +1,213 @@
+"""Ventana principal: una sola ventana con pestañas (al estilo Genetec
+Security Center) -- una pestaña "Inicio" fija con el launcher de tarjetas
+por categoria, y una pestaña por cada modulo que se va abriendo desde ahi
+(o se re-activa, si ya estaba abierta)."""
+
+from __future__ import annotations
+
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
+from qfluentwidgets import BodyLabel, FluentIcon, PushButton, TabCloseButtonDisplayMode, TabWidget
+
+from aurea_vms.core import auth
+from aurea_vms.core.event_bus import event_bus
+from aurea_vms.core.events import AlarmEvent
+from aurea_vms.models import repository
+from aurea_vms.models.user import ROLE_ADMIN
+from aurea_vms.ui import icons
+from aurea_vms.ui.dialogs.command_palette_dialog import ACTION_OPEN_MODULE, ACTION_QUICK_VIEW, CommandPaletteDialog
+from aurea_vms.ui.launcher_page import LauncherPage
+from aurea_vms.ui.modules.alarm_module import AlarmModule
+from aurea_vms.ui.modules.alert_config import AlertConfigModule
+from aurea_vms.ui.modules.analytics_config import AnalyticsConfigModule
+from aurea_vms.ui.modules.device_management import DeviceManagementModule
+from aurea_vms.ui.modules.live_view import LiveViewModule
+from aurea_vms.ui.modules.system_module import SystemModule
+from aurea_vms.ui.modules.user_management_module import UserManagementModule
+from aurea_vms.ui.notify import confirm, warn
+from aurea_vms.ui.widgets.global_alert_popup import GlobalAlertPopupLayer
+
+WINDOW_SIZE = (1320, 840)
+
+# (etiqueta visible, fabrica de icono Lucide -- misma imagen en la tarjeta
+# del launcher y en la pestaña del modulo, para que se reconozcan como la
+# misma cosa -- clase del modulo)
+MODULES = [
+    ("Vista en Vivo", icons.icon_live_view, LiveViewModule),
+    ("Dispositivos", icons.icon_devices, DeviceManagementModule),
+    ("Analizadores", icons.icon_analyzers, AnalyticsConfigModule),
+    ("Alarmas", icons.icon_alarms, AlarmModule),
+    ("Alertas", icons.icon_alerts, AlertConfigModule),
+    ("Sistema", icons.icon_system, SystemModule),
+    ("Usuarios", icons.icon_users, UserManagementModule),
+]
+
+CATEGORIES = {
+    "Operación": ["Vista en Vivo", "Alarmas"],
+    "Configuración": ["Dispositivos", "Analizadores", "Alertas", "Sistema", "Usuarios"],
+}
+
+# Labels solo accesibles para rol admin -- un operador solo ve/abre lo de
+# "Operación". Chequeado tanto al armar el launcher como en
+# open_module_by_index (defensa en profundidad: los accesos "rapidos" via
+# event_bus, ej. Vista rapida desde Dispositivos, tambien pasan por ahi).
+ADMIN_ONLY_LABELS = {"Dispositivos", "Analizadores", "Alertas", "Sistema", "Usuarios"}
+
+HOME_INDEX = 0
+
+
+class MainWindow(QMainWindow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle("AureaIA VMS")
+        self.setWindowIcon(icons.icon_live_view())
+        self.resize(*WINDOW_SIZE)
+        # True si se llego a close() via "Cerrar sesión" -- main.py lo usa
+        # para decidir si vuelve a mostrar el login o corta la app del todo.
+        self.logout_requested = False
+
+        central = QWidget(self)
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_layout.addLayout(self._build_header())
+
+        self.tabs = TabWidget(self)
+        self.tabs.setMovable(False)
+        self.tabs.setTabShadowEnabled(True)
+        self.tabs.setCloseButtonDisplayMode(TabCloseButtonDisplayMode.ON_HOVER)
+        self.tabs.setTabsClosable(True)
+        self.tabs.tabCloseRequested.connect(self._on_tab_close_requested)
+        central_layout.addWidget(self.tabs, stretch=1)
+
+        self.setCentralWidget(central)
+
+        self.launcher = LauncherPage(MODULES, self._visible_categories(), auth.is_admin(), self.tabs)
+        self.launcher.module_requested.connect(self.open_module_by_index)
+        self.launcher.shortcut_requested.connect(self._on_home_shortcut)
+        self.tabs.addTab(self.launcher, "Inicio", FluentIcon.HOME, routeKey="home")
+        self.tabs.setCurrentIndex(0)
+
+        event_bus.open_live_view_requested.connect(
+            self._on_open_live_view_requested, Qt.ConnectionType.QueuedConnection
+        )
+        event_bus.open_analytics_config_requested.connect(
+            self._on_open_analytics_config_requested, Qt.ConnectionType.QueuedConnection
+        )
+        event_bus.alarm.connect(self._on_global_alarm, Qt.ConnectionType.QueuedConnection)
+
+        # Capa de popups de alarma, visible sobre cualquier pestaña. Se
+        # autoajusta a su contenido (ver GlobalAlertPopupLayer) y queda
+        # oculta cuando no hay tarjetas -- no cubre toda la ventana.
+        self.alert_layer = GlobalAlertPopupLayer(central)
+
+        QShortcut(QKeySequence("Ctrl+K"), self, self._open_command_palette)
+
+    def _build_header(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setContentsMargins(14, 8, 14, 8)
+
+        user = auth.current_user
+        role_label = "Administrador" if user is not None and user.role == ROLE_ADMIN else "Operador"
+        name = user.username if user is not None else "?"
+        row.addWidget(BodyLabel(f"{name} · {role_label}"))
+        row.addStretch(1)
+
+        logout_button = PushButton(FluentIcon.RETURN, "Cerrar sesión")
+        logout_button.clicked.connect(self._on_logout)
+        row.addWidget(logout_button)
+        return row
+
+    def _visible_categories(self) -> dict:
+        if auth.is_admin():
+            return CATEGORIES
+        filtered = {}
+        for name, labels in CATEGORIES.items():
+            visible = [label for label in labels if label not in ADMIN_ONLY_LABELS]
+            if visible:
+                filtered[name] = visible
+        return filtered
+
+    def _on_logout(self) -> None:
+        if not confirm(self, "Cerrar sesión", "¿Cerrar la sesión actual?"):
+            return
+        self.logout_requested = True
+        auth.logout()
+        self.close()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - override de Qt
+        if hasattr(self, "alert_layer"):
+            self.alert_layer.reposition()
+        super().resizeEvent(event)
+
+    def _on_global_alarm(self, event: AlarmEvent) -> None:
+        device = repository.get_device(event.device_id)
+        device_name = device.name if device is not None else f"Cámara {event.device_id}"
+        self.alert_layer.show_alarm(event, device_name)
+
+    def _open_command_palette(self) -> None:
+        dialog = CommandPaletteDialog(MODULES, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted or dialog.action is None:
+            return
+        action, value = dialog.action
+        if action == ACTION_OPEN_MODULE:
+            self.open_module_by_index(value)
+        elif action == ACTION_QUICK_VIEW:
+            event_bus.open_live_view_requested.emit(value)
+
+    def _on_open_live_view_requested(self, device_id: int) -> None:
+        """"Vista rapida" desde Dispositivos: abre/enfoca Vista en Vivo y
+        asigna esta camara en Vista Inteligente."""
+        self.open_module_by_index(0)
+        live_view = self.tabs.currentWidget()
+        focus_camera = getattr(live_view, "focus_camera", None)
+        if callable(focus_camera):
+            focus_camera(device_id)
+
+    def _on_open_analytics_config_requested(self, device_id: int) -> None:
+        """"Ajustes avanzados" desde Dispositivos: abre/enfoca Analizadores
+        con esta camara seleccionada."""
+        self.open_module_by_index(2)
+        analytics_module = self.tabs.currentWidget()
+        focus_device = getattr(analytics_module, "focus_device", None)
+        if callable(focus_device):
+            focus_device(device_id)
+
+    def _on_home_shortcut(self, module_index: int, group: str, leaf: str) -> None:
+        """Panel "Base" de Inicio: abre el modulo y, si el atajo apunta a
+        una seccion especifica (ej. Sistema > Registro), la enfoca."""
+        self.open_module_by_index(module_index)
+        if not group or not leaf:
+            return
+        widget = self.tabs.currentWidget()
+        focus_section = getattr(widget, "focus_section", None)
+        if callable(focus_section):
+            focus_section(group, leaf)
+
+    def open_module_by_index(self, index: int) -> None:
+        label, icon_factory, module_cls = MODULES[index]
+        if label in ADMIN_ONLY_LABELS and not auth.is_admin():
+            warn(self, "Acceso restringido", "Esta sección requiere un usuario con rol Administrador.")
+            return
+
+        route_key = f"module-{index}"
+        for i in range(self.tabs.count()):
+            if self.tabs.widget(i).property("routeKey") == route_key:
+                self.tabs.setCurrentIndex(i)
+                return
+
+        content = module_cls()
+        self.tabs.addTab(content, label, icon_factory(), routeKey=route_key)
+        self.tabs.setCurrentWidget(content)
+
+    def _on_tab_close_requested(self, index: int) -> None:
+        if index == HOME_INDEX:
+            return  # "Inicio" no se cierra
+
+        widget = self.tabs.widget(index)
+        on_close = getattr(widget, "on_window_closed", None)
+        if callable(on_close):
+            on_close()
+        self.tabs.removeTab(index)
+        widget.deleteLater()
