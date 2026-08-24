@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aurea_vms.models.db import Base
@@ -11,6 +11,9 @@ class Device(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
+    # None = sin asignar todavia a una zona (sigue funcionando igual que
+    # antes de que existiera la jerarquia Sitio > Zona).
+    zone_id: Mapped[int | None] = mapped_column(ForeignKey("zones.id"), nullable=True)
     device_type: Mapped[str] = mapped_column(String(10), default="ipc")  # ipc | nvr | xvr
     channel: Mapped[int] = mapped_column(Integer, default=1)  # numero de canal (NVR/XVR)
     ip: Mapped[str] = mapped_column(String(64))

@@ -30,7 +30,9 @@ class MotionDetectionConfigDialog(AnalyticsConfigDialogBase):
         sensitivity_row.addWidget(self.sensitivity_slider, stretch=1)
         sensitivity_row.addWidget(self.sensitivity_value_label)
         form.addRow("Sensibilidad:", sensitivity_row)
-        form.addRow(CaptionLabel("Más alta = detecta cambios más sutiles (también más ruido)."))
+        sensitivity_caption = CaptionLabel("Más alta = detecta cambios más sutiles (también más ruido).")
+        sensitivity_caption.setWordWrap(True)
+        form.addRow(sensitivity_caption)
 
         # % del cuadro (o del ROI) en vez de px^2: el mismo numero tiene
         # sentido sin importar la resolucion de la camara.
@@ -39,15 +41,18 @@ class MotionDetectionConfigDialog(AnalyticsConfigDialogBase):
         self.min_size_spin.setSingleStep(0.05)
         self.min_size_spin.setDecimals(2)
         self.min_size_spin.setSuffix(" %")
+        self.min_size_spin.setMaximumWidth(130)
         self.min_size_spin.setValue(params.get("min_area_percent", 0.5))
         form.addRow("Tamaño mínimo del objeto:", self.min_size_spin)
-        form.addRow(
-            CaptionLabel(
-                "Ignora regiones más chicas que este % del cuadro (o del ROI) — "
-                "subilo si aparecen falsas detecciones muy pequeñas."
-            )
+        min_size_caption = CaptionLabel(
+            "Ignora regiones más chicas que este % del cuadro (o del ROI) — "
+            "subilo si aparecen falsas detecciones muy pequeñas."
         )
-        form.addRow(BodyLabel("ROI opcional: dibujá un rectángulo para limitar la zona vigilada."))
+        min_size_caption.setWordWrap(True)
+        form.addRow(min_size_caption)
+        roi_label = BodyLabel("ROI opcional: dibujá un rectángulo para limitar la zona vigilada.")
+        roi_label.setWordWrap(True)
+        form.addRow(roi_label)
 
     def build_params(self) -> dict:
         return {

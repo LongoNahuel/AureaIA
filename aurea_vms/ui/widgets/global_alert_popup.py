@@ -1,6 +1,6 @@
 """Capa de popups de alarma visible en cualquier pantalla de la app (no
 solo dentro del modulo Alarmas): al dispararse una alarma aparece una
-tarjeta flotante en la esquina superior derecha de la ventana principal,
+tarjeta flotante en la esquina inferior derecha de la ventana principal,
 con accion "Reconocer" inline. Las criticas quedan fijas hasta que se
 las reconoce; el resto se auto-descarta a los pocos segundos."""
 
@@ -76,7 +76,7 @@ class _AlertCard(QWidget):
 
 
 class GlobalAlertPopupLayer(QWidget):
-    """Contenedor de las tarjetas de alerta, anclado a la esquina superior
+    """Contenedor de las tarjetas de alerta, anclado a la esquina inferior
     derecha de la ventana principal. A diferencia de una capa transparente
     que cubre toda la ventana (lo que se probo primero y termino
     bloqueando todos los clicks del resto de la app, incluso donde no
@@ -123,5 +123,7 @@ class GlobalAlertPopupLayer(QWidget):
         if parent is None:
             return
         margin = 12
-        self.move(max(0, parent.width() - self.width() - margin), margin)
+        x = max(0, parent.width() - self.width() - margin)
+        y = max(0, parent.height() - self.height() - margin)
+        self.move(x, y)
         self.raise_()

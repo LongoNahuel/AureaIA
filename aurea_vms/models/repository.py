@@ -10,7 +10,9 @@ from aurea_vms.models.alarm_rule import AlarmRule
 from aurea_vms.models.analytics_config import AnalyticsConfig
 from aurea_vms.models.db import get_session
 from aurea_vms.models.device import Device
+from aurea_vms.models.site import Site
 from aurea_vms.models.user import User
+from aurea_vms.models.zone import Zone
 
 
 def add_device(**fields: object) -> Device:
@@ -22,9 +24,89 @@ def add_device(**fields: object) -> Device:
         return device
 
 
-def list_devices() -> list[Device]:
+def list_devices(zone_id: int | None = None) -> list[Device]:
     with get_session() as session:
-        return list(session.query(Device).order_by(Device.id).all())
+        query = session.query(Device).order_by(Device.id)
+        if zone_id is not None:
+            query = query.filter(Device.zone_id == zone_id)
+        return list(query.all())
+
+
+def list_devices_for_site(site_id: int | None) -> list[Device]:
+    """None = todas las camaras (incluye sin sitio asignado)."""
+    with get_session() as session:
+        if site_id is None:
+            return list(session.query(Device).order_by(Device.id).all())
+        zone_ids = [z.id for z in session.query(Zone).filter(Zone.site_id == site_id).all()]
+        return list(
+            session.query(Device).filter(Device.zone_id.in_(zone_ids)).order_by(Device.id).all()
+        )
+
+
+def add_site(**fields: object) -> Site:
+    with get_session() as session:
+        site = Site(**fields)
+        session.add(site)
+        session.flush()
+        session.refresh(site)
+        return site
+
+
+def list_sites() -> list[Site]:
+    with get_session() as session:
+        return list(session.query(Site).order_by(Site.id).all())
+
+
+def update_site(site_id: int, **fields: object) -> None:
+    with get_session() as session:
+        site = session.get(Site, site_id)
+        if site is not None:
+            for key, value in fields.items():
+                setattr(site, key, value)
+
+
+def delete_site(site_id: int) -> None:
+    with get_session() as session:
+        site = session.get(Site, site_id)
+        if site is not None:
+            session.delete(site)
+
+
+def add_zone(**fields: object) -> Zone:
+    with get_session() as session:
+        zone = Zone(**fields)
+        session.add(zone)
+        session.flush()
+        session.refresh(zone)
+        return zone
+
+
+def list_zones(site_id: int | None = None) -> list[Zone]:
+    with get_session() as session:
+        query = session.query(Zone).order_by(Zone.id)
+        if site_id is not None:
+            query = query.filter(Zone.site_id == site_id)
+        return list(query.all())
+
+
+def get_zone(zone_id: int) -> Zone | None:
+    with get_session() as session:
+        return session.get(Zone, zone_id)
+
+
+def update_zone(zone_id: int, **fields: object) -> None:
+    with get_session() as session:
+        zone = session.get(Zone, zone_id)
+        if zone is not None:
+            for key, value in fields.items():
+                setattr(zone, key, value)
+
+
+def delete_zone(zone_id: int) -> None:
+    with get_session() as session:
+        zone = session.get(Zone, zone_id)
+        if zone is not None:
+            session.delete(zone)
 
 
 def get_device(device_id: int) -> Device | None:

@@ -8,7 +8,17 @@ aparte. Se cachea en `data/models/` la primera vez que se usa.
 Se usa el modelo "full_range" en vez de "short_range": este ultimo esta
 pensado para camara selfie (caras grandes y cerca, tipo videollamada);
 "full_range" cubre caras chicas y lejanas tambien, que es el caso real de
-una camara de seguridad mirando una escena completa."""
+una camara de seguridad mirando una escena completa.
+
+Estabilidad / falsos disparos: cada deteccion cruda pasa primero por un
+punto de validacion geometrico (orden vertical ojos-nariz-boca, ver
+`_passes_geometry_filter`) que descarta detecciones con puntos de
+referencia degenerados -- tipico de una textura o patron que dispara el
+modelo por casualidad, no una cara real. Las que pasan se acumulan en un
+`CentroidTracker` con histeresis (igual que Conteo de Personas / Cruce de
+Linea): una cara nueva no se reporta como deteccion "real" hasta
+sostenerse un par de cuadros seguidos, lo que filtra el ruido de un solo
+frame sin agregar un modelo nuevo."""
 
 from __future__ import annotations
 
@@ -19,6 +29,7 @@ import numpy as np
 
 from aurea_vms.config.settings import settings
 from aurea_vms.core.analytics.base import AnalysisResult, Analyzer, crop_to_roi
+from aurea_vms.core.analytics.tracker import CentroidTracker
 from aurea_vms.core.events import Detection
 
 MODEL_URL = (
@@ -53,6 +64,8 @@ class FaceDetectionAnalyzer(Analyzer):
         roi: tuple[int, int, int, int] | None = None,
         min_pupillary_distance_px: int = 40,
         filter_by_angle: bool = False,
+        confirmation_frames: int = 2,
+        track_max_age_s: float = 0.6,
     ) -> None:
         import mediapipe as mp
         from mediapipe.tasks.python import vision
@@ -67,6 +80,7 @@ class FaceDetectionAnalyzer(Analyzer):
         self._roi = roi
         self._min_pupillary_distance_px = max(0, min_pupillary_distance_px)
         self._filter_by_angle = filter_by_angle
+        self._tracker = CentroidTracker(max_age_s=track_max_age_s, min_hits=max(1, confirmation_frames))
 
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
         crop, offset_x, offset_y = crop_to_roi(frame, self._roi)
@@ -75,9 +89,11 @@ class FaceDetectionAnalyzer(Analyzer):
         mp_image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
         result = self._detector.detect(mp_image)
 
-        detections: list[Detection] = []
+        raw_detections: list[Detection] = []
         for face in result.detections:
             keypoints = face.keypoints or []
+            if not self._passes_geometry_filter(keypoints):
+                continue
             if not self._passes_pupillary_filter(keypoints, crop_w, crop_h):
                 continue
             if self._filter_by_angle and not self._passes_angle_filter(keypoints):
@@ -85,15 +101,41 @@ class FaceDetectionAnalyzer(Analyzer):
 
             box = face.bounding_box
             confidence = face.categories[0].score if face.categories else 0.0
-            detections.append(
+            pixel_keypoints = None
+            if keypoints:
+                pixel_keypoints = tuple(
+                    (kp.x * crop_w + offset_x, kp.y * crop_h + offset_y) for kp in keypoints
+                )
+            raw_detections.append(
                 Detection(
                     label="cara",
                     confidence=float(confidence),
                     bbox=(box.origin_x + offset_x, box.origin_y + offset_y, box.width, box.height),
+                    keypoints=pixel_keypoints,
                 )
             )
 
+        self._tracker.update(raw_detections, timestamp)
+        detections = [
+            Detection(label=track.label, confidence=track.confidence, bbox=track.bbox, keypoints=track.keypoints)
+            for track in self._tracker.confirmed_tracks()
+        ]
+
         return AnalysisResult(detections=tuple(detections), metrics={"caras": len(detections)})
+
+    @staticmethod
+    def _passes_geometry_filter(keypoints) -> bool:
+        """Punto de validacion geometrica: en una cara real los ojos estan
+        arriba de la nariz y la nariz arriba de la boca. Una deteccion
+        espuria (textura, patron u objeto que por casualidad dispara el
+        modelo) suele dar puntos de referencia desordenados -- se descarta
+        aca, antes de que llegue al tracker de histeresis o a la galeria."""
+        if len(keypoints) <= MOUTH_CENTER:
+            return True
+        eyes_y = (keypoints[RIGHT_EYE].y + keypoints[LEFT_EYE].y) / 2
+        nose_y = keypoints[NOSE_TIP].y
+        mouth_y = keypoints[MOUTH_CENTER].y
+        return eyes_y < nose_y < mouth_y
 
     def _passes_pupillary_filter(self, keypoints, crop_w: int, crop_h: int) -> bool:
         """Descarta caras demasiado chicas/lejanas: la distancia entre ojos

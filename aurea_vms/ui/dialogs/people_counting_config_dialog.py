@@ -15,24 +15,25 @@ class PeopleCountingConfigDialog(AnalyticsConfigDialogBase):
     def build_extra_fields(self, form: QFormLayout, existing: AnalyticsConfig | None) -> None:
         params = (existing.params if existing else {}) or {}
 
-        form.addRow(
-            BodyLabel(
-                "Dibujá la zona (ROI) a monitorear. Sin selección = frame completo.\n"
-                "El dashboard muestra la ocupación actual (personas presentes ahora)."
-            )
+        intro = BodyLabel(
+            "Dibujá la zona (ROI) a monitorear. Sin selección = frame completo.\n"
+            "El dashboard muestra la ocupación actual (personas presentes ahora)."
         )
+        intro.setWordWrap(True)
+        form.addRow(intro)
 
         self.confirmation_spin = SpinBox()
         self.confirmation_spin.setRange(1, 10)
+        self.confirmation_spin.setMaximumWidth(130)
         self.confirmation_spin.setValue(params.get("confirmation_frames", 2))
-        form.addRow("Confirmación (muestras):", self.confirmation_spin)
-        form.addRow(
-            CaptionLabel(
-                "Una persona se suma a la ocupación recién después de esta cantidad de muestras "
-                "seguidas detectada (1 = cuenta al instante). Más alto = menos falsos positivos, "
-                "pero tarda más en reflejar gente que entra/sale rápido."
-            )
+        self.confirmation_spin.setToolTip(
+            "Una persona se suma a la ocupación recién tras esta cantidad de muestras seguidas "
+            "(1 = al instante)."
         )
+        form.addRow("Confirmación (muestras):", self.confirmation_spin)
+        caption = CaptionLabel("Más alto = menos falsos positivos, pero tarda más en reflejar cambios.")
+        caption.setWordWrap(True)
+        form.addRow(caption)
 
     def object_classes(self) -> list[str]:
         return ["person"]

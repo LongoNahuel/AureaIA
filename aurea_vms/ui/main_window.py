@@ -8,7 +8,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
-from qfluentwidgets import BodyLabel, FluentIcon, PushButton, TabCloseButtonDisplayMode, TabWidget
+from qfluentwidgets import BodyLabel, ComboBox, FluentIcon, PushButton, TabCloseButtonDisplayMode, TabWidget
 
 from aurea_vms.core import auth
 from aurea_vms.core.event_bus import event_bus
@@ -23,6 +23,7 @@ from aurea_vms.ui.modules.alert_config import AlertConfigModule
 from aurea_vms.ui.modules.analytics_config import AnalyticsConfigModule
 from aurea_vms.ui.modules.device_management import DeviceManagementModule
 from aurea_vms.ui.modules.live_view import LiveViewModule
+from aurea_vms.ui.modules.sites_zones_module import SitesZonesModule
 from aurea_vms.ui.modules.system_module import SystemModule
 from aurea_vms.ui.modules.user_management_module import UserManagementModule
 from aurea_vms.ui.notify import confirm, warn
@@ -41,18 +42,19 @@ MODULES = [
     ("Alertas", icons.icon_alerts, AlertConfigModule),
     ("Sistema", icons.icon_system, SystemModule),
     ("Usuarios", icons.icon_users, UserManagementModule),
+    ("Sitios y Zonas", icons.icon_sites, SitesZonesModule),
 ]
 
 CATEGORIES = {
     "Operación": ["Vista en Vivo", "Alarmas"],
-    "Configuración": ["Dispositivos", "Analizadores", "Alertas", "Sistema", "Usuarios"],
+    "Configuración": ["Dispositivos", "Analizadores", "Alertas", "Sistema", "Usuarios", "Sitios y Zonas"],
 }
 
 # Labels solo accesibles para rol admin -- un operador solo ve/abre lo de
 # "Operación". Chequeado tanto al armar el launcher como en
 # open_module_by_index (defensa en profundidad: los accesos "rapidos" via
 # event_bus, ej. Vista rapida desde Dispositivos, tambien pasan por ahi).
-ADMIN_ONLY_LABELS = {"Dispositivos", "Analizadores", "Alertas", "Sistema", "Usuarios"}
+ADMIN_ONLY_LABELS = {"Dispositivos", "Analizadores", "Alertas", "Sistema", "Usuarios", "Sitios y Zonas"}
 
 HOME_INDEX = 0
 
@@ -108,16 +110,33 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         row.setContentsMargins(14, 8, 14, 8)
 
+        self.selected_site_id: int | None = None
+        self.site_selector = ComboBox()
+        self.site_selector.addItem("Todos los sitios", userData=None)
+        for site in repository.list_sites():
+            self.site_selector.addItem(site.name, userData=site.id)
+        self.site_selector.currentIndexChanged.connect(self._on_site_changed)
+        row.addWidget(self.site_selector)
+
+        row.addStretch(1)
+
         user = auth.current_user
         role_label = "Administrador" if user is not None and user.role == ROLE_ADMIN else "Operador"
         name = user.username if user is not None else "?"
         row.addWidget(BodyLabel(f"{name} · {role_label}"))
-        row.addStretch(1)
 
         logout_button = PushButton(FluentIcon.RETURN, "Cerrar sesión")
         logout_button.clicked.connect(self._on_logout)
         row.addWidget(logout_button)
         return row
+
+    def _on_site_changed(self) -> None:
+        self.selected_site_id = self.site_selector.currentData()
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            device_tree = getattr(widget, "device_tree", None)
+            if device_tree is not None and hasattr(device_tree, "set_site_filter"):
+                device_tree.set_site_filter(self.selected_site_id)
 
     def _visible_categories(self) -> dict:
         if auth.is_admin():
@@ -198,6 +217,9 @@ class MainWindow(QMainWindow):
                 return
 
         content = module_cls()
+        device_tree = getattr(content, "device_tree", None)
+        if device_tree is not None and hasattr(device_tree, "set_site_filter"):
+            device_tree.set_site_filter(self.selected_site_id)
         self.tabs.addTab(content, label, icon_factory(), routeKey=route_key)
         self.tabs.setCurrentWidget(content)
 

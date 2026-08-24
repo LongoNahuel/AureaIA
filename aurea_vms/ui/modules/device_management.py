@@ -51,7 +51,7 @@ from aurea_vms.ui.notify import confirm, notify, warn
 from aurea_vms.ui.widgets.row_icon_button import row_icon_button as _row_icon_button
 from aurea_vms.ui.workers import FunctionWorker
 
-MANAGED_COLUMNS = ["", "Nombre", "IP", "Estado", "Modelo", "Configuración", "Versión", "Operación"]
+MANAGED_COLUMNS = ["", "Nombre", "IP", "Zona", "Estado", "Modelo", "Configuración", "Versión", "Operación"]
 DISCOVERED_COLUMNS = ["IP", "Modelo", "Fabricante", "N° de serie", "Versión", "Agregado", ""]
 
 STATUS_COLORS = {"online": "#3fb950", "offline": "#e5534b", "unknown": "#6e7681"}
@@ -213,15 +213,26 @@ class DeviceManagementModule(QWidget):
         name_item.setData(Qt.ItemDataRole.UserRole, device.id)
         self.managed_table.setItem(row, 1, name_item)
         self.managed_table.setItem(row, 2, QTableWidgetItem(device.ip))
-        self.managed_table.setCellWidget(row, 3, self._status_widget(device.status))
-        self.managed_table.setItem(row, 4, QTableWidgetItem(device.model or "—"))
+        self.managed_table.setItem(row, 3, QTableWidgetItem(self._zone_label(device)))
+        self.managed_table.setCellWidget(row, 4, self._status_widget(device.status))
+        self.managed_table.setItem(row, 5, QTableWidgetItem(device.model or "—"))
 
         config_bits = DEVICE_TYPE_LABELS.get(device.device_type, device.device_type)
         if device.device_type != "ipc":
             config_bits = f"{config_bits} · Canal {device.channel}"
-        self.managed_table.setItem(row, 5, QTableWidgetItem(config_bits))
-        self.managed_table.setItem(row, 6, QTableWidgetItem(device.firmware_version or "—"))
-        self.managed_table.setCellWidget(row, 7, self._operation_widget(device))
+        self.managed_table.setItem(row, 6, QTableWidgetItem(config_bits))
+        self.managed_table.setItem(row, 7, QTableWidgetItem(device.firmware_version or "—"))
+        self.managed_table.setCellWidget(row, 8, self._operation_widget(device))
+
+    @staticmethod
+    def _zone_label(device: Device) -> str:
+        if device.zone_id is None:
+            return "—"
+        zone = repository.get_zone(device.zone_id)
+        if zone is None:
+            return "—"
+        sites = {s.id: s.name for s in repository.list_sites()}
+        return f"{sites.get(zone.site_id, '?')} · {zone.name}"
 
     def _status_widget(self, status: str) -> QWidget:
         widget = QWidget()

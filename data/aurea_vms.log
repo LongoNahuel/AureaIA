@@ -404,3 +404,271 @@
 2026-08-24 13:59:26 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.46 severidad=alto
 2026-08-24 13:59:48 [INFO] aurea_vms.core.clip_recorder: Clip de evento #9 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\9.mp4 (72 frames)
 2026-08-24 14:01:42 [INFO] aurea_vms.core.analytics_engine: Deteniendo analizador (config 1)
+2026-08-24 14:14:29 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección Facial'
+2026-08-24 14:14:29 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 14:14:30 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 14:14:41 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.44 severidad=alto
+2026-08-24 14:14:55 [INFO] aurea_vms.core.clip_recorder: Clip de evento #10 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\10.mp4 (74 frames)
+2026-08-24 14:15:09 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.60 severidad=alto
+2026-08-24 14:15:29 [INFO] aurea_vms.core.clip_recorder: Clip de evento #11 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\11.mp4 (72 frames)
+2026-08-24 14:15:34 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.41 severidad=alto
+2026-08-24 14:15:52 [INFO] aurea_vms.core.clip_recorder: Clip de evento #12 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\12.mp4 (71 frames)
+2026-08-24 14:16:06 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.40 severidad=alto
+2026-08-24 14:16:25 [INFO] aurea_vms.core.clip_recorder: Clip de evento #13 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\13.mp4 (72 frames)
+2026-08-24 14:17:10 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.42 severidad=alto
+2026-08-24 14:17:28 [INFO] aurea_vms.core.clip_recorder: Clip de evento #14 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\14.mp4 (74 frames)
+2026-08-24 14:21:50 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección Facial'
+2026-08-24 14:21:53 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 14:21:54 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 14:22:55 [WARNING] daemon: could not find handler for: _handle_resolve
+2026-08-24 14:22:57 [INFO] aurea_vms.core.device_manager: Descubrimiento ONVIF: 21 dispositivo(s) encontrados
+2026-08-24 14:28:56 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.48 severidad=alto
+2026-08-24 14:29:14 [INFO] aurea_vms.core.clip_recorder: Clip de evento #15 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\15.mp4 (72 frames)
+2026-08-24 14:29:55 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.41 severidad=alto
+2026-08-24 14:30:11 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.42 severidad=alto
+2026-08-24 14:30:12 [INFO] aurea_vms.core.clip_recorder: Clip de evento #16 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\16.mp4 (72 frames)
+2026-08-24 14:30:28 [INFO] aurea_vms.core.clip_recorder: Clip de evento #17 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\17.mp4 (74 frames)
+2026-08-24 14:30:40 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.41 severidad=alto
+2026-08-24 14:30:55 [INFO] aurea_vms.core.clip_recorder: Clip de evento #18 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\18.mp4 (73 frames)
+2026-08-24 14:32:30 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.46 severidad=alto
+2026-08-24 14:32:49 [INFO] aurea_vms.core.clip_recorder: Clip de evento #19 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\19.mp4 (73 frames)
+2026-08-24 14:33:06 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.45 severidad=alto
+2026-08-24 14:33:21 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.49 severidad=alto
+2026-08-24 14:33:25 [INFO] aurea_vms.core.clip_recorder: Clip de evento #20 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\20.mp4 (73 frames)
+2026-08-24 14:33:41 [INFO] aurea_vms.core.clip_recorder: Clip de evento #21 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\21.mp4 (72 frames)
+2026-08-24 14:39:17 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.55 severidad=alto
+2026-08-24 14:39:37 [INFO] aurea_vms.core.clip_recorder: Clip de evento #22 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\22.mp4 (73 frames)
+2026-08-24 14:40:30 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.41 severidad=alto
+2026-08-24 14:40:50 [INFO] aurea_vms.core.clip_recorder: Clip de evento #23 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\23.mp4 (72 frames)
+2026-08-24 14:41:21 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.47 severidad=alto
+2026-08-24 14:41:46 [INFO] aurea_vms.core.clip_recorder: Clip de evento #24 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\24.mp4 (73 frames)
+2026-08-24 14:46:43 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.41 severidad=alto
+2026-08-24 14:46:58 [INFO] aurea_vms.core.clip_recorder: Clip de evento #25 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\25.mp4 (73 frames)
+2026-08-24 14:46:58 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.71 severidad=alto
+2026-08-24 14:47:12 [INFO] aurea_vms.core.clip_recorder: Clip de evento #26 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\26.mp4 (73 frames)
+2026-08-24 14:47:16 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.40 severidad=alto
+2026-08-24 14:47:29 [INFO] aurea_vms.core.clip_recorder: Clip de evento #27 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\27.mp4 (73 frames)
+2026-08-24 14:47:43 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.45 severidad=alto
+2026-08-24 14:47:56 [INFO] aurea_vms.core.clip_recorder: Clip de evento #28 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\28.mp4 (73 frames)
+2026-08-24 14:48:00 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.44 severidad=alto
+2026-08-24 14:48:13 [INFO] aurea_vms.core.clip_recorder: Clip de evento #29 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\29.mp4 (73 frames)
+2026-08-24 14:48:20 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.45 severidad=alto
+2026-08-24 14:48:33 [INFO] aurea_vms.core.clip_recorder: Clip de evento #30 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\30.mp4 (72 frames)
+2026-08-24 14:48:49 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.43 severidad=alto
+2026-08-24 14:49:02 [INFO] aurea_vms.core.clip_recorder: Clip de evento #31 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\31.mp4 (73 frames)
+2026-08-24 14:50:38 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.41 severidad=alto
+2026-08-24 14:50:51 [INFO] aurea_vms.core.clip_recorder: Clip de evento #32 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\32.mp4 (73 frames)
+2026-08-24 14:50:54 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.56 severidad=alto
+2026-08-24 14:51:09 [INFO] aurea_vms.core.clip_recorder: Clip de evento #33 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\33.mp4 (72 frames)
+2026-08-24 14:51:37 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.43 severidad=alto
+2026-08-24 14:51:51 [INFO] aurea_vms.core.clip_recorder: Clip de evento #34 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\34.mp4 (73 frames)
+2026-08-24 14:52:15 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.41 severidad=alto
+2026-08-24 14:52:29 [INFO] aurea_vms.core.clip_recorder: Clip de evento #35 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\35.mp4 (73 frames)
+2026-08-24 14:52:52 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.45 severidad=alto
+2026-08-24 14:53:06 [INFO] aurea_vms.core.clip_recorder: Clip de evento #36 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\36.mp4 (73 frames)
+2026-08-24 14:53:59 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.40 severidad=alto
+2026-08-24 14:54:13 [INFO] aurea_vms.core.clip_recorder: Clip de evento #37 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\37.mp4 (73 frames)
+2026-08-24 14:54:20 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.41 severidad=alto
+2026-08-24 14:54:34 [INFO] aurea_vms.core.clip_recorder: Clip de evento #38 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\38.mp4 (73 frames)
+2026-08-24 14:54:54 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.41 severidad=alto
+2026-08-24 14:55:08 [INFO] aurea_vms.core.clip_recorder: Clip de evento #39 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\39.mp4 (73 frames)
+2026-08-24 14:55:16 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.54 severidad=alto
+2026-08-24 14:55:31 [INFO] aurea_vms.core.clip_recorder: Clip de evento #40 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\40.mp4 (73 frames)
+2026-08-24 14:55:33 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.45 severidad=alto
+2026-08-24 14:55:50 [INFO] aurea_vms.core.clip_recorder: Clip de evento #41 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\41.mp4 (73 frames)
+2026-08-24 14:55:59 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.42 severidad=alto
+2026-08-24 14:56:14 [INFO] aurea_vms.core.clip_recorder: Clip de evento #42 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\42.mp4 (73 frames)
+2026-08-24 14:57:56 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.46 severidad=alto
+2026-08-24 14:58:10 [INFO] aurea_vms.core.clip_recorder: Clip de evento #43 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\43.mp4 (73 frames)
+2026-08-24 14:58:12 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.42 severidad=alto
+2026-08-24 14:58:26 [INFO] aurea_vms.core.clip_recorder: Clip de evento #44 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\44.mp4 (74 frames)
+2026-08-24 14:58:27 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.62 severidad=alto
+2026-08-24 14:58:41 [INFO] aurea_vms.core.clip_recorder: Clip de evento #45 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\45.mp4 (74 frames)
+2026-08-24 14:58:43 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.67 severidad=alto
+2026-08-24 14:58:57 [INFO] aurea_vms.core.clip_recorder: Clip de evento #46 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\46.mp4 (72 frames)
+2026-08-24 14:58:58 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.74 severidad=alto
+2026-08-24 14:59:12 [INFO] aurea_vms.core.clip_recorder: Clip de evento #47 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\47.mp4 (73 frames)
+2026-08-24 14:59:13 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.67 severidad=alto
+2026-08-24 14:59:28 [INFO] aurea_vms.core.clip_recorder: Clip de evento #48 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\48.mp4 (73 frames)
+2026-08-24 14:59:28 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.42 severidad=alto
+2026-08-24 14:59:43 [INFO] aurea_vms.core.clip_recorder: Clip de evento #49 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\49.mp4 (73 frames)
+2026-08-24 14:59:43 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.49 severidad=alto
+2026-08-24 14:59:58 [INFO] aurea_vms.core.clip_recorder: Clip de evento #50 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\50.mp4 (72 frames)
+2026-08-24 14:59:58 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.43 severidad=alto
+2026-08-24 15:00:13 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.79 severidad=alto
+2026-08-24 15:00:14 [INFO] aurea_vms.core.clip_recorder: Clip de evento #51 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\51.mp4 (74 frames)
+2026-08-24 15:00:28 [INFO] aurea_vms.core.clip_recorder: Clip de evento #52 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\52.mp4 (73 frames)
+2026-08-24 15:00:29 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.70 severidad=alto
+2026-08-24 15:00:43 [INFO] aurea_vms.core.clip_recorder: Clip de evento #53 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\53.mp4 (73 frames)
+2026-08-24 15:00:44 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.40 severidad=alto
+2026-08-24 15:00:59 [INFO] aurea_vms.core.clip_recorder: Clip de evento #54 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\54.mp4 (74 frames)
+2026-08-24 15:01:00 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.73 severidad=alto
+2026-08-24 15:01:15 [INFO] aurea_vms.core.clip_recorder: Clip de evento #55 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\55.mp4 (72 frames)
+2026-08-24 15:01:15 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.61 severidad=alto
+2026-08-24 15:01:30 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.58 severidad=alto
+2026-08-24 15:01:30 [INFO] aurea_vms.core.clip_recorder: Clip de evento #56 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\56.mp4 (73 frames)
+2026-08-24 15:01:45 [INFO] aurea_vms.core.clip_recorder: Clip de evento #57 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\57.mp4 (73 frames)
+2026-08-24 15:01:45 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.59 severidad=alto
+2026-08-24 15:02:00 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.47 severidad=alto
+2026-08-24 15:02:02 [INFO] aurea_vms.core.clip_recorder: Clip de evento #58 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\58.mp4 (73 frames)
+2026-08-24 15:02:15 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.60 severidad=alto
+2026-08-24 15:02:16 [INFO] aurea_vms.core.clip_recorder: Clip de evento #59 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\59.mp4 (72 frames)
+2026-08-24 15:02:31 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.63 severidad=alto
+2026-08-24 15:02:33 [INFO] aurea_vms.core.clip_recorder: Clip de evento #60 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\60.mp4 (71 frames)
+2026-08-24 15:02:47 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.54 severidad=alto
+2026-08-24 15:02:48 [INFO] aurea_vms.core.clip_recorder: Clip de evento #61 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\61.mp4 (73 frames)
+2026-08-24 15:03:04 [INFO] aurea_vms.core.clip_recorder: Clip de evento #62 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\62.mp4 (73 frames)
+2026-08-24 15:03:04 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.44 severidad=alto
+2026-08-24 15:03:20 [INFO] aurea_vms.core.clip_recorder: Clip de evento #63 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\63.mp4 (74 frames)
+2026-08-24 15:03:30 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.51 severidad=alto
+2026-08-24 15:03:45 [INFO] aurea_vms.core.clip_recorder: Clip de evento #64 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\64.mp4 (74 frames)
+2026-08-24 15:04:04 [INFO] aurea_vms.core.alarm_engine: ALARMA regla=1 cámara=1 clase=cara confianza=0.41 severidad=alto
+2026-08-24 15:04:19 [INFO] aurea_vms.core.clip_recorder: Clip de evento #65 guardado en C:\Users\nahue\OneDrive\Desktop\DESARROLLO\VMS_AureaIA\data\clips\1\65.mp4 (73 frames)
+2026-08-24 16:15:38 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 16:15:40 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 16:15:53 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 16:15:55 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 16:16:46 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección Facial'
+2026-08-24 16:16:48 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 16:16:50 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 16:17:57 [INFO] aurea_vms.core.analytics_engine: Deteniendo analizador (config 1)
+2026-08-24 16:17:57 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección Facial'
+2026-08-24 16:18:12 [INFO] aurea_vms.core.analytics_engine: Deteniendo analizador (config 1)
+2026-08-24 16:18:58 [INFO] aurea_vms.core.device_manager: Descubrimiento ONVIF: 25 dispositivo(s) encontrados
+2026-08-24 16:20:03 [WARNING] daemon: could not find handler for: _handle_resolve
+2026-08-24 16:20:03 [WARNING] daemon: could not find handler for: _handle_probe
+2026-08-24 16:20:03 [WARNING] daemon: could not find handler for: _handle_resolve
+2026-08-24 16:20:03 [WARNING] daemon: could not find handler for: _handle_probe
+2026-08-24 16:20:06 [INFO] aurea_vms.core.device_manager: Descubrimiento ONVIF: 23 dispositivo(s) encontrados
+2026-08-24 16:20:06 [INFO] aurea_vms.core.device_manager: Descubrimiento ONVIF: 22 dispositivo(s) encontrados
+2026-08-24 16:21:22 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 16:21:24 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 16:21:26 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (sub)
+2026-08-24 16:21:27 [INFO] aurea_vms.core.stream_manager: Camara 2 (sub): conectada
+2026-08-24 16:21:31 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (main)
+2026-08-24 16:21:35 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (sub)
+2026-08-24 16:21:37 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (main)
+2026-08-24 16:21:38 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (sub)
+2026-08-24 16:21:44 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (main)
+2026-08-24 16:21:47 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 16:21:54 [INFO] aurea_vms.core.stream_manager: Camara 2 (sub): conectada
+2026-08-24 16:21:54 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (main)
+2026-08-24 16:21:58 [INFO] aurea_vms.core.stream_manager: Camara 2 (sub): conectada
+2026-08-24 16:22:03 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 16:22:06 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 16:22:11 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 16:24:16 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (main)
+2026-08-24 16:24:22 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 16:24:46 [INFO] aurea_vms.core.analytics_engine: Cámara 2: iniciando analizador 'Detección Facial'
+2026-08-24 16:24:46 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (main)
+2026-08-24 16:24:56 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 16:25:48 [INFO] aurea_vms.core.analytics_engine: Cámara 2: iniciando analizador 'Detección Facial'
+2026-08-24 16:25:49 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (main)
+2026-08-24 16:25:54 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 16:29:22 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 16:29:24 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 16:29:27 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 16:29:30 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 16:29:30 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 16:29:32 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 16:29:34 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 16:29:35 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 16:29:39 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 16:29:41 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 16:30:22 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 16:30:24 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 16:30:41 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección Facial'
+2026-08-24 16:30:41 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 16:30:44 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 16:35:14 [WARNING] aurea_vms.core.stream_manager: Camara 2: se perdió la conexión, reintentando...
+2026-08-24 16:35:31 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 16:35:50 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 16:35:52 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 16:37:03 [INFO] aurea_vms.core.analytics_engine: Deteniendo analizador (config 1)
+2026-08-24 16:37:03 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección Facial'
+2026-08-24 16:37:03 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 16:37:06 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 16:37:08 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 16:37:10 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 16:40:38 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección Facial'
+2026-08-24 16:40:41 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 16:40:41 [INFO] aurea_vms.core.analytics_engine: Cámara 2: iniciando analizador 'Detección Facial'
+2026-08-24 16:40:41 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (main)
+2026-08-24 16:40:44 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 16:40:45 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 16:41:08 [INFO] aurea_vms.core.analytics_engine: Deteniendo analizador (config 1)
+2026-08-24 16:41:08 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección Facial'
+2026-08-24 16:41:08 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 16:41:09 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 16:41:16 [INFO] aurea_vms.core.analytics_engine: Deteniendo analizador (config 2)
+2026-08-24 16:41:16 [INFO] aurea_vms.core.analytics_engine: Cámara 2: iniciando analizador 'Detección Facial'
+2026-08-24 16:41:16 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (main)
+2026-08-24 16:41:17 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 16:41:19 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 16:41:21 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 16:41:58 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 16:41:59 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 16:56:20 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección Facial'
+2026-08-24 16:56:21 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 16:56:21 [INFO] aurea_vms.core.analytics_engine: Cámara 2: iniciando analizador 'Detección Facial'
+2026-08-24 16:56:21 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (main)
+2026-08-24 16:56:21 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección de Movimiento'
+2026-08-24 16:56:22 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 16:56:23 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 16:57:15 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (sub)
+2026-08-24 16:57:17 [INFO] aurea_vms.core.stream_manager: Camara 2 (sub): conectada
+2026-08-24 16:58:23 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 16:58:24 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 16:58:28 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (sub)
+2026-08-24 16:58:30 [INFO] aurea_vms.core.stream_manager: Camara 2 (sub): conectada
+2026-08-24 16:58:33 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (sub)
+2026-08-24 16:58:35 [INFO] aurea_vms.core.stream_manager: Camara 2 (sub): conectada
+2026-08-24 16:59:23 [WARNING] aurea_vms.core.stream_manager: Camara 2: se perdió la conexión, reintentando...
+2026-08-24 16:59:30 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 17:09:29 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección Facial'
+2026-08-24 17:09:30 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 17:09:30 [INFO] aurea_vms.core.analytics_engine: Cámara 2: iniciando analizador 'Detección Facial'
+2026-08-24 17:09:30 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (main)
+2026-08-24 17:09:30 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección de Movimiento'
+2026-08-24 17:09:31 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 17:09:35 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 17:10:09 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 17:10:10 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 17:15:53 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección Facial'
+2026-08-24 17:15:54 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 17:15:54 [INFO] aurea_vms.core.analytics_engine: Cámara 2: iniciando analizador 'Detección Facial'
+2026-08-24 17:15:54 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (main)
+2026-08-24 17:15:54 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección de Movimiento'
+2026-08-24 17:15:55 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 17:15:58 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 17:16:12 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 17:16:13 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 17:16:14 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (sub)
+2026-08-24 17:16:17 [INFO] aurea_vms.core.stream_manager: Camara 2 (sub): conectada
+2026-08-24 17:21:48 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 17:21:49 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 17:21:54 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (sub)
+2026-08-24 17:21:56 [INFO] aurea_vms.core.stream_manager: Camara 2 (sub): conectada
+2026-08-24 17:22:08 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (sub)
+2026-08-24 17:22:09 [INFO] aurea_vms.core.stream_manager: Camara 2 (sub): conectada
+2026-08-24 17:22:27 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 17:22:28 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 17:22:51 [INFO] aurea_vms.core.analytics_engine: Deteniendo analizador (config 1)
+2026-08-24 17:23:01 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 17:23:02 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (sub)
+2026-08-24 17:23:03 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 17:23:05 [INFO] aurea_vms.core.stream_manager: Camara 2 (sub): conectada
+2026-08-24 17:24:27 [INFO] aurea_vms.core.analytics_engine: Cámara 2: iniciando analizador 'Detección Facial'
+2026-08-24 17:24:28 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (main)
+2026-08-24 17:24:28 [INFO] aurea_vms.core.analytics_engine: Cámara 1: iniciando analizador 'Detección de Movimiento'
+2026-08-24 17:24:28 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (main)
+2026-08-24 17:24:31 [INFO] aurea_vms.core.stream_manager: Camara 2 (main): conectada
+2026-08-24 17:24:32 [INFO] aurea_vms.core.stream_manager: Camara 1 (main): conectada
+2026-08-24 17:24:37 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 17:24:38 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (sub)
+2026-08-24 17:24:38 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 17:24:42 [INFO] aurea_vms.core.stream_manager: Camara 2 (sub): conectada
+2026-08-24 17:28:00 [INFO] aurea_vms.core.stream_manager: Cámara 1: arrancando StreamWorker (sub)
+2026-08-24 17:28:01 [INFO] aurea_vms.core.stream_manager: Cámara 2: arrancando StreamWorker (sub)
+2026-08-24 17:28:01 [INFO] aurea_vms.core.stream_manager: Camara 1 (sub): conectada
+2026-08-24 17:28:02 [INFO] aurea_vms.core.stream_manager: Camara 2 (sub): conectada
