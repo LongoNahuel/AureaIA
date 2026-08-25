@@ -73,3 +73,5 @@ source = [
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
+# Gate acordado: nace en 60 y sube hacia 80 a medida que crece el backfill.
+fail_under = 60
