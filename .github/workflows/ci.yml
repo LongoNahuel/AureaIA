@@ -35,7 +35,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          # 3.12 = la version verificada en las maquinas de desarrollo;
+          # mediapipe publica wheels py3-none asi que no ata la version.
+          python-version: "3.12"
           cache: pip
       - name: Dependencias de sistema para Qt/OpenCV headless
         run: |
@@ -47,4 +49,4 @@ jobs:
       - name: Tests unitarios con gate de cobertura
         run: pytest -m "not integration" --cov
       - name: Tests de integración (modelos .tflite reales)
-        run: pytest -m integration -q
+        run: pytest -m integration -v
