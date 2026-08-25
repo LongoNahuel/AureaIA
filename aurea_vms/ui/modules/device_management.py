@@ -53,7 +53,17 @@ from aurea_vms.ui.notify import confirm, notify, warn
 from aurea_vms.ui.widgets.row_icon_button import row_icon_button as _row_icon_button
 from aurea_vms.ui.workers import FunctionWorker
 
-MANAGED_COLUMNS = ["", "Nombre", "IP", "Estado", "Modelo", "Configuración", "Versión", "Operación"]
+MANAGED_COLUMNS = [
+    "",
+    "Nombre",
+    "IP",
+    "Sitio",
+    "Estado",
+    "Modelo",
+    "Configuración",
+    "Versión",
+    "Operación",
+]
 DISCOVERED_COLUMNS = ["IP", "Modelo", "Fabricante", "N° de serie", "Versión", "Agregado", ""]
 
 STATUS_COLORS = {"online": "#3fb950", "offline": "#e5534b", "unknown": "#6e7681"}
@@ -201,6 +211,7 @@ class DeviceManagementModule(QWidget):
 
     def _reload_managed(self) -> None:
         self._devices = repository.list_devices()
+        self._site_names = {site.id: site.name for site in repository.list_sites()}
         self.managed_title.setText(f"Dispositivos administrados ({len(self._devices)})")
         self.managed_table.setRowCount(len(self._devices))
         for row, device in enumerate(self._devices):
@@ -217,15 +228,17 @@ class DeviceManagementModule(QWidget):
         name_item.setData(Qt.ItemDataRole.UserRole, device.id)
         self.managed_table.setItem(row, 1, name_item)
         self.managed_table.setItem(row, 2, QTableWidgetItem(device.ip))
-        self.managed_table.setCellWidget(row, 3, self._status_widget(device.status))
-        self.managed_table.setItem(row, 4, QTableWidgetItem(device.model or "—"))
+        site_name = self._site_names.get(device.site_id, "Sin sitio")
+        self.managed_table.setItem(row, 3, QTableWidgetItem(site_name))
+        self.managed_table.setCellWidget(row, 4, self._status_widget(device.status))
+        self.managed_table.setItem(row, 5, QTableWidgetItem(device.model or "—"))
 
         config_bits = DEVICE_TYPE_LABELS.get(device.device_type, device.device_type)
         if device.device_type != "ipc":
             config_bits = f"{config_bits} · Canal {device.channel}"
-        self.managed_table.setItem(row, 5, QTableWidgetItem(config_bits))
-        self.managed_table.setItem(row, 6, QTableWidgetItem(device.firmware_version or "—"))
-        self.managed_table.setCellWidget(row, 7, self._operation_widget(device))
+        self.managed_table.setItem(row, 6, QTableWidgetItem(config_bits))
+        self.managed_table.setItem(row, 7, QTableWidgetItem(device.firmware_version or "—"))
+        self.managed_table.setCellWidget(row, 8, self._operation_widget(device))
 
     def _status_widget(self, status: str) -> QWidget:
         widget = QWidget()
@@ -301,6 +314,7 @@ class DeviceManagementModule(QWidget):
         initial = {
             "device_type": device.device_type,
             "name": device.name,
+            "site_id": device.site_id,
             "channel": device.channel,
             "ip": device.ip,
             "port": device.port,

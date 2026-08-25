@@ -4,7 +4,7 @@ el resultado de OnvifDiscoveryDialog."""
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QDialog, QFormLayout, QHBoxLayout, QVBoxLayout
+from PySide6.QtWidgets import QDialog, QFormLayout, QHBoxLayout, QInputDialog, QVBoxLayout
 from qfluentwidgets import (
     CheckBox,
     ComboBox,
@@ -15,8 +15,10 @@ from qfluentwidgets import (
     PushButton,
     SpinBox,
 )
+from sqlalchemy.exc import IntegrityError
 
 from aurea_vms.core.rtsp_templates import DEVICE_TYPE_LABELS, DEVICE_TYPES, build_rtsp_urls
+from aurea_vms.models import repository
 from aurea_vms.ui.dialogs.onvif_discovery_dialog import OnvifDiscoveryDialog
 from aurea_vms.ui.notify import warn
 
@@ -41,6 +43,16 @@ class DeviceDialog(QDialog):
         self.device_type_combo.currentIndexChanged.connect(self._apply_template)
 
         self.name_edit = LineEdit()
+
+        self.site_combo = ComboBox()
+        self._reload_sites()
+        new_site_button = PushButton(FluentIcon.ADD, "Nuevo")
+        new_site_button.setToolTip("Crear un sitio nuevo")
+        new_site_button.clicked.connect(self._on_new_site)
+        site_row = QHBoxLayout()
+        site_row.addWidget(self.site_combo, stretch=1)
+        site_row.addWidget(new_site_button)
+
         self.ip_edit = LineEdit()
         self.ip_edit.textChanged.connect(self._apply_template)
         self.port_spin = SpinBox()
@@ -69,6 +81,7 @@ class DeviceDialog(QDialog):
         form.addRow(self.onvif_discovery_button)
         form.addRow("Tipo de dispositivo:", self.device_type_combo)
         form.addRow("Nombre:", self.name_edit)
+        form.addRow("Sitio:", site_row)
         form.addRow("IP:", self.ip_edit)
         form.addRow("Puerto RTSP:", self.port_spin)
         form.addRow("Canal (NVR/XVR):", self.channel_spin)
@@ -98,6 +111,27 @@ class DeviceDialog(QDialog):
         if initial:
             self._load(initial)
 
+    def _reload_sites(self, select_id: int | None = None) -> None:
+        current = select_id if select_id is not None else self.site_combo.currentData()
+        self.site_combo.clear()
+        self.site_combo.addItem("(Sin sitio)", userData=None)
+        for site in repository.list_sites():
+            self.site_combo.addItem(site.name, userData=site.id)
+        index = self.site_combo.findData(current)
+        self.site_combo.setCurrentIndex(index if index >= 0 else 0)
+
+    def _on_new_site(self) -> None:
+        name, ok = QInputDialog.getText(self, "Nuevo sitio", "Nombre del sitio:")
+        name = name.strip()
+        if not ok or not name:
+            return
+        try:
+            site = repository.add_site(name=name)
+        except IntegrityError:
+            warn(self, "Nuevo sitio", f'Ya existe un sitio llamado "{name}".')
+            return
+        self._reload_sites(select_id=site.id)
+
     def _apply_template(self, *_args) -> None:
         ip = self.ip_edit.text().strip()
         if not ip:
@@ -119,6 +153,8 @@ class DeviceDialog(QDialog):
         if index >= 0:
             self.device_type_combo.setCurrentIndex(index)
         self.name_edit.setText(data.get("name", ""))
+        site_index = self.site_combo.findData(data.get("site_id"))
+        self.site_combo.setCurrentIndex(site_index if site_index >= 0 else 0)
         self.channel_spin.setValue(data.get("channel", 1))
         self.ip_edit.setText(data.get("ip", ""))
         self.port_spin.setValue(data.get("port", 554))
@@ -161,6 +197,7 @@ class DeviceDialog(QDialog):
     def values(self) -> dict:
         return {
             "name": self.name_edit.text().strip(),
+            "site_id": self.site_combo.currentData(),
             "device_type": self.device_type_combo.currentData() or "ipc",
             "channel": self.channel_spin.value(),
             "ip": self.ip_edit.text().strip(),
