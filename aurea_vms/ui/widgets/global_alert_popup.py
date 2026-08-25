@@ -20,9 +20,9 @@ from aurea_vms.core.events import AlarmEvent
 from aurea_vms.core.permissions import Perm, can
 from aurea_vms.models import repository
 from aurea_vms.ui.labels import display_class
+from aurea_vms.ui.theme import SEVERITY_COLORS
 
 SEVERITY_LABELS = {"critico": "Crítico", "alto": "Alto", "medio": "Medio", "info": "Info"}
-SEVERITY_COLORS = {"critico": "#e5534b", "alto": "#f0a020", "medio": "#3b82f6", "info": "#6e7681"}
 AUTO_DISMISS_MS = 8000
 MAX_VISIBLE = 5
 

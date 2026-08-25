@@ -50,6 +50,7 @@ from aurea_vms.ui import icons
 from aurea_vms.ui.dialogs.device_dialog import DeviceDialog
 from aurea_vms.ui.labels import display_status
 from aurea_vms.ui.notify import confirm, notify, warn
+from aurea_vms.ui.theme import STATUS_COLORS
 from aurea_vms.ui.widgets.row_icon_button import row_icon_button as _row_icon_button
 from aurea_vms.ui.workers import FunctionWorker
 
@@ -65,8 +66,6 @@ MANAGED_COLUMNS = [
     "Operación",
 ]
 DISCOVERED_COLUMNS = ["IP", "Modelo", "Fabricante", "N° de serie", "Versión", "Agregado", ""]
-
-STATUS_COLORS = {"online": "#3fb950", "offline": "#e5534b", "unknown": "#6e7681"}
 
 
 class _CredentialsDialog(QDialog):

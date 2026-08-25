@@ -39,6 +39,7 @@ from aurea_vms.models.alarm_event import AlarmEvent as AlarmEventRow
 from aurea_vms.models.media_asset import KIND_CLIP, KIND_SNAPSHOT
 from aurea_vms.ui.labels import display_class
 from aurea_vms.ui.notify import notify, warn
+from aurea_vms.ui.theme import SEVERITY_COLORS
 
 COLUMNS = ["Hora", "Cámara", "Clase", "Severidad", "Confianza", "Captura", "Estado"]
 THUMBNAIL_SIZE = QSize(72, 40)
@@ -50,7 +51,6 @@ STATUS_LABELS = {
     STATUS_RESOLVED: "Resuelta",
 }
 SEVERITY_LABELS = {"critico": "Crítico", "alto": "Alto", "medio": "Medio", "info": "Info"}
-SEVERITY_COLORS = {"critico": "#e5534b", "alto": "#f0a020", "medio": "#3b82f6", "info": "#6e7681"}
 
 
 class AlarmModule(QWidget):

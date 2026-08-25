@@ -9,6 +9,23 @@ from qfluentwidgets import Theme, setTheme
 
 ACCENT = "#3b82f6"
 
+# Escala de severidad de alarmas -- UNICA fuente de verdad (antes vivia
+# duplicada en alarm_module y global_alert_popup). Cualquier badge, borde
+# de popup o dot que comunique severidad sale de aca. Candidata a
+# evolucionar a los tokens del prototipo NOVA (crit #ff4d5e / high
+# #ff9f43 / med #ffd166 / info #4f8cff + variantes soft): cambiar SOLO
+# estos valores re-pinta toda la app.
+SEVERITY_COLORS = {
+    "critico": "#e5534b",
+    "alto": "#f0a020",
+    "medio": "#3b82f6",
+    "info": "#6e7681",
+}
+
+# Colores de estado de camara (online/offline/sin probar) -- reservados
+# para estado, no reciclarlos para otra semantica.
+STATUS_COLORS = {"online": "#3fb950", "offline": "#e5534b", "unknown": "#6e7681"}
+
 _DARK_PALETTE = {
     "BG_PRIMARY": "#161c26",
     "BG_SECONDARY": "#1e2530",
