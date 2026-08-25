@@ -10,7 +10,8 @@ class AnalyticsConfig(Base):
     __tablename__ = "analytics_configs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"))
+    # Borrar la camara borra su configuracion de analiticas.
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
     analyzer_name: Mapped[str] = mapped_column(String(60))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     confidence_threshold: Mapped[float] = mapped_column(Float, default=0.5)

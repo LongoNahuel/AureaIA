@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from aurea_vms.config.settings import settings
@@ -16,6 +16,17 @@ class Base(DeclarativeBase):
 
 _engine = None
 _SessionLocal: sessionmaker[Session] | None = None
+
+
+def _enable_sqlite_foreign_keys(dbapi_connection, _record) -> None:
+    """SQLite ignora las FKs (y por lo tanto los ondelete=CASCADE/SET NULL
+    declarados en los modelos) salvo que cada conexion active el pragma.
+    Es un listener especifico del dialecto sqlite: si el dia de mañana la
+    DB cambia a otro motor, este hook simplemente no se registra y el
+    esquema declarativo sigue valiendo igual."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
@@ -36,6 +47,8 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
         f"sqlite:///{path}",
         connect_args={"check_same_thread": False},
     )
+    if _engine.dialect.name == "sqlite":
+        event.listen(_engine, "connect", _enable_sqlite_foreign_keys)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
     # Importar los modelos para que queden registrados en Base.metadata

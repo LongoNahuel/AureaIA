@@ -38,10 +38,12 @@ from qfluentwidgets import (
 )
 
 from aurea_vms.core import device_manager
+from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.core.device_manager import OnvifDiscoveryResult, OnvifProfileInfo
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import DeviceStatusEvent
 from aurea_vms.core.rtsp_templates import DEVICE_TYPE_LABELS
+from aurea_vms.core.stream_manager import stream_manager
 from aurea_vms.models import repository
 from aurea_vms.models.device import Device
 from aurea_vms.ui import icons
@@ -340,6 +342,12 @@ class DeviceManagementModule(QWidget):
         ):
             return
         for device_id in device_ids:
+            # Primero se apagan los consumidores vivos (analiticas y streams);
+            # recien despues se borra la fila, y la cascada de la DB se lleva
+            # configs/reglas/eventos asociados.
+            for config in repository.list_analytics_configs(device_id):
+                analytics_engine.stop(config.id)
+            stream_manager.stop_device(device_id)
             repository.delete_device(device_id)
         self._reload_managed()
 

@@ -17,8 +17,11 @@ class AlarmRule(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
-    # None = aplica a todos los dispositivos
-    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id"), nullable=True)
+    # None = aplica a todos los dispositivos. Borrar la camara borra solo
+    # las reglas especificas de esa camara (las globales no tienen FK).
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     analyzer_name: Mapped[str] = mapped_column(String(60))
     object_classes: Mapped[list[str]] = mapped_column(JSON, default=list)
     min_confidence: Mapped[float] = mapped_column(Float, default=0.5)

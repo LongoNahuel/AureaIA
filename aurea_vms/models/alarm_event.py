@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Float, ForeignKey, Integer, String
+from sqlalchemy import Float, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aurea_vms.models.db import Base
@@ -15,10 +15,20 @@ STATUSES = (STATUS_NEW, STATUS_ACKNOWLEDGED, STATUS_INVESTIGATING, STATUS_RESOLV
 class AlarmEvent(Base):
     __tablename__ = "alarm_events"
 
+    # El feed de alarmas y las busquedas forenses filtran por camara +
+    # rango temporal: el indice compuesto evita el scan completo.
+    __table_args__ = (Index("ix_alarm_events_device_ts", "device_id", "timestamp"),)
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    rule_id: Mapped[int] = mapped_column(ForeignKey("alarm_rules.id"))
-    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"))
-    timestamp: Mapped[float] = mapped_column(Float)
+    # SET NULL y no CASCADE: borrar/editar una regla no debe borrar el
+    # historial de incidentes (la severidad ya viene copiada al evento).
+    rule_id: Mapped[int | None] = mapped_column(
+        ForeignKey("alarm_rules.id", ondelete="SET NULL"), nullable=True
+    )
+    # Borrar la camara si borra sus eventos (sin camara no hay contexto
+    # ni media asociada que mostrar).
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    timestamp: Mapped[float] = mapped_column(Float, index=True)
     object_class: Mapped[str] = mapped_column(String(60))
     confidence: Mapped[float] = mapped_column(Float)
     # Copiada de la regla al momento del disparo -- si la regla cambia de
