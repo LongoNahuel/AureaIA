@@ -109,6 +109,18 @@ class TestAlarmEvents:
 
         assert len(repository.list_alarm_events(limit=3)) == 3
 
+    def test_count_pending_solo_cuenta_sin_resolver(self, temp_db):
+        device_id = _device()
+        rule = repository.add_alarm_rule(analyzer_name="face_detection")
+        a = self._event(device_id, rule.id, 1.0)
+        self._event(device_id, rule.id, 2.0)
+        resuelta = self._event(device_id, rule.id, 3.0)
+
+        repository.set_alarm_event_status(resuelta.id, "resuelta")
+        repository.set_alarm_event_status(a.id, "reconocida")  # sigue pendiente
+
+        assert repository.count_pending_alarm_events() == 2
+
     def test_update_y_estado(self, temp_db):
         device_id = _device()
         rule = repository.add_alarm_rule(analyzer_name="face_detection")

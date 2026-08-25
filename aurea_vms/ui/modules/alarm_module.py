@@ -141,7 +141,10 @@ class AlarmModule(QWidget):
         # La media de TODOS los eventos listados sale en una sola consulta
         # indexada (media_assets.alarm_event_id) -- nada de una query por
         # fila ni de tocar el filesystem para saber si hay clip/captura.
+        # Idem nombres de camara: un solo list_devices por recarga (antes:
+        # un get_device por fila, hasta 200 sesiones por refresco).
         self._media_by_event = repository.list_media_for_events([e.id for e in self._events])
+        self._device_names = {d.id: d.name for d in repository.list_devices()}
         self.table.setRowCount(len(self._events))
         for row, alarm_event in enumerate(self._events):
             self._set_row(row, alarm_event)
@@ -154,8 +157,7 @@ class AlarmModule(QWidget):
         return None
 
     def _set_row(self, row: int, alarm_event: AlarmEventRow) -> None:
-        device = repository.get_device(alarm_event.device_id)
-        device_name = device.name if device else f"#{alarm_event.device_id}"
+        device_name = self._device_names.get(alarm_event.device_id, f"#{alarm_event.device_id}")
         when = dt.datetime.fromtimestamp(alarm_event.timestamp).strftime("%H:%M:%S")
 
         self.table.setItem(row, 0, QTableWidgetItem(when))

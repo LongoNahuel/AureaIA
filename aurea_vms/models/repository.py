@@ -229,6 +229,17 @@ def list_alarm_events(limit: int = 200) -> list[AlarmEventRow]:
         )
 
 
+def count_pending_alarm_events() -> int:
+    """Alarmas sin resolver -- un COUNT sobre el indice, para el tile del
+    dashboard (antes traia 500 filas completas cada 5s para contarlas)."""
+    with get_session() as session:
+        return (
+            session.query(func.count(AlarmEventRow.id))
+            .filter(AlarmEventRow.status != "resuelta")
+            .scalar()
+        )
+
+
 def get_alarm_event(alarm_event_id: int) -> AlarmEventRow | None:
     with get_session() as session:
         return session.get(AlarmEventRow, alarm_event_id)

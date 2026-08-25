@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, SimpleCardWidget, StrongBodyLabel, TitleLabel
 
 from aurea_vms.core.analytics_engine import analytics_engine
-from aurea_vms.models import alarm_event, repository
+from aurea_vms.models import repository
 
 # Mismos colores de estado que Dispositivos (online/offline/desconocido) --
 # reservados para estado, no se reciclan para otra cosa.
@@ -163,10 +163,5 @@ class DashboardPanel(SimpleCardWidget):
         self.offline_caption.setText(f"● Desconectadas: {offline}")
         self.unknown_caption.setText(f"● Sin probar: {unknown}")
 
-        pending_alarms = sum(
-            1
-            for event in repository.list_alarm_events(limit=500)
-            if event.status != alarm_event.STATUS_RESOLVED
-        )
-        self.alarms_tile.set_value(str(pending_alarms))
+        self.alarms_tile.set_value(str(repository.count_pending_alarm_events()))
         self.analytics_tile.set_value(str(analytics_engine.running_count()))
