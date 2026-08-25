@@ -41,6 +41,9 @@ class PeopleCountingAnalyzer(Analyzer):
             max_age_s=track_max_age_s, min_hits=max(1, confirmation_frames)
         )
 
+    def close(self) -> None:
+        self._detector.close()
+
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
         crop, offset_x, offset_y = crop_to_roi(frame, self._roi)
         small, scale = resize_for_inference(crop)

@@ -54,6 +54,10 @@ class AnalyticsWorker(threading.Thread):
                 self._stop_event.wait(max(0.0, self._interval_s - elapsed))
         finally:
             stream_manager.release(self._device.id)
+            try:
+                self._analyzer.close()
+            except Exception:  # liberar recursos nunca debe matar el shutdown
+                logger.exception("Fallo al cerrar el analizador (config %s)", self.config_id)
 
     def stop(self) -> None:
         self._stop_event.set()

@@ -38,6 +38,13 @@ class Analyzer(ABC):
     @abstractmethod
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult: ...
 
+    def close(self) -> None:
+        """Libera recursos nativos (modelos de MediaPipe). Se llama al
+        detener el analizador: sin esto el modelo (~12MB) queda vivo hasta
+        el GC, y los destructores nativos de MediaPipe corriendo recien al
+        cierre del interprete pueden crashear el proceso en entornos
+        headless (visto en CI)."""
+
 
 def crop_to_roi(
     frame: np.ndarray, roi: tuple[int, int, int, int] | None

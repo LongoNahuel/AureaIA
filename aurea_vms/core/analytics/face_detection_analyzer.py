@@ -68,6 +68,9 @@ class FaceDetectionAnalyzer(Analyzer):
         self._min_pupillary_distance_px = max(0, min_pupillary_distance_px)
         self._filter_by_angle = filter_by_angle
 
+    def close(self) -> None:
+        self._detector.close()
+
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
         crop, offset_x, offset_y = crop_to_roi(frame, self._roi)
         crop_h, crop_w = crop.shape[:2]

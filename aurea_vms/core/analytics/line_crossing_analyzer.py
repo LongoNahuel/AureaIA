@@ -57,6 +57,9 @@ class LineCrossingAnalyzer(Analyzer):
         self._count_in = 0
         self._count_out = 0
 
+    def close(self) -> None:
+        self._detector.close()
+
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
         small, scale = resize_for_inference(frame)
         inv_scale = 1.0 / scale

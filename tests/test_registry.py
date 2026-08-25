@@ -58,8 +58,15 @@ def test_analizador_desconocido_falla():
 @pytest.mark.integration
 def test_crea_los_cuatro_analizadores_reales():
     """Carga los modelos .tflite reales (los pesa el repo) -- marcado como
-    integracion porque tarda y necesita mediapipe funcional."""
-    create_analyzer(_config("motion_detection"))
-    create_analyzer(_config("people_counting"))
-    create_analyzer(_config("face_detection"))
-    create_analyzer(_config("line_crossing", params={"line": [[0, 0], [100, 100]]}))
+    integracion porque tarda y necesita mediapipe funcional. Los detectores
+    se cierran explicitamente: los destructores nativos de MediaPipe
+    corriendo al cierre del interprete pueden segfaultear en runners
+    headless aunque el test haya pasado."""
+    analyzers = [
+        create_analyzer(_config("motion_detection")),
+        create_analyzer(_config("people_counting")),
+        create_analyzer(_config("face_detection")),
+        create_analyzer(_config("line_crossing", params={"line": [[0, 0], [100, 100]]})),
+    ]
+    for analyzer in analyzers:
+        analyzer.close()
