@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 from qfluentwidgets import CaptionLabel, FluentIcon, TogglePushButton, TransparentToolButton
 
+from aurea_vms.core.event_bus import event_bus
 from aurea_vms.models import repository
 from aurea_vms.ui import icons
 from aurea_vms.ui.widgets.branded_background import BrandedBackground
@@ -69,6 +70,9 @@ class LiveViewModule(QWidget):
         self.device_tree.device_double_clicked.connect(self._assign_to_selected)
         self.device_tree.setMinimumWidth(220)
         self.device_tree.setMaximumWidth(320)
+        # Metodo bound (no lambda): Qt corta la conexion al destruirse el
+        # modulo y el bus no queda apuntando a un widget muerto.
+        event_bus.site_filter_changed.connect(self._on_site_filter_changed)
 
         self.grid_container = QWidget(self)
         self.grid_layout = QGridLayout(self.grid_container)
@@ -204,6 +208,9 @@ class LiveViewModule(QWidget):
     def showEvent(self, event) -> None:  # noqa: N802 - override de Qt
         self.device_tree.reload()
         super().showEvent(event)
+
+    def _on_site_filter_changed(self, _site_id: object) -> None:
+        self.device_tree.reload()
 
     def focus_camera(self, device_id: int) -> None:
         """API publica para otros modulos (ej. boton "Vista rapida" de

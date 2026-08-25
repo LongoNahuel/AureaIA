@@ -37,7 +37,7 @@ from qfluentwidgets import (
     TableWidget,
 )
 
-from aurea_vms.core import device_manager
+from aurea_vms.core import app_state, device_manager
 from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.core.device_manager import OnvifDiscoveryResult, OnvifProfileInfo
 from aurea_vms.core.event_bus import event_bus
@@ -159,6 +159,7 @@ class DeviceManagementModule(QWidget):
         layout.addWidget(self.status_label)
 
         event_bus.device_status.connect(self._on_device_status, Qt.ConnectionType.QueuedConnection)
+        event_bus.site_filter_changed.connect(self._on_site_filter_changed)
 
         self._reload_managed()
 
@@ -209,8 +210,11 @@ class DeviceManagementModule(QWidget):
         section_layout.addWidget(self.managed_table)
         return section
 
+    def _on_site_filter_changed(self, _site_id: object) -> None:
+        self._reload_managed()
+
     def _reload_managed(self) -> None:
-        self._devices = repository.list_devices()
+        self._devices = repository.list_devices(site_id=app_state.current_site_id)
         self._site_names = {site.id: site.name for site in repository.list_sites()}
         self.managed_title.setText(f"Dispositivos administrados ({len(self._devices)})")
         self.managed_table.setRowCount(len(self._devices))

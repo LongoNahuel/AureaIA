@@ -65,6 +65,22 @@ class TestAgrupacionPorSitio:
         widget.reload(site_id=sala.id)
         assert _grupos(widget) == {"Sala Principal (1)": 1}
 
+    def test_reload_sin_argumento_respeta_el_filtro_global(self, arbol):
+        from aurea_vms.core import app_state
+
+        sala = repository.add_site(name="Sala Principal")
+        repository.add_site(name="Anexo VIP")
+        _cam("C1", sala.id)
+        _cam("C2")
+
+        app_state.set_site_filter(sala.id)
+        widget = arbol()  # el constructor llama reload() sin argumentos
+        assert _grupos(widget) == {"Sala Principal (1)": 1}
+
+        app_state.set_site_filter(None)
+        widget.reload()
+        assert "Anexo VIP (0)" in _grupos(widget)
+
 
 class TestBuscador:
     def test_filtra_y_oculta_grupos_sin_coincidencias(self, arbol):

@@ -8,9 +8,16 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
-from qfluentwidgets import BodyLabel, FluentIcon, PushButton, TabCloseButtonDisplayMode, TabWidget
+from qfluentwidgets import (
+    BodyLabel,
+    ComboBox,
+    FluentIcon,
+    PushButton,
+    TabCloseButtonDisplayMode,
+    TabWidget,
+)
 
-from aurea_vms.core import auth
+from aurea_vms.core import app_state, auth
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import AlarmEvent
 from aurea_vms.models import repository
@@ -120,6 +127,21 @@ class MainWindow(QMainWindow):
         row.addWidget(BodyLabel(f"{name} · {role_label}"))
         row.addStretch(1)
 
+        # Selector global de sitio: filtra Vista en Vivo, Dispositivos y
+        # Alarmas en toda la app (via app_state + site_filter_changed).
+        row.addWidget(BodyLabel("Sitio:"))
+        self.site_combo = ComboBox()
+        self.site_combo.addItem("Todos los sitios", userData=None)
+        for site in repository.list_sites():
+            self.site_combo.addItem(site.name, userData=site.id)
+        index = self.site_combo.findData(app_state.current_site_id)
+        self.site_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.site_combo.currentIndexChanged.connect(
+            lambda _i: app_state.set_site_filter(self.site_combo.currentData())
+        )
+        row.addWidget(self.site_combo)
+        row.addSpacing(10)
+
         logout_button = PushButton(FluentIcon.RETURN, "Cerrar sesión")
         logout_button.clicked.connect(self._on_logout)
         row.addWidget(logout_button)
@@ -140,6 +162,7 @@ class MainWindow(QMainWindow):
             return
         self.logout_requested = True
         auth.logout()
+        app_state.reset()  # el filtro de sitio no debe sobrevivir a la sesion
         self.close()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - override de Qt

@@ -28,3 +28,12 @@ def _reset_auth_session():
     from aurea_vms.core import auth
 
     auth.current_user = None
+
+
+@pytest.fixture(autouse=True)
+def _reset_site_filter():
+    """El filtro global de sitio tambien es global de modulo."""
+    yield
+    from aurea_vms.core import app_state
+
+    app_state.reset()

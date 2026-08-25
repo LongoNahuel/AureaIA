@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 from qfluentwidgets import CaptionLabel, FluentIcon, PrimaryPushButton, PushButton, TableWidget
 
-from aurea_vms.core import media_store
+from aurea_vms.core import app_state, media_store
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import AlarmEvent as AlarmEventDTO
 from aurea_vms.core.events import ClipReadyEvent
@@ -112,6 +112,7 @@ class AlarmModule(QWidget):
 
         event_bus.alarm.connect(self._on_alarm, Qt.ConnectionType.QueuedConnection)
         event_bus.clip_ready.connect(self._on_clip_ready, Qt.ConnectionType.QueuedConnection)
+        event_bus.site_filter_changed.connect(self._on_site_filter_changed)
 
         self._reload()
 
@@ -119,8 +120,16 @@ class AlarmModule(QWidget):
         self._reload()
         super().showEvent(event)
 
+    def _on_site_filter_changed(self, _site_id: object) -> None:
+        self._reload()
+
     def _reload(self) -> None:
         self._events = repository.list_alarm_events(limit=200)
+        # Filtro global de sitio: el feed muestra solo alarmas de camaras
+        # del sitio elegido en la topbar.
+        if app_state.current_site_id is not None:
+            allowed = {d.id for d in repository.list_devices(site_id=app_state.current_site_id)}
+            self._events = [e for e in self._events if e.device_id in allowed]
         # La media de TODOS los eventos listados sale en una sola consulta
         # indexada (media_assets.alarm_event_id) -- nada de una query por
         # fila ni de tocar el filesystem para saber si hay clip/captura.

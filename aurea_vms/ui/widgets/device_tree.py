@@ -12,10 +12,15 @@ from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 from qfluentwidgets import SearchLineEdit, TreeWidget
 
+from aurea_vms.core import app_state
 from aurea_vms.models import repository
 from aurea_vms.ui import icons
 
 DEVICE_ID_MIME = "application/x-aurea-device-id"
+
+# Sentinela: reload() sin argumento respeta el filtro global de sitio
+# (None ya significa "todos", no sirve como default).
+_USE_GLOBAL_FILTER = object()
 
 
 class _DraggableTree(TreeWidget):
@@ -58,9 +63,12 @@ class DeviceTreeWidget(QWidget):
 
         self.reload()
 
-    def reload(self, site_id: int | None = None) -> None:
-        """site_id filtra a un solo sitio (selector global de la topbar);
-        None muestra todos, agrupados por sitio."""
+    def reload(self, site_id: int | None | object = _USE_GLOBAL_FILTER) -> None:
+        """Sin argumento aplica el filtro global de sitio de la topbar;
+        con site_id explicito filtra a ese sitio; con None muestra todos,
+        agrupados por sitio."""
+        if site_id is _USE_GLOBAL_FILTER:
+            site_id = app_state.current_site_id
         self.tree.clear()
         sites = repository.list_sites()
         devices = repository.list_devices(site_id=site_id)
