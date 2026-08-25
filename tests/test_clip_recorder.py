@@ -99,6 +99,44 @@ class TestWriteMp4:
         cap.release()
         assert count == 5
 
+    def test_record_clip_completo_pre_mas_post(self, device_y_evento, monkeypatch):
+        """El flujo entero del thread ClipWriter: pre-buffer del worker +
+        post-captura del ultimo frame -> mp4 + registro + clip_ready."""
+        device, event = device_y_evento
+
+        pre = [(1.0, _jpeg_frame(10)), (1.2, _jpeg_frame(20))]
+        latest = np.full((120, 160, 3), 90, dtype=np.uint8)
+        fake_worker = SimpleNamespace(
+            get_recent_history=lambda: list(pre), get_latest_frame=lambda: latest
+        )
+        monkeypatch.setattr(clip_recorder.stream_manager, "get_worker", lambda _id: fake_worker)
+        monkeypatch.setattr(clip_recorder, "settings", SimpleNamespace(clip_post_seconds=0.3))
+
+        emitted: list = []
+        from aurea_vms.core.event_bus import event_bus
+
+        event_bus.clip_ready.connect(emitted.append)
+        try:
+            clip_recorder._record_clip(device.id, event.id)
+        finally:
+            event_bus.clip_ready.disconnect(emitted.append)
+
+        clips = repository.list_media(kind=KIND_CLIP, alarm_event_id=event.id)
+        assert len(clips) == 1
+        assert media_store.absolute_path(clips[0].rel_path).exists()
+
+        assert len(emitted) == 1
+        assert emitted[0].alarm_event_id == event.id
+        assert emitted[0].clip_path.endswith(".mp4")
+
+    def test_record_clip_sin_frames_no_escribe_nada(self, device_y_evento, monkeypatch):
+        device, event = device_y_evento
+        monkeypatch.setattr(clip_recorder.stream_manager, "get_worker", lambda _id: None)
+        monkeypatch.setattr(clip_recorder, "settings", SimpleNamespace(clip_post_seconds=0.1))
+
+        clip_recorder._record_clip(device.id, event.id)
+        assert repository.list_media(kind=KIND_CLIP) == []
+
     def test_la_media_del_evento_se_encuentra_por_indice(self, device_y_evento):
         device, event = device_y_evento
         clip_recorder.save_snapshot(device.id, event.id, np.zeros((10, 10, 3), dtype=np.uint8))
