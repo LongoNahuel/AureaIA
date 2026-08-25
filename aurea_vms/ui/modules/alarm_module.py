@@ -8,8 +8,8 @@ import datetime as dt
 import os
 import shutil
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -201,7 +201,10 @@ class AlarmModule(QWidget):
                 "El clip todavía no está listo (o la regla no tiene 'guardar clip' activado).",
             )
             return
-        os.startfile(alarm_event.clip_path)  # noqa: S606 - abre con el reproductor por defecto de Windows
+        # Abre con el reproductor por defecto del sistema operativo --
+        # QDesktopServices es portable (os.startfile era solo-Windows y
+        # impedia probar la app en Linux durante el desarrollo).
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(alarm_event.clip_path)))
 
     def _on_export(self) -> None:
         alarm_event = self._selected_event()

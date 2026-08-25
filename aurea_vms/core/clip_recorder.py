@@ -94,6 +94,11 @@ def _record_clip(device_id: int, alarm_event_id: int) -> None:
         event_bus.clip_ready.emit(
             ClipReadyEvent(alarm_event_id=alarm_event_id, clip_path=clip_path)
         )
+    except Exception:
+        # El thread es daemon: sin este log una falla de escritura (disco
+        # lleno, codec ausente, frame corrupto) moria en silencio y el
+        # evento quedaba para siempre "sin clip" sin ninguna pista.
+        logger.exception("Falló la grabación del clip del evento #%s", alarm_event_id)
     finally:
         with _threads_lock:
             current = threading.current_thread()
