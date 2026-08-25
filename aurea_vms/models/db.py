@@ -58,10 +58,30 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
         analytics_config,
         device,
         media_asset,
+        site,
         user,
     )
 
     Base.metadata.create_all(_engine)
+    _apply_adhoc_migrations()
+
+
+def _apply_adhoc_migrations() -> None:
+    """Parche minimo para bases de desarrollo pre-existentes: create_all
+    crea tablas nuevas pero no altera las existentes. Cubre solo el caso
+    barato (columna nueva en devices); cualquier cambio mas profundo se
+    resuelve recreando la DB. Alembic reemplaza esto cuando el esquema se
+    estabilice, antes de la primera instalacion en campo."""
+    assert _engine is not None
+    if _engine.dialect.name != "sqlite":
+        return
+    with _engine.connect() as conn:
+        cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(devices)")}
+        if cols and "site_id" not in cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE devices ADD COLUMN site_id INTEGER REFERENCES sites(id)"
+            )
+            conn.commit()
 
 
 @contextmanager

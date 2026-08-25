@@ -13,7 +13,44 @@ from aurea_vms.models.analytics_config import AnalyticsConfig
 from aurea_vms.models.db import get_session
 from aurea_vms.models.device import Device
 from aurea_vms.models.media_asset import MediaAsset
+from aurea_vms.models.site import Site
 from aurea_vms.models.user import User
+
+
+def add_site(**fields: object) -> Site:
+    with get_session() as session:
+        site = Site(**fields)
+        session.add(site)
+        session.flush()
+        session.refresh(site)
+        return site
+
+
+def list_sites() -> list[Site]:
+    with get_session() as session:
+        return list(session.query(Site).order_by(Site.name).all())
+
+
+def get_site(site_id: int) -> Site | None:
+    with get_session() as session:
+        return session.get(Site, site_id)
+
+
+def update_site(site_id: int, **fields: object) -> None:
+    with get_session() as session:
+        site = session.get(Site, site_id)
+        if site is not None:
+            for key, value in fields.items():
+                setattr(site, key, value)
+
+
+def delete_site(site_id: int) -> None:
+    """Las camaras del sitio NO se borran: quedan con site_id NULL
+    ("Sin sitio") gracias al ondelete=SET NULL."""
+    with get_session() as session:
+        site = session.get(Site, site_id)
+        if site is not None:
+            session.delete(site)
 
 
 def add_device(**fields: object) -> Device:
@@ -25,9 +62,14 @@ def add_device(**fields: object) -> Device:
         return device
 
 
-def list_devices() -> list[Device]:
+def list_devices(site_id: int | None = None) -> list[Device]:
+    """site_id=None lista todo; con site_id filtra por sitio (el filtro
+    del selector global de la topbar)."""
     with get_session() as session:
-        return list(session.query(Device).order_by(Device.id).all())
+        query = session.query(Device).order_by(Device.id)
+        if site_id is not None:
+            query = query.filter(Device.site_id == site_id)
+        return list(query.all())
 
 
 def get_device(device_id: int) -> Device | None:
