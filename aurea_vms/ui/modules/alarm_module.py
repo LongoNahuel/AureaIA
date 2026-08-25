@@ -27,6 +27,7 @@ from aurea_vms.core import app_state, media_store
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import AlarmEvent as AlarmEventDTO
 from aurea_vms.core.events import ClipReadyEvent
+from aurea_vms.core.permissions import Perm, can
 from aurea_vms.models import repository
 from aurea_vms.models.alarm_event import (
     STATUS_ACKNOWLEDGED,
@@ -81,6 +82,13 @@ class AlarmModule(QWidget):
         play_button.clicked.connect(self._on_play_clip)
         export_button = PushButton(FluentIcon.SHARE, "Exportar evidencia")
         export_button.clicked.connect(self._on_export)
+
+        # Gates por permiso: el Auditor entra al modulo (RECORDINGS) y
+        # exporta evidencia, pero no gestiona el ciclo de vida de la alerta.
+        self._can_manage = can(Perm.ALARM_MANAGE)
+        for gestion in (ack_button, investigate_button, resolve_button):
+            gestion.setEnabled(self._can_manage)
+        export_button.setEnabled(can(Perm.EVIDENCE_EXPORT))
 
         toolbar = QHBoxLayout()
         toolbar.addWidget(refresh_button)
@@ -191,8 +199,8 @@ class AlarmModule(QWidget):
     def _on_selection_changed(self) -> None:
         alarm_event = self._selected_event()
         has_selection = alarm_event is not None
-        self.notes_edit.setEnabled(has_selection)
-        self.save_notes_button.setEnabled(has_selection)
+        self.notes_edit.setEnabled(has_selection and self._can_manage)
+        self.save_notes_button.setEnabled(has_selection and self._can_manage)
         self.notes_edit.setPlainText(alarm_event.notes if alarm_event else "")
 
     def _set_status(self, status: str) -> None:

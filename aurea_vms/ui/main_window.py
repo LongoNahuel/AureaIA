@@ -20,8 +20,9 @@ from qfluentwidgets import (
 from aurea_vms.core import app_state, auth
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import AlarmEvent
+from aurea_vms.core.permissions import Perm, can
 from aurea_vms.models import repository
-from aurea_vms.models.user import ROLE_ADMIN
+from aurea_vms.models.user import ROLE_LABELS
 from aurea_vms.ui import icons
 from aurea_vms.ui.dialogs.command_palette_dialog import (
     ACTION_OPEN_MODULE,
@@ -59,13 +60,33 @@ CATEGORIES = {
     "Configuración": ["Dispositivos", "Analizadores", "Alertas", "Sistema", "Usuarios"],
 }
 
-# Labels solo accesibles para rol admin -- un operador solo ve/abre lo de
-# "Operación". Chequeado tanto al armar el launcher como en
-# open_module_by_index (defensa en profundidad: los accesos "rapidos" via
-# event_bus, ej. Vista rapida desde Dispositivos, tambien pasan por ahi).
-ADMIN_ONLY_LABELS = {"Dispositivos", "Analizadores", "Alertas", "Sistema", "Usuarios"}
+# Permiso requerido para ver/abrir cada modulo. Chequeado tanto al armar
+# el launcher como en open_module_by_index (defensa en profundidad: los
+# accesos "rapidos" via event_bus, ej. Vista rapida desde Dispositivos,
+# tambien pasan por ahi).
+MODULE_PERMISSIONS = {
+    "Vista en Vivo": Perm.LIVE_VIEW,
+    "Alarmas": Perm.RECORDINGS,
+    "Dispositivos": Perm.DEVICE_ADMIN,
+    "Analizadores": Perm.ANALYTICS_CONFIG,
+    "Alertas": Perm.ANALYTICS_CONFIG,
+    "Sistema": Perm.GLOBAL_CONFIG,
+    "Usuarios": Perm.USER_ADMIN,
+}
 
 HOME_INDEX = 0
+
+
+def compute_visible_categories() -> dict:
+    """Categorias del launcher visibles para el usuario en sesion, segun
+    su matriz de permisos (funcion libre para poder testearla sin
+    construir la ventana)."""
+    filtered = {}
+    for name, labels in CATEGORIES.items():
+        visible = [label for label in labels if can(MODULE_PERMISSIONS[label])]
+        if visible:
+            filtered[name] = visible
+    return filtered
 
 
 class MainWindow(QMainWindow):
@@ -122,7 +143,7 @@ class MainWindow(QMainWindow):
         row.setContentsMargins(14, 8, 14, 8)
 
         user = auth.current_user
-        role_label = "Administrador" if user is not None and user.role == ROLE_ADMIN else "Operador"
+        role_label = ROLE_LABELS.get(user.role, user.role) if user is not None else "?"
         name = user.username if user is not None else "?"
         row.addWidget(BodyLabel(f"{name} · {role_label}"))
         row.addStretch(1)
@@ -148,14 +169,7 @@ class MainWindow(QMainWindow):
         return row
 
     def _visible_categories(self) -> dict:
-        if auth.is_admin():
-            return CATEGORIES
-        filtered = {}
-        for name, labels in CATEGORIES.items():
-            visible = [label for label in labels if label not in ADMIN_ONLY_LABELS]
-            if visible:
-                filtered[name] = visible
-        return filtered
+        return compute_visible_categories()
 
     def _on_logout(self) -> None:
         if not confirm(self, "Cerrar sesión", "¿Cerrar la sesión actual?"):
@@ -216,11 +230,11 @@ class MainWindow(QMainWindow):
 
     def open_module_by_index(self, index: int) -> None:
         label, icon_factory, module_cls = MODULES[index]
-        if label in ADMIN_ONLY_LABELS and not auth.is_admin():
+        if not can(MODULE_PERMISSIONS[label]):
             warn(
                 self,
                 "Acceso restringido",
-                "Esta sección requiere un usuario con rol Administrador.",
+                "Tu rol no tiene permisos para abrir esta sección.",
             )
             return
 

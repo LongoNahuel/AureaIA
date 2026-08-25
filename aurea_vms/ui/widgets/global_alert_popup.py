@@ -17,6 +17,7 @@ from qfluentwidgets import (
 )
 
 from aurea_vms.core.events import AlarmEvent
+from aurea_vms.core.permissions import Perm, can
 from aurea_vms.models import repository
 from aurea_vms.ui.labels import display_class
 
@@ -65,6 +66,9 @@ class _AlertCard(QWidget):
         ack_button = HyperlinkButton(self)
         ack_button.setText("Reconocer")
         ack_button.clicked.connect(self._acknowledge)
+        # Un rol sin gestion de alertas (ej. Auditor) ve el popup pero no
+        # puede reconocerlo.
+        ack_button.setEnabled(can(Perm.ALARM_MANAGE))
         buttons_row.addWidget(ack_button)
         layout.addLayout(buttons_row)
 

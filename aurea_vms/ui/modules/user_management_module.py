@@ -28,11 +28,10 @@ from qfluentwidgets import (
 
 from aurea_vms.core import auth
 from aurea_vms.models import repository
-from aurea_vms.models.user import ROLE_ADMIN, ROLE_OPERATOR, User
+from aurea_vms.models.user import ROLE_LABELS, ROLES, User
 from aurea_vms.ui.notify import confirm, notify, warn
 from aurea_vms.ui.widgets.row_icon_button import row_icon_button
 
-ROLE_LABELS = {ROLE_ADMIN: "Administrador", ROLE_OPERATOR: "Operador"}
 COLUMNS = ["Usuario", "Rol", "Operación"]
 
 
@@ -46,8 +45,8 @@ class _UserDialog(QDialog):
         self.password_edit = PasswordLineEdit()
         self.confirm_edit = PasswordLineEdit()
         self.role_combo = ComboBox()
-        self.role_combo.addItem(ROLE_LABELS[ROLE_OPERATOR], userData=ROLE_OPERATOR)
-        self.role_combo.addItem(ROLE_LABELS[ROLE_ADMIN], userData=ROLE_ADMIN)
+        for role in ROLES:
+            self.role_combo.addItem(ROLE_LABELS[role], userData=role)
 
         form = QFormLayout()
         form.addRow("Usuario:", self.username_edit)
