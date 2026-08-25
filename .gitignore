@@ -28,4 +28,5 @@ htmlcov/
 # clon fresco pierde el branding.
 !aurea_vms/ui/assets/**
 .claude/
+sesiones/
 
