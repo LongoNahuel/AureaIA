@@ -74,4 +74,5 @@ source = [
 show_missing = true
 skip_covered = true
 # Gate acordado: nace en 60 y sube hacia 80 a medida que crece el backfill.
-fail_under = 60
+# 2026-08-24: backend en 74% -> gate a 70.
+fail_under = 70
