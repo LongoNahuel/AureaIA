@@ -103,3 +103,70 @@ class TestStopAll:
         assert w1.stopped and w2.stopped
         assert manager.get_worker(1) is None
         assert manager.get_worker(2) is None
+
+
+class TestStopDevice:
+    def test_corta_main_y_sub_de_esa_camara_solamente(self, manager):
+        objetivo, otro = _device(1), _device(2)
+        w_main = manager.acquire(objetivo, "main")
+        w_sub = manager.acquire(objetivo, "sub")
+        w_otro = manager.acquire(otro)
+
+        manager.stop_device(1)
+
+        assert w_main.stopped and w_sub.stopped
+        assert not w_otro.stopped
+        assert manager.get_worker(1) is None
+        assert manager.get_worker(2) is w_otro
+
+    def test_acquire_posterior_crea_worker_nuevo(self, manager):
+        device = _device(1)
+        viejo = manager.acquire(device)
+        manager.stop_device(1)
+
+        nuevo = manager.acquire(device)
+        assert nuevo is not viejo
+        assert not nuevo.stopped
+
+
+class TestConcurrencia:
+    def test_acquire_release_concurrentes_no_duplican_workers(self, manager):
+        """Regresion de la carrera real: UI y analiticas llaman acquire()
+        del mismo device desde hilos distintos; sin lock aparecian dos
+        workers para la misma clave y el ref-counting quedaba roto."""
+        import threading
+
+        device = _device(1)
+        errors: list[Exception] = []
+
+        def ciclo() -> None:
+            try:
+                for _ in range(200):
+                    manager.acquire(device)
+                    manager.release(device.id)
+            except Exception as exc:  # pragma: no cover - solo en fallo
+                errors.append(exc)
+
+        threads = [threading.Thread(target=ciclo) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == []
+        # Balance perfecto de acquire/release: no debe quedar nada vivo.
+        assert manager.get_worker(1) is None
+
+
+class TestIsStale:
+    def test_worker_real_sin_frames_es_stale(self):
+        # StreamWorker real sin start(): el constructor no abre RTSP.
+        worker = sm_module.StreamWorker(_device(1))
+        assert worker.is_stale()
+
+    def test_frame_reciente_no_es_stale(self):
+        import time
+
+        worker = sm_module.StreamWorker(_device(1))
+        worker._latest_frame_ts = time.monotonic()
+        assert not worker.is_stale()

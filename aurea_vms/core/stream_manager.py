@@ -40,6 +40,14 @@ HISTORY_FPS = 5.0
 JPEG_QUALITY = 80
 FPS_WINDOW_SIZE = 60
 
+# Sin estos timeouts, un cap.read() contra una camara que se cae "sucio"
+# (sin cerrar el TCP: cable cortado, switch reiniciado) puede bloquear el
+# hilo indefinidamente. Con read-timeout, read() devuelve False y el loop
+# de reconexion existente actua de watchdog.
+OPEN_TIMEOUT_MS = 10_000
+READ_TIMEOUT_MS = 10_000
+STALE_FRAME_S = 15.0
+
 
 class StreamWorker(threading.Thread):
     def __init__(self, device: Device, kind: str = "main") -> None:
@@ -62,7 +70,16 @@ class StreamWorker(threading.Thread):
 
     def run(self) -> None:
         while not self._stop_event.is_set():
-            cap = cv2.VideoCapture(self._url, cv2.CAP_FFMPEG)
+            cap = cv2.VideoCapture(
+                self._url,
+                cv2.CAP_FFMPEG,
+                [
+                    cv2.CAP_PROP_OPEN_TIMEOUT_MSEC,
+                    OPEN_TIMEOUT_MS,
+                    cv2.CAP_PROP_READ_TIMEOUT_MSEC,
+                    READ_TIMEOUT_MS,
+                ],
+            )
             if not cap.isOpened():
                 cap.release()
                 logger.warning(
@@ -126,6 +143,14 @@ class StreamWorker(threading.Thread):
         span = times[-1] - times[0]
         return (len(times) - 1) / span if span > 0 else 0.0
 
+    def is_stale(self, max_age_s: float = STALE_FRAME_S) -> bool:
+        """True si el ultimo frame es demasiado viejo (stream congelado o en
+        reconexion) -- la UI puede mostrar "reconectando" en vez de una
+        imagen vieja que parece en vivo."""
+        with self._lock:
+            ts = self._latest_frame_ts
+        return ts == 0.0 or (time.monotonic() - ts) > max_age_s
+
     def stop(self) -> None:
         self._stop_event.set()
 
@@ -134,9 +159,17 @@ WorkerKey = tuple[int, str]
 
 
 class StreamManager:
+    """acquire()/release() se llaman tanto desde el hilo de UI (VideoTile)
+    como desde los threads de analitica (AnalyticsWorker.run) -- todos los
+    accesos a _workers/_refcounts van bajo _lock, si no dos acquire()
+    concurrentes pueden crear dos workers para la misma camara y romper el
+    ref-counting. RLock porque stop_device() itera y detiene bajo el mismo
+    lock."""
+
     def __init__(self) -> None:
         self._workers: dict[WorkerKey, StreamWorker] = {}
         self._refcounts: dict[WorkerKey, int] = {}
+        self._lock = threading.RLock()
 
     @staticmethod
     def _effective_kind(device: Device, kind: str) -> str:
@@ -146,15 +179,16 @@ class StreamManager:
 
     def acquire(self, device: Device, kind: str = "main") -> StreamWorker:
         key = (device.id, self._effective_kind(device, kind))
-        worker = self._workers.get(key)
-        if worker is None:
-            logger.info("Cámara %s: arrancando StreamWorker (%s)", key[0], key[1])
-            worker = StreamWorker(device, key[1])
-            self._workers[key] = worker
-            self._refcounts[key] = 0
-            worker.start()
-        self._refcounts[key] += 1
-        return worker
+        with self._lock:
+            worker = self._workers.get(key)
+            if worker is None:
+                logger.info("Cámara %s: arrancando StreamWorker (%s)", key[0], key[1])
+                worker = StreamWorker(device, key[1])
+                self._workers[key] = worker
+                self._refcounts[key] = 0
+                worker.start()
+            self._refcounts[key] += 1
+            return worker
 
     def _resolve_key(self, device_id: int, kind: str) -> WorkerKey | None:
         """acquire() puede haber redirigido "sub" -> "main" (sin sub-flujo
@@ -167,22 +201,40 @@ class StreamManager:
         return fallback if kind != "main" and fallback in self._workers else None
 
     def release(self, device_id: int, kind: str = "main") -> None:
-        key = self._resolve_key(device_id, kind)
-        if key is None:
-            return
-        self._refcounts[key] -= 1
-        if self._refcounts[key] <= 0:
-            self._workers.pop(key).stop()
-            self._refcounts.pop(key, None)
+        with self._lock:
+            key = self._resolve_key(device_id, kind)
+            if key is None:
+                return
+            self._refcounts[key] -= 1
+            if self._refcounts[key] <= 0:
+                self._workers.pop(key).stop()
+                self._refcounts.pop(key, None)
 
     def get_worker(self, device_id: int, kind: str = "main") -> StreamWorker | None:
-        key = self._resolve_key(device_id, kind)
-        return self._workers.get(key) if key else None
+        with self._lock:
+            key = self._resolve_key(device_id, kind)
+            return self._workers.get(key) if key else None
+
+    def stop_device(self, device_id: int) -> None:
+        """Corta todos los streams de una camara sin esperar releases: al
+        borrar el dispositivo no debe quedar ningun worker vivo aunque haya
+        tiles o analiticas que todavia lo referencien."""
+        with self._lock:
+            for key in [k for k in self._workers if k[0] == device_id]:
+                self._workers.pop(key).stop()
+                self._refcounts.pop(key, None)
 
     def stop_all(self) -> None:
-        for key in list(self._workers):
-            self._workers.pop(key).stop()
-        self._refcounts.clear()
+        with self._lock:
+            workers = list(self._workers.values())
+            self._workers.clear()
+            self._refcounts.clear()
+        for worker in workers:
+            worker.stop()
+        # Espera acotada: logout->login re-arranca engines y sin el join se
+        # acumulan sockets/threads zombies de la sesion anterior.
+        for worker in workers:
+            worker.join(timeout=2.0)
 
 
 stream_manager = StreamManager()

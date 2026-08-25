@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+import os
 import sys
+
+# RTSP sobre TCP para el backend FFmpeg de OpenCV: en wifi/redes con perdida
+# el transporte UDP por defecto produce artifacting (bloques grises, frames
+# rotos). Debe estar seteado antes de abrir cualquier VideoCapture; se usa
+# setdefault para que un despliegue pueda overridearlo sin tocar codigo.
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication, QDialog
