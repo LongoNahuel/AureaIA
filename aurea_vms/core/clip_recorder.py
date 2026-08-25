@@ -12,10 +12,11 @@ import cv2
 import numpy as np
 
 from aurea_vms.config.settings import settings
+from aurea_vms.core import media_store
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import ClipReadyEvent
 from aurea_vms.core.stream_manager import stream_manager
-from aurea_vms.models import repository
+from aurea_vms.models.media_asset import KIND_CLIP, KIND_SNAPSHOT, MediaAsset
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +30,25 @@ _active_threads: list[threading.Thread] = []
 _threads_lock = threading.Lock()
 
 
-def save_snapshot(device_id: int, alarm_event_id: int, frame: np.ndarray) -> str:
-    directory = settings.snapshots_dir / str(device_id)
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{alarm_event_id}.jpg"
-    cv2.imwrite(str(path), frame)
-    return str(path)
+def save_snapshot(
+    device_id: int, alarm_event_id: int, frame: np.ndarray, created_by: int | None = None
+) -> MediaAsset:
+    """Escribe la captura en el storage por fecha/camara y la registra en
+    media_assets. created_by=None significa "la genero el sistema" (alarma
+    automatica); las capturas manuales pasan el id del usuario logueado."""
+    now = time.time()
+    rel_path = media_store.build_rel_path(KIND_SNAPSHOT, device_id, alarm_event_id, now, ".jpg")
+    cv2.imwrite(str(media_store.prepare_path(rel_path)), frame)
+    return media_store.register(
+        KIND_SNAPSHOT,
+        device_id,
+        rel_path,
+        timestamp=now,
+        alarm_event_id=alarm_event_id,
+        created_by=created_by,
+        height=frame.shape[0],
+        width=frame.shape[1],
+    )
 
 
 def record_clip_async(device_id: int, alarm_event_id: int) -> None:
@@ -83,8 +97,8 @@ def _record_clip(device_id: int, alarm_event_id: int) -> None:
         if not all_frames:
             return
 
-        clip_path = _write_mp4(device_id, alarm_event_id, all_frames)
-        repository.update_alarm_event(alarm_event_id, clip_path=clip_path)
+        asset = _write_mp4(device_id, alarm_event_id, all_frames)
+        clip_path = str(media_store.absolute_path(asset.rel_path))
         logger.info(
             "Clip de evento #%s guardado en %s (%d frames)",
             alarm_event_id,
@@ -106,10 +120,12 @@ def _record_clip(device_id: int, alarm_event_id: int) -> None:
                 _active_threads.remove(current)
 
 
-def _write_mp4(device_id: int, alarm_event_id: int, frames: list[tuple[float, bytes]]) -> str:
-    directory = settings.clips_dir / str(device_id)
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{alarm_event_id}.mp4"
+def _write_mp4(
+    device_id: int, alarm_event_id: int, frames: list[tuple[float, bytes]]
+) -> MediaAsset:
+    now = time.time()
+    rel_path = media_store.build_rel_path(KIND_CLIP, device_id, alarm_event_id, now, ".mp4")
+    path = media_store.prepare_path(rel_path)
 
     first_frame = cv2.imdecode(np.frombuffer(frames[0][1], np.uint8), cv2.IMREAD_COLOR)
     height, width = first_frame.shape[:2]
@@ -123,4 +139,13 @@ def _write_mp4(device_id: int, alarm_event_id: int, frames: list[tuple[float, by
     finally:
         writer.release()
 
-    return str(path)
+    return media_store.register(
+        KIND_CLIP,
+        device_id,
+        rel_path,
+        timestamp=now,
+        alarm_event_id=alarm_event_id,
+        duration_s=len(frames) / CLIP_FPS,
+        width=width,
+        height=height,
+    )

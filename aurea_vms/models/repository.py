@@ -5,11 +5,14 @@ la sesion (sirven como DTOs de solo lectura fuera del `with`).
 
 from __future__ import annotations
 
+from sqlalchemy import func
+
 from aurea_vms.models.alarm_event import AlarmEvent as AlarmEventRow
 from aurea_vms.models.alarm_rule import AlarmRule
 from aurea_vms.models.analytics_config import AnalyticsConfig
 from aurea_vms.models.db import get_session
 from aurea_vms.models.device import Device
+from aurea_vms.models.media_asset import MediaAsset
 from aurea_vms.models.user import User
 
 
@@ -202,6 +205,92 @@ def set_alarm_event_status(alarm_event_id: int, status: str) -> None:
         event = session.get(AlarmEventRow, alarm_event_id)
         if event is not None:
             event.status = status
+
+
+def add_media_asset(**fields: object) -> MediaAsset:
+    with get_session() as session:
+        asset = MediaAsset(**fields)
+        session.add(asset)
+        session.flush()
+        session.refresh(asset)
+        return asset
+
+
+def get_media_asset(media_id: int) -> MediaAsset | None:
+    with get_session() as session:
+        return session.get(MediaAsset, media_id)
+
+
+def list_media(
+    *,
+    kind: str | None = None,
+    device_id: int | None = None,
+    alarm_event_id: int | None = None,
+    created_by: int | None = None,
+    since: float | None = None,
+    until: float | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[MediaAsset]:
+    """Busqueda de media SIEMPRE por indice (nunca escaneando disco):
+    cualquier combinacion de filtros, mas nuevo primero, paginada."""
+    with get_session() as session:
+        query = session.query(MediaAsset)
+        if kind is not None:
+            query = query.filter(MediaAsset.kind == kind)
+        if device_id is not None:
+            query = query.filter(MediaAsset.device_id == device_id)
+        if alarm_event_id is not None:
+            query = query.filter(MediaAsset.alarm_event_id == alarm_event_id)
+        if created_by is not None:
+            query = query.filter(MediaAsset.created_by == created_by)
+        if since is not None:
+            query = query.filter(MediaAsset.timestamp >= since)
+        if until is not None:
+            query = query.filter(MediaAsset.timestamp < until)
+        return list(query.order_by(MediaAsset.timestamp.desc()).limit(limit).offset(offset).all())
+
+
+def list_media_for_events(event_ids: list[int]) -> dict[int, list[MediaAsset]]:
+    """Media de un lote de eventos en UNA consulta (el feed de alarmas
+    muestra hasta 200 filas: una query por fila seria el clasico N+1)."""
+    if not event_ids:
+        return {}
+    with get_session() as session:
+        assets = (
+            session.query(MediaAsset)
+            .filter(MediaAsset.alarm_event_id.in_(event_ids))
+            .order_by(MediaAsset.id)
+            .all()
+        )
+    grouped: dict[int, list[MediaAsset]] = {}
+    for asset in assets:
+        grouped.setdefault(asset.alarm_event_id, []).append(asset)
+    return grouped
+
+
+def list_media_oldest_first(
+    *, older_than: float | None = None, limit: int = 500
+) -> list[MediaAsset]:
+    """Para la retencion: candidatos a purga, mas viejo primero."""
+    with get_session() as session:
+        query = session.query(MediaAsset)
+        if older_than is not None:
+            query = query.filter(MediaAsset.timestamp < older_than)
+        return list(query.order_by(MediaAsset.timestamp).limit(limit).all())
+
+
+def total_media_size_bytes() -> int:
+    """Un SUM sobre el indice -- jamas un walk del filesystem."""
+    with get_session() as session:
+        return session.query(func.coalesce(func.sum(MediaAsset.size_bytes), 0)).scalar()
+
+
+def delete_media_asset(media_id: int) -> None:
+    with get_session() as session:
+        asset = session.get(MediaAsset, media_id)
+        if asset is not None:
+            session.delete(asset)
 
 
 def count_users() -> int:

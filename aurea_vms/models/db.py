@@ -57,6 +57,7 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
         alarm_rule,
         analytics_config,
         device,
+        media_asset,
         user,
     )
 

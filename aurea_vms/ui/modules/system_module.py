@@ -185,7 +185,7 @@ class SystemModule(QWidget):
     def _build_snapshot_page(self) -> QWidget:
         card, content = _card("Instantánea")
         form = QFormLayout(content)
-        form.addRow("Carpeta de capturas:", BodyLabel(str(settings.snapshots_dir)))
+        form.addRow("Carpeta de capturas:", BodyLabel(str(settings.media_dir / "snapshot")))
         note = CaptionLabel(
             "La captura se guarda automáticamente apenas se dispara una alarma "
             "(no hay captura manual todavía)."
@@ -199,7 +199,7 @@ class SystemModule(QWidget):
     def _build_recording_page(self) -> QWidget:
         card, content = _card("Grabando")
         form = QFormLayout(content)
-        form.addRow("Carpeta de clips:", BodyLabel(str(settings.clips_dir)))
+        form.addRow("Carpeta de clips:", BodyLabel(str(settings.media_dir / "clip")))
         form.addRow("Pre-buffer:", BodyLabel(f"{settings.clip_pre_seconds} s"))
         form.addRow("Post-captura:", BodyLabel(f"{settings.clip_post_seconds} s"))
         note = CaptionLabel(

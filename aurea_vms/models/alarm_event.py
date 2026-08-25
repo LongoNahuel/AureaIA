@@ -34,7 +34,7 @@ class AlarmEvent(Base):
     # Copiada de la regla al momento del disparo -- si la regla cambia de
     # severidad despues, los incidentes ya generados no se alteran.
     severity: Mapped[str] = mapped_column(String(20), default="medio")
-    snapshot_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    clip_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # La media del evento (captura, clip) vive en media_assets, vinculada
+    # por alarm_event_id -- este modelo ya no guarda rutas de archivos.
     status: Mapped[str] = mapped_column(String(20), default=STATUS_NEW)
     notes: Mapped[str] = mapped_column(String(4000), default="")

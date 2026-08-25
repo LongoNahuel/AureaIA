@@ -15,7 +15,7 @@ import datetime as dt
 import logging
 import time
 
-from aurea_vms.core import clip_recorder, desktop_notify
+from aurea_vms.core import clip_recorder, desktop_notify, media_store
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import AlarmEvent as AlarmEventDTO
 from aurea_vms.core.events import Detection, DetectionEvent
@@ -113,8 +113,10 @@ class AlarmEngine:
         worker = stream_manager.get_worker(event.device_id)
         frame = worker.get_latest_frame() if worker else None
         if frame is not None:
-            snapshot_path = clip_recorder.save_snapshot(event.device_id, row.id, frame)
-            repository.update_alarm_event(row.id, snapshot_path=snapshot_path)
+            # Queda registrada en media_assets (vinculada al evento); el DTO
+            # lleva la ruta absoluta solo para el thumbnail del popup.
+            asset = clip_recorder.save_snapshot(event.device_id, row.id, frame)
+            snapshot_path = str(media_store.absolute_path(asset.rel_path))
 
         if (rule.actions or {}).get("save_clip"):
             clip_recorder.record_clip_async(event.device_id, row.id)

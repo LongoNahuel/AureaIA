@@ -8,8 +8,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
 DB_PATH = DATA_DIR / "aurea_vms.sqlite3"
-CLIPS_DIR = DATA_DIR / "clips"
-SNAPSHOTS_DIR = DATA_DIR / "snapshots"
+# Raiz unica de clips/capturas/grabaciones, organizada por
+# <tipo>/<fecha>/<camara> e indexada por la tabla media_assets
+# (reemplaza a los viejos data/clips y data/snapshots planos).
+MEDIA_DIR = DATA_DIR / "media"
 LOG_PATH = DATA_DIR / "aurea_vms.log"
 
 
@@ -17,8 +19,7 @@ LOG_PATH = DATA_DIR / "aurea_vms.log"
 class Settings:
     data_dir: Path = DATA_DIR
     db_path: Path = DB_PATH
-    clips_dir: Path = CLIPS_DIR
-    snapshots_dir: Path = SNAPSHOTS_DIR
+    media_dir: Path = MEDIA_DIR
     log_path: Path = LOG_PATH
 
     # Vista en vivo
@@ -33,7 +34,7 @@ class Settings:
     alarm_default_cooldown_seconds: int = 30
 
     def ensure_dirs(self) -> None:
-        for path in (self.data_dir, self.clips_dir, self.snapshots_dir):
+        for path in (self.data_dir, self.media_dir):
             path.mkdir(parents=True, exist_ok=True)
 
 

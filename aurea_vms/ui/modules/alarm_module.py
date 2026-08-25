@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 from qfluentwidgets import CaptionLabel, FluentIcon, PrimaryPushButton, PushButton, TableWidget
 
+from aurea_vms.core import media_store
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import AlarmEvent as AlarmEventDTO
 from aurea_vms.core.events import ClipReadyEvent
@@ -34,6 +35,7 @@ from aurea_vms.models.alarm_event import (
     STATUS_RESOLVED,
 )
 from aurea_vms.models.alarm_event import AlarmEvent as AlarmEventRow
+from aurea_vms.models.media_asset import KIND_CLIP, KIND_SNAPSHOT
 from aurea_vms.ui.labels import display_class
 from aurea_vms.ui.notify import notify, warn
 
@@ -119,10 +121,20 @@ class AlarmModule(QWidget):
 
     def _reload(self) -> None:
         self._events = repository.list_alarm_events(limit=200)
+        # La media de TODOS los eventos listados sale en una sola consulta
+        # indexada (media_assets.alarm_event_id) -- nada de una query por
+        # fila ni de tocar el filesystem para saber si hay clip/captura.
+        self._media_by_event = repository.list_media_for_events([e.id for e in self._events])
         self.table.setRowCount(len(self._events))
         for row, alarm_event in enumerate(self._events):
             self._set_row(row, alarm_event)
         self._on_selection_changed()
+
+    def _media_path(self, alarm_event_id: int, kind: str) -> str | None:
+        for asset in self._media_by_event.get(alarm_event_id, []):
+            if asset.kind == kind:
+                return str(media_store.absolute_path(asset.rel_path))
+        return None
 
     def _set_row(self, row: int, alarm_event: AlarmEventRow) -> None:
         device = repository.get_device(alarm_event.device_id)
@@ -144,8 +156,9 @@ class AlarmModule(QWidget):
         self.table.setItem(row, 4, QTableWidgetItem(f"{alarm_event.confidence:.0%}"))
 
         thumb_label = QLabel()
-        if alarm_event.snapshot_path:
-            pixmap = QPixmap(alarm_event.snapshot_path)
+        snapshot_path = self._media_path(alarm_event.id, KIND_SNAPSHOT)
+        if snapshot_path:
+            pixmap = QPixmap(snapshot_path)
             if not pixmap.isNull():
                 thumb_label.setPixmap(
                     pixmap.scaled(
@@ -194,7 +207,8 @@ class AlarmModule(QWidget):
         if alarm_event is None:
             warn(self, "Reproducir clip", "Seleccioná una alarma primero.")
             return
-        if not alarm_event.clip_path:
+        clip_path = self._media_path(alarm_event.id, KIND_CLIP)
+        if not clip_path:
             warn(
                 self,
                 "Reproducir clip",
@@ -204,7 +218,7 @@ class AlarmModule(QWidget):
         # Abre con el reproductor por defecto del sistema operativo --
         # QDesktopServices es portable (os.startfile era solo-Windows y
         # impedia probar la app en Linux durante el desarrollo).
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(alarm_event.clip_path)))
+        QDesktopServices.openUrl(QUrl.fromLocalFile(clip_path))
 
     def _on_export(self) -> None:
         alarm_event = self._selected_event()
@@ -223,10 +237,12 @@ class AlarmModule(QWidget):
         export_dir = os.path.join(target_dir, folder_name)
         os.makedirs(export_dir, exist_ok=True)
 
-        if alarm_event.snapshot_path and os.path.exists(alarm_event.snapshot_path):
-            shutil.copy2(alarm_event.snapshot_path, export_dir)
-        if alarm_event.clip_path and os.path.exists(alarm_event.clip_path):
-            shutil.copy2(alarm_event.clip_path, export_dir)
+        snapshot_path = self._media_path(alarm_event.id, KIND_SNAPSHOT)
+        clip_path = self._media_path(alarm_event.id, KIND_CLIP)
+        if snapshot_path and os.path.exists(snapshot_path):
+            shutil.copy2(snapshot_path, export_dir)
+        if clip_path and os.path.exists(clip_path):
+            shutil.copy2(clip_path, export_dir)
 
         summary_lines = [
             f"Incidente #{alarm_event.id}",
