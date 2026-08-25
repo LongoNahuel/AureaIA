@@ -61,7 +61,14 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["aurea_vms"]
+# El gate de cobertura arranca midiendo el backend (core/models/config).
+# La UI (aurea_vms/ui, ~54% del codigo) se suma al gate a medida que avanza
+# el backfill de tests con pytest-qt -- objetivo final: >=80% del paquete.
+source = [
+    "aurea_vms.core",
+    "aurea_vms.models",
+    "aurea_vms.config",
+]
 
 [tool.coverage.report]
 show_missing = true
