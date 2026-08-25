@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication, QDialog
 from qfluentwidgets import setThemeColor
 
 from aurea_vms.config.settings import settings
-from aurea_vms.core import app_prefs, auth, clip_recorder
+from aurea_vms.core import app_prefs, auth, clip_recorder, retention
 from aurea_vms.core.alarm_engine import alarm_engine
 from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.core.logging_setup import setup_logging
@@ -36,9 +36,17 @@ def _start_enabled_analytics() -> None:
             analytics_engine.start(config, device)
 
 
+# Un thread no puede re-arrancarse: el ciclo logout->login crea un
+# RetentionWorker nuevo en cada _start_background_engines().
+_retention_worker: retention.RetentionWorker | None = None
+
+
 def _start_background_engines() -> None:
+    global _retention_worker
     _start_enabled_analytics()
     alarm_engine.start()
+    _retention_worker = retention.RetentionWorker()
+    _retention_worker.start()
 
 
 def _stop_background_engines() -> None:
@@ -48,6 +56,9 @@ def _stop_background_engines() -> None:
     stream_manager.stop_all()
     analytics_engine.stop_all()
     alarm_engine.stop()
+    if _retention_worker is not None:
+        _retention_worker.stop()
+        _retention_worker.join(timeout=2.0)
 
 
 def main() -> int:

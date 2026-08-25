@@ -25,11 +25,13 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     BodyLabel,
     CaptionLabel,
+    DoubleSpinBox,
     FluentIcon,
     HeaderCardWidget,
     PasswordLineEdit,
     PrimaryPushButton,
     PushButton,
+    SpinBox,
     StrongBodyLabel,
     SwitchButton,
     TableWidget,
@@ -202,9 +204,26 @@ class SystemModule(QWidget):
         form.addRow("Carpeta de clips:", BodyLabel(str(settings.media_dir / "clip")))
         form.addRow("Pre-buffer:", BodyLabel(f"{settings.clip_pre_seconds} s"))
         form.addRow("Post-captura:", BodyLabel(f"{settings.clip_post_seconds} s"))
+
+        retention_days_spin = SpinBox()
+        retention_days_spin.setRange(1, 365)
+        retention_days_spin.setSuffix(" días")
+        retention_days_spin.setValue(app_prefs.get_retention_days())
+        retention_days_spin.valueChanged.connect(app_prefs.set_retention_days)
+        form.addRow("Retención de media:", retention_days_spin)
+
+        retention_gb_spin = DoubleSpinBox()
+        retention_gb_spin.setRange(0.5, 10000.0)
+        retention_gb_spin.setDecimals(1)
+        retention_gb_spin.setSuffix(" GB")
+        retention_gb_spin.setValue(app_prefs.get_retention_max_gb())
+        retention_gb_spin.valueChanged.connect(app_prefs.set_retention_max_gb)
+        form.addRow("Tamaño máximo total:", retention_gb_spin)
+
         note = CaptionLabel(
             "Esta fase no graba en continuo: solo se guarda un clip corto "
-            "alrededor de cada evento de alarma."
+            "alrededor de cada evento de alarma. La retención purga clips y "
+            "capturas viejos automáticamente (por edad y por tamaño total)."
         )
         note.setWordWrap(True)
         form.addRow(note)
