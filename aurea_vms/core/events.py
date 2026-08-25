@@ -42,6 +42,9 @@ class AlarmEvent:
     severity: str = "medio"
     snapshot_path: str | None = None
     clip_path: str | None = None
+    # Accion "play_sound" de la regla: la UI (hilo principal) reproduce el
+    # beep -- los engines no tocan audio.
+    play_sound: bool = False
 
 
 @dataclass(frozen=True)

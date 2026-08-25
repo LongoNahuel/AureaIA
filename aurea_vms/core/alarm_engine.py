@@ -139,6 +139,7 @@ class AlarmEngine:
                 confidence=detection.confidence,
                 severity=rule.severity,
                 snapshot_path=snapshot_path,
+                play_sound=bool((rule.actions or {}).get("play_sound")),
             )
         )
 

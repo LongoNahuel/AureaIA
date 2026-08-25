@@ -90,14 +90,17 @@ def seed(rtsp_host: str) -> None:
         )
 
         if not repository.list_alarm_rules_for(device.id, analyzer):
+            # La boveda (rostros) es la regla "critica" de la narrativa de
+            # demo: popup persistente + sonido. El resto, severidad alta.
+            critical = analyzer == "face_detection"
             repository.add_alarm_rule(
                 device_id=device.id,
                 analyzer_name=analyzer,
                 object_classes=classes,
                 min_confidence=0.5,
                 cooldown_seconds=20,
-                severity="alto",
-                actions={"notify_ui": True, "save_clip": True},
+                severity="critico" if critical else "alto",
+                actions={"notify_ui": True, "save_clip": True, "play_sound": critical},
             )
             print(f"+ regla de alarma: {name} / {analyzer}")
 

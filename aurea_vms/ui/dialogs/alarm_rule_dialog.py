@@ -77,6 +77,9 @@ class AlarmRuleDialog(QDialog):
         self.notify_desktop_check = CheckBox("Notificación de escritorio al disparar")
         self.notify_desktop_check.setChecked(False)
 
+        self.play_sound_check = CheckBox("Reproducir sonido al disparar")
+        self.play_sound_check.setChecked(False)
+
         self.enabled_check = CheckBox("Regla habilitada")
         self.enabled_check.setChecked(True)
 
@@ -115,6 +118,7 @@ class AlarmRuleDialog(QDialog):
         form.addRow("Cooldown (segundos):", self.cooldown_spin)
         form.addRow(self.save_clip_check)
         form.addRow(self.notify_desktop_check)
+        form.addRow(self.play_sound_check)
         form.addRow(self.enabled_check)
         form.addRow(CaptionLabel("Días de la semana (sin marcar = todos):"))
         form.addRow(days_widget)
@@ -181,6 +185,7 @@ class AlarmRuleDialog(QDialog):
         self.notify_desktop_check.setChecked(
             bool((rule.actions or {}).get("notify_desktop", False))
         )
+        self.play_sound_check.setChecked(bool((rule.actions or {}).get("play_sound", False)))
         self.enabled_check.setChecked(rule.enabled)
 
         for day, check in self.day_checks.items():
@@ -215,6 +220,7 @@ class AlarmRuleDialog(QDialog):
                 "notify_ui": True,
                 "save_clip": self.save_clip_check.isChecked(),
                 "notify_desktop": self.notify_desktop_check.isChecked(),
+                "play_sound": self.play_sound_check.isChecked(),
             },
             "enabled": self.enabled_check.isChecked(),
             "schedule_days": [day for day, check in self.day_checks.items() if check.isChecked()],

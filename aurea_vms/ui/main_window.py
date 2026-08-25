@@ -23,7 +23,7 @@ from aurea_vms.core.events import AlarmEvent
 from aurea_vms.core.permissions import Perm, can
 from aurea_vms.models import repository
 from aurea_vms.models.user import ROLE_LABELS
-from aurea_vms.ui import icons
+from aurea_vms.ui import icons, sound
 from aurea_vms.ui.dialogs.command_palette_dialog import (
     ACTION_OPEN_MODULE,
     ACTION_QUICK_VIEW,
@@ -188,6 +188,8 @@ class MainWindow(QMainWindow):
         device = repository.get_device(event.device_id)
         device_name = device.name if device is not None else f"Cámara {event.device_id}"
         self.alert_layer.show_alarm(event, device_name)
+        if event.play_sound:
+            sound.play_alarm()
 
     def _open_command_palette(self) -> None:
         dialog = CommandPaletteDialog(MODULES, self)
