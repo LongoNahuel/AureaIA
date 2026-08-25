@@ -11,7 +11,14 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
-from qfluentwidgets import BodyLabel, CardWidget, CaptionLabel, FlowLayout, ScrollArea, StrongBodyLabel
+from qfluentwidgets import (
+    BodyLabel,
+    CaptionLabel,
+    CardWidget,
+    FlowLayout,
+    ScrollArea,
+    StrongBodyLabel,
+)
 
 from aurea_vms.ui import icons
 from aurea_vms.ui.widgets.dashboard_panel import DashboardPanel
@@ -102,7 +109,13 @@ class _SquareIconBadge(QWidget):
 
 class ModuleCard(CardWidget):
     def __init__(
-        self, index: int, label: str, icon_factory, color: str, description: str, parent: QWidget | None = None
+        self,
+        index: int,
+        label: str,
+        icon_factory,
+        color: str,
+        description: str,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.index = index
@@ -169,7 +182,9 @@ class HomeConfigPanel(QWidget):
             icon_factory = getattr(icons, icon_name)
             row = _ShortcutRow(label, icon_factory, color, self)
             row.clicked.connect(
-                lambda _checked=False, mi=module_index, g=group, lf=leaf: self.shortcut_clicked.emit(mi, g, lf)
+                lambda _checked=False, mi=module_index, g=group, lf=leaf: (
+                    self.shortcut_clicked.emit(mi, g, lf)
+                )
             )
             layout.addWidget(row)
 

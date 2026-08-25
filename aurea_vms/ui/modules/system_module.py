@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 
 import psutil
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
@@ -94,7 +94,11 @@ class SystemModule(QWidget):
         self._add_page("Sistema", "Seguridad", self._build_security_page())
         self._add_page("Operación", "Alarma", self._build_placeholder_page("Alarma"))
         self._add_page("Operación", "Servicio", self._build_placeholder_page("Servicio"))
-        self._add_page("Operación", "Visualización de atributos", self._build_placeholder_page("Visualización de atributos"))
+        self._add_page(
+            "Operación",
+            "Visualización de atributos",
+            self._build_placeholder_page("Visualización de atributos"),
+        )
         self._add_page("Operación", "PTZ", self._build_ptz_page())
 
         for i in range(self.nav_tree.topLevelItemCount()):
@@ -315,7 +319,9 @@ class SystemModule(QWidget):
             warn(self, "Seguridad", "Las contraseñas nuevas no coinciden.")
             return
 
-        error = auth.change_password(user.username, self.current_password_edit.text(), self.new_password_edit.text())
+        error = auth.change_password(
+            user.username, self.current_password_edit.text(), self.new_password_edit.text()
+        )
         if error:
             warn(self, "Seguridad", error)
             return

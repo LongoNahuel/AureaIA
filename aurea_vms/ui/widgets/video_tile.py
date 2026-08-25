@@ -92,9 +92,7 @@ class VideoTile(QWidget):
         self.video_label = _VideoDisplay(self)
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_label.setMinimumSize(160, 90)
-        self.video_label.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self.video_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(3, 3, 3, 3)
@@ -255,7 +253,13 @@ class VideoTile(QWidget):
         painter = QPainter(result)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        self._draw_osd_text(painter, result.width(), 8, Qt.AlignmentFlag.AlignLeft, self._device.name if self._device else "")
+        self._draw_osd_text(
+            painter,
+            result.width(),
+            8,
+            Qt.AlignmentFlag.AlignLeft,
+            self._device.name if self._device else "",
+        )
         timestamp = dt.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         self._draw_osd_text(painter, result.width(), 8, Qt.AlignmentFlag.AlignRight, timestamp)
 
@@ -294,7 +298,9 @@ class VideoTile(QWidget):
         painter.setPen(pen)
         painter.drawPath(path)
 
-    def _draw_detection_box(self, painter: QPainter, det: Detection, scale_x: float, scale_y: float) -> None:
+    def _draw_detection_box(
+        self, painter: QPainter, det: Detection, scale_x: float, scale_y: float
+    ) -> None:
         x, y, w, h = det.bbox
         rect = QRectF(x * scale_x, y * scale_y, w * scale_x, h * scale_y)
 
@@ -308,7 +314,9 @@ class VideoTile(QWidget):
         painter.setPen(pen)
         painter.drawRoundedRect(rect, 4, 4)
 
-        self._draw_label_chip(painter, rect.topLeft(), f"{display_class(det.label)} {det.confidence:.0%}")
+        self._draw_label_chip(
+            painter, rect.topLeft(), f"{display_class(det.label)} {det.confidence:.0%}"
+        )
 
     @staticmethod
     def _draw_label_chip(painter: QPainter, top_left: QPointF, text: str) -> None:

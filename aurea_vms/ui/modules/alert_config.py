@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QAbstractItemView, QHBoxLayout, QHeaderView, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QHBoxLayout,
+    QHeaderView,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 from qfluentwidgets import FluentIcon, PrimaryPushButton, PushButton, TableWidget
 
 from aurea_vms.core.analytics.registry import ANALYZER_DISPLAY_NAMES
@@ -66,12 +73,20 @@ class AlertConfigModule(QWidget):
             device_name = device.name if device else ALL_DEVICES_LABEL
             self.table.setItem(row, 0, QTableWidgetItem(device_name))
             self.table.setItem(
-                row, 1, QTableWidgetItem(ANALYZER_DISPLAY_NAMES.get(rule.analyzer_name, rule.analyzer_name))
+                row,
+                1,
+                QTableWidgetItem(
+                    ANALYZER_DISPLAY_NAMES.get(rule.analyzer_name, rule.analyzer_name)
+                ),
             )
             classes_text = ", ".join(display_class(c) for c in (rule.object_classes or []))
             self.table.setItem(row, 2, QTableWidgetItem(classes_text))
-            self.table.setItem(row, 3, QTableWidgetItem(SEVERITY_LABELS.get(rule.severity, rule.severity)))
-            self.table.setItem(row, 4, QTableWidgetItem("Habilitada" if rule.enabled else "Deshabilitada"))
+            self.table.setItem(
+                row, 3, QTableWidgetItem(SEVERITY_LABELS.get(rule.severity, rule.severity))
+            )
+            self.table.setItem(
+                row, 4, QTableWidgetItem("Habilitada" if rule.enabled else "Deshabilitada")
+            )
 
     def _selected_rule(self) -> AlarmRule | None:
         rows = self.table.selectionModel().selectedRows()

@@ -11,7 +11,7 @@ decodificando un video que nadie ve."""
 from __future__ import annotations
 
 import cv2
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QWidget
 

@@ -103,7 +103,9 @@ class DeviceDialog(QDialog):
         if not ip:
             return
         device_type = self.device_type_combo.currentData() or "ipc"
-        main_url, sub_url = build_rtsp_urls(device_type, ip, self.port_spin.value(), self.channel_spin.value())
+        main_url, sub_url = build_rtsp_urls(
+            device_type, ip, self.port_spin.value(), self.channel_spin.value()
+        )
 
         if not self.rtsp_main_edit.text().strip() or self.rtsp_main_edit.text() == self._auto_main:
             self.rtsp_main_edit.setText(main_url)

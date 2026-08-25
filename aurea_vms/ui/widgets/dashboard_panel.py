@@ -45,7 +45,9 @@ class _DonutChart(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         pen_width = 12
-        rect = QRectF(pen_width / 2, pen_width / 2, self.width() - pen_width, self.height() - pen_width)
+        rect = QRectF(
+            pen_width / 2, pen_width / 2, self.width() - pen_width, self.height() - pen_width
+        )
         total = sum(value for value, _ in self._segments)
 
         pen = QPen()
@@ -162,7 +164,9 @@ class DashboardPanel(SimpleCardWidget):
         self.unknown_caption.setText(f"● Sin probar: {unknown}")
 
         pending_alarms = sum(
-            1 for event in repository.list_alarm_events(limit=500) if event.status != alarm_event.STATUS_RESOLVED
+            1
+            for event in repository.list_alarm_events(limit=500)
+            if event.status != alarm_event.STATUS_RESOLVED
         )
         self.alarms_tile.set_value(str(pending_alarms))
         self.analytics_tile.set_value(str(analytics_engine.running_count()))

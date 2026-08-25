@@ -15,7 +15,9 @@ ACTION_QUICK_VIEW = "quick_view"
 
 
 class CommandPaletteDialog(QDialog):
-    def __init__(self, modules: list[tuple[str, object, type]], parent: QWidget | None = None) -> None:
+    def __init__(
+        self, modules: list[tuple[str, object, type]], parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Buscador rápido")
         self.setFixedSize(420, 380)

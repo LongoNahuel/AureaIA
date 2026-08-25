@@ -159,7 +159,9 @@ def refresh_device_status(device_id: int) -> bool:
     url = build_authenticated_url(device.rtsp_main_url, device.username, device.password)
     online, detail = test_rtsp_connection(url)
     repository.update_device_status(device_id, "online" if online else "offline")
-    logger.info("Prueba de conexión cámara %s (%s): %s - %s", device_id, device.name, online, detail)
+    logger.info(
+        "Prueba de conexión cámara %s (%s): %s - %s", device_id, device.name, online, detail
+    )
     event_bus.device_status.emit(
         DeviceStatusEvent(device_id=device_id, online=online, detail=detail)
     )
@@ -183,7 +185,12 @@ def _parse_onvif_scopes(scopes) -> tuple[str | None, str | None, str | None, str
         for prefix, field in prefixes.items():
             if text.startswith(prefix):
                 fields[field] = text[len(prefix) :] or None
-    return fields["manufacturer"], fields["model"], fields["firmware_version"], fields["serial_number"]
+    return (
+        fields["manufacturer"],
+        fields["model"],
+        fields["firmware_version"],
+        fields["serial_number"],
+    )
 
 
 def discover_onvif(timeout: float = 3.0) -> list[OnvifDiscoveryResult]:
@@ -200,7 +207,9 @@ def discover_onvif(timeout: float = 3.0) -> list[OnvifDiscoveryResult]:
     try:
         services = wsd.searchServices(timeout=timeout)
         for service in services:
-            manufacturer, model, firmware_version, serial_number = _parse_onvif_scopes(service.getScopes())
+            manufacturer, model, firmware_version, serial_number = _parse_onvif_scopes(
+                service.getScopes()
+            )
             for xaddr in service.getXAddrs():
                 parsed = urlparse(xaddr)
                 if parsed.hostname and parsed.hostname not in seen_ips:

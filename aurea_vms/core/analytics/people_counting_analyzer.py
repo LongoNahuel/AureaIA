@@ -13,7 +13,13 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from aurea_vms.core.analytics.base import AnalysisResult, Analyzer, crop_to_roi, rescale_bbox, resize_for_inference
+from aurea_vms.core.analytics.base import (
+    AnalysisResult,
+    Analyzer,
+    crop_to_roi,
+    rescale_bbox,
+    resize_for_inference,
+)
 from aurea_vms.core.analytics.object_detector_backend import create_object_detector
 from aurea_vms.core.analytics.tracker import CentroidTracker
 from aurea_vms.core.events import Detection
@@ -31,7 +37,9 @@ class PeopleCountingAnalyzer(Analyzer):
     ) -> None:
         self._mp, self._detector = create_object_detector(["person"], confidence_threshold)
         self._roi = roi
-        self._tracker = CentroidTracker(max_age_s=track_max_age_s, min_hits=max(1, confirmation_frames))
+        self._tracker = CentroidTracker(
+            max_age_s=track_max_age_s, min_hits=max(1, confirmation_frames)
+        )
 
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
         crop, offset_x, offset_y = crop_to_roi(frame, self._roi)

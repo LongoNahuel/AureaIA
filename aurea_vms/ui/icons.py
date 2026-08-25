@@ -4,7 +4,7 @@ no cubre (grillas de layout NxN, indicador de estado)."""
 
 from __future__ import annotations
 
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt
@@ -19,7 +19,7 @@ DEFAULT_COLOR = "#c7ccd4"
 DEFAULT_SIZE = 22
 
 
-@lru_cache(maxsize=None)
+@cache
 def _load_svg_template(name: str) -> str:
     return (ASSETS_DIR / f"{name}.svg").read_text(encoding="utf-8")
 
@@ -39,6 +39,7 @@ def load_icon(name: str, color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -
 
 
 # --- iconos de sidebar / modulos -------------------------------------------------
+
 
 def icon_live_view(color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -> QIcon:
     return load_icon("camera", color, size)
@@ -78,6 +79,7 @@ def icon_history(color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -> QIcon:
 
 
 # --- iconos de acciones / toolbar -------------------------------------------------
+
 
 def icon_search(color: str = DEFAULT_COLOR) -> QIcon:
     return load_icon("search", color)
@@ -125,7 +127,8 @@ def icon_camera_placeholder(color: str = "#3a4353", size: int = 40) -> QIcon:
 
 # --- imagenes de marca (assets/images) -------------------------------------------
 
-@lru_cache(maxsize=None)
+
+@cache
 def _load_image(filename: str) -> QPixmap:
     return QPixmap(str(IMAGES_DIR / filename))
 
@@ -161,6 +164,7 @@ def login_background_video_path() -> str:
 
 
 # --- glifos propios (Lucide no cubre grillas NxN parametrizadas) ----------------
+
 
 def _pen(color: str, width: float = 1.6) -> QPen:
     pen = QPen(QColor(color))

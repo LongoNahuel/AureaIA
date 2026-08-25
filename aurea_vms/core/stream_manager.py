@@ -46,7 +46,9 @@ class StreamWorker(threading.Thread):
         super().__init__(daemon=True, name=f"StreamWorker-{device.id}-{kind}")
         self.device_id = device.id
         self.kind = kind
-        raw_url = device.rtsp_sub_url if kind == "sub" and device.rtsp_sub_url else device.rtsp_main_url
+        raw_url = (
+            device.rtsp_sub_url if kind == "sub" and device.rtsp_sub_url else device.rtsp_main_url
+        )
         self._url = build_authenticated_url(raw_url, device.username, device.password)
         self._lock = threading.Lock()
         self._latest_frame: np.ndarray | None = None
@@ -63,7 +65,9 @@ class StreamWorker(threading.Thread):
             cap = cv2.VideoCapture(self._url, cv2.CAP_FFMPEG)
             if not cap.isOpened():
                 cap.release()
-                logger.warning("Camara %s (%s): no se pudo abrir el stream", self.device_id, self.kind)
+                logger.warning(
+                    "Camara %s (%s): no se pudo abrir el stream", self.device_id, self.kind
+                )
                 self._report_status(False, "No se pudo abrir el stream")
                 if self._stop_event.wait(RECONNECT_DELAY_S):
                     break

@@ -194,7 +194,7 @@ class UserManagementModule(QWidget):
         if dialog.exec():
             values = dialog.values()
             auth.create_user(values["username"], values["password"], values["role"])
-            notify(self, "Usuarios", f"Usuario \"{values['username']}\" creado.")
+            notify(self, "Usuarios", f'Usuario "{values["username"]}" creado.')
             self._reload()
 
     def _on_reset_password(self, user: User) -> None:
@@ -204,9 +204,9 @@ class UserManagementModule(QWidget):
             if error:
                 warn(self, "Restablecer contraseña", error)
                 return
-            notify(self, "Restablecer contraseña", f"Contraseña de \"{user.username}\" actualizada.")
+            notify(self, "Restablecer contraseña", f'Contraseña de "{user.username}" actualizada.')
 
     def _on_delete(self, user: User) -> None:
-        if confirm(self, "Eliminar usuario", f"¿Eliminar el usuario \"{user.username}\"?"):
+        if confirm(self, "Eliminar usuario", f'¿Eliminar el usuario "{user.username}"?'):
             repository.delete_user(user.id)
             self._reload()

@@ -24,7 +24,13 @@ def _ptz_service_and_token(ip: str, port: int, username: str, password: str):
 
 
 def continuous_move(
-    ip: str, port: int, username: str, password: str, pan: float = 0.0, tilt: float = 0.0, zoom: float = 0.0
+    ip: str,
+    port: int,
+    username: str,
+    password: str,
+    pan: float = 0.0,
+    tilt: float = 0.0,
+    zoom: float = 0.0,
 ) -> None:
     """Empieza a mover la camara a velocidad constante en la direccion
     dada (-1.0 a 1.0 por eje). Hay que llamar a stop() para detenerla."""

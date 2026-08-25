@@ -11,7 +11,12 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from aurea_vms.core.analytics.base import AnalysisResult, Analyzer, rescale_bbox, resize_for_inference
+from aurea_vms.core.analytics.base import (
+    AnalysisResult,
+    Analyzer,
+    rescale_bbox,
+    resize_for_inference,
+)
 from aurea_vms.core.analytics.object_detector_backend import create_object_detector
 from aurea_vms.core.analytics.tracker import CentroidTracker
 from aurea_vms.core.events import Detection
@@ -46,7 +51,9 @@ class LineCrossingAnalyzer(Analyzer):
         (self._x1, self._y1), (self._x2, self._y2) = line
         self.label_in = label_in
         self.label_out = label_out
-        self._tracker = CentroidTracker(max_age_s=track_max_age_s, min_hits=max(1, confirmation_frames))
+        self._tracker = CentroidTracker(
+            max_age_s=track_max_age_s, min_hits=max(1, confirmation_frames)
+        )
         self._count_in = 0
         self._count_out = 0
 

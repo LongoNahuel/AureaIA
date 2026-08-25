@@ -6,9 +6,15 @@ las reconoce; el resto se auto-descarta a los pocos segundos."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
-from qfluentwidgets import BodyLabel, CaptionLabel, FluentIcon, HyperlinkButton, TransparentToolButton
+from qfluentwidgets import (
+    BodyLabel,
+    CaptionLabel,
+    FluentIcon,
+    HyperlinkButton,
+    TransparentToolButton,
+)
 
 from aurea_vms.core.events import AlarmEvent
 from aurea_vms.models import repository
@@ -21,7 +27,7 @@ MAX_VISIBLE = 5
 
 
 class _AlertCard(QWidget):
-    def __init__(self, event: AlarmEvent, device_name: str, parent: "GlobalAlertPopupLayer") -> None:
+    def __init__(self, event: AlarmEvent, device_name: str, parent: GlobalAlertPopupLayer) -> None:
         super().__init__(parent)
         self._layer = parent
         self._event = event

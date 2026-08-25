@@ -9,12 +9,23 @@ dist/
 data/*.sqlite3
 data/clips/*
 data/snapshots/*
+data/media/*
 !data/clips/.gitkeep
 !data/snapshots/.gitkeep
+!data/media/.gitkeep
+data/preferences.json
+*.log
 
 .pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 *.jpg
 *.png
 *.mp4
+# Los assets de la UI (logo, fondos, videos de marca) SI se versionan --
+# sin esta excepcion los patrones globales de arriba se los comen y un
+# clon fresco pierde el branding.
+!aurea_vms/ui/assets/**
 .claude/
 

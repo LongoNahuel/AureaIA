@@ -21,7 +21,15 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
-from PySide6.QtWidgets import QButtonGroup, QGridLayout, QHBoxLayout, QSplitter, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QButtonGroup,
+    QGridLayout,
+    QHBoxLayout,
+    QSplitter,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 from qfluentwidgets import CaptionLabel, FluentIcon, TogglePushButton, TransparentToolButton
 
 from aurea_vms.models import repository
@@ -113,12 +121,18 @@ class LiveViewModule(QWidget):
         layout.addWidget(self.smart_tile, stretch=1)
 
         panel_style = "HeaderCardWidget { background-color: rgba(16, 21, 30, 210); }"
-        all_panels = (self.motion_panel, self.people_count_panel, self.line_crossing_panel, self.face_gallery)
+        all_panels = (
+            self.motion_panel,
+            self.people_count_panel,
+            self.line_crossing_panel,
+            self.face_gallery,
+        )
         for panel in all_panels:
             panel.setStyleSheet(panel_style)
 
         self.no_analyzers_label = CaptionLabel(
-            "Esta cámara no tiene analizadores habilitados.\nConfiguralos en el módulo Analizadores.", container
+            "Esta cámara no tiene analizadores habilitados.\nConfiguralos en el módulo Analizadores.",
+            container,
         )
         self.no_analyzers_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.no_analyzers_label.setWordWrap(True)
@@ -216,7 +230,9 @@ class LiveViewModule(QWidget):
 
     def _assign_to_selected(self, device_id: int) -> None:
         if self._selected_tile is None:
-            default_tile = self.smart_tile if self.view_stack.currentIndex() == MODE_SMART else self.tiles[0]
+            default_tile = (
+                self.smart_tile if self.view_stack.currentIndex() == MODE_SMART else self.tiles[0]
+            )
             self._on_tile_clicked(default_tile)
         self._selected_tile.assign_device(device_id)
 

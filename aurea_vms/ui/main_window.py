@@ -16,7 +16,11 @@ from aurea_vms.core.events import AlarmEvent
 from aurea_vms.models import repository
 from aurea_vms.models.user import ROLE_ADMIN
 from aurea_vms.ui import icons
-from aurea_vms.ui.dialogs.command_palette_dialog import ACTION_OPEN_MODULE, ACTION_QUICK_VIEW, CommandPaletteDialog
+from aurea_vms.ui.dialogs.command_palette_dialog import (
+    ACTION_OPEN_MODULE,
+    ACTION_QUICK_VIEW,
+    CommandPaletteDialog,
+)
 from aurea_vms.ui.launcher_page import LauncherPage
 from aurea_vms.ui.modules.alarm_module import AlarmModule
 from aurea_vms.ui.modules.alert_config import AlertConfigModule
@@ -83,7 +87,9 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
 
-        self.launcher = LauncherPage(MODULES, self._visible_categories(), auth.is_admin(), self.tabs)
+        self.launcher = LauncherPage(
+            MODULES, self._visible_categories(), auth.is_admin(), self.tabs
+        )
         self.launcher.module_requested.connect(self.open_module_by_index)
         self.launcher.shortcut_requested.connect(self._on_home_shortcut)
         self.tabs.addTab(self.launcher, "Inicio", FluentIcon.HOME, routeKey="home")
@@ -157,7 +163,7 @@ class MainWindow(QMainWindow):
             event_bus.open_live_view_requested.emit(value)
 
     def _on_open_live_view_requested(self, device_id: int) -> None:
-        """"Vista rapida" desde Dispositivos: abre/enfoca Vista en Vivo y
+        """ "Vista rapida" desde Dispositivos: abre/enfoca Vista en Vivo y
         asigna esta camara en Vista Inteligente."""
         self.open_module_by_index(0)
         live_view = self.tabs.currentWidget()
@@ -166,7 +172,7 @@ class MainWindow(QMainWindow):
             focus_camera(device_id)
 
     def _on_open_analytics_config_requested(self, device_id: int) -> None:
-        """"Ajustes avanzados" desde Dispositivos: abre/enfoca Analizadores
+        """ "Ajustes avanzados" desde Dispositivos: abre/enfoca Analizadores
         con esta camara seleccionada."""
         self.open_module_by_index(2)
         analytics_module = self.tabs.currentWidget()
@@ -188,7 +194,11 @@ class MainWindow(QMainWindow):
     def open_module_by_index(self, index: int) -> None:
         label, icon_factory, module_cls = MODULES[index]
         if label in ADMIN_ONLY_LABELS and not auth.is_admin():
-            warn(self, "Acceso restringido", "Esta sección requiere un usuario con rol Administrador.")
+            warn(
+                self,
+                "Acceso restringido",
+                "Esta sección requiere un usuario con rol Administrador.",
+            )
             return
 
         route_key = f"module-{index}"

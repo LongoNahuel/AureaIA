@@ -85,8 +85,15 @@ def _record_clip(device_id: int, alarm_event_id: int) -> None:
 
         clip_path = _write_mp4(device_id, alarm_event_id, all_frames)
         repository.update_alarm_event(alarm_event_id, clip_path=clip_path)
-        logger.info("Clip de evento #%s guardado en %s (%d frames)", alarm_event_id, clip_path, len(all_frames))
-        event_bus.clip_ready.emit(ClipReadyEvent(alarm_event_id=alarm_event_id, clip_path=clip_path))
+        logger.info(
+            "Clip de evento #%s guardado en %s (%d frames)",
+            alarm_event_id,
+            clip_path,
+            len(all_frames),
+        )
+        event_bus.clip_ready.emit(
+            ClipReadyEvent(alarm_event_id=alarm_event_id, clip_path=clip_path)
+        )
     finally:
         with _threads_lock:
             current = threading.current_thread()

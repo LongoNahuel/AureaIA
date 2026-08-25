@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QTime, Qt
+from PySide6.QtCore import Qt, QTime
 from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QTimeEdit
-from qfluentwidgets import BodyLabel, CaptionLabel, CheckBox, DoubleSpinBox, SpinBox, Slider
+from qfluentwidgets import BodyLabel, CaptionLabel, CheckBox, DoubleSpinBox, Slider, SpinBox
 
 from aurea_vms.models.analytics_config import AnalyticsConfig
 from aurea_vms.ui.dialogs.analytics_config_dialog_base import AnalyticsConfigDialogBase
@@ -95,8 +95,8 @@ class FaceDetectionConfigDialog(AnalyticsConfigDialogBase):
         form.addRow("Capturas por rostro:", self.max_captures_spin)
         form.addRow(
             CaptionLabel(
-                "La galería guarda como mucho \"Capturas por rostro\" fotos del mismo rostro "
-                "(1 = una sola vez). \"Umbral de nueva captura\" define qué tan distinto tiene "
+                'La galería guarda como mucho "Capturas por rostro" fotos del mismo rostro '
+                '(1 = una sola vez). "Umbral de nueva captura" define qué tan distinto tiene '
                 "que verse para no contarlo como el mismo: más alto = más estricto (menos "
                 "capturas), más bajo = más sensible a cambios sutiles."
             )

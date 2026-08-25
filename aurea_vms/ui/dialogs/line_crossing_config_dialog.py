@@ -17,7 +17,9 @@ class LineCrossingConfigDialog(AnalyticsConfigDialogBase):
 
     def build_extra_fields(self, form: QFormLayout, existing: AnalyticsConfig | None) -> None:
         params = (existing.params if existing else {}) or {}
-        selected = set(existing.object_classes if existing and existing.object_classes else ["person"])
+        selected = set(
+            existing.object_classes if existing and existing.object_classes else ["person"]
+        )
 
         self.class_checks: dict[str, CheckBox] = {}
         classes_row = QHBoxLayout()

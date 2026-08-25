@@ -59,7 +59,9 @@ class MotionDetectionAnalyzer(Analyzer):
             # mucho mas preciso para marcar donde esta el movimiento real.
             perimeter = cv2.arcLength(contour, True)
             simplified = cv2.approxPolyDP(contour, 0.01 * perimeter, True)
-            polygon = tuple((int(pt[0][0] + offset_x), int(pt[0][1] + offset_y)) for pt in simplified)
+            polygon = tuple(
+                (int(pt[0][0] + offset_x), int(pt[0][1] + offset_y)) for pt in simplified
+            )
 
             detections.append(
                 Detection(

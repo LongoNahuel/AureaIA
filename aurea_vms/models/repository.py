@@ -79,7 +79,9 @@ def get_analytics_config_for(device_id: int, analyzer_name: str) -> AnalyticsCon
         )
 
 
-def upsert_analytics_config(device_id: int, analyzer_name: str, **fields: object) -> AnalyticsConfig:
+def upsert_analytics_config(
+    device_id: int, analyzer_name: str, **fields: object
+) -> AnalyticsConfig:
     with get_session() as session:
         config = (
             session.query(AnalyticsConfig)

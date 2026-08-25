@@ -33,9 +33,7 @@ class FrameSelectorWidget(QLabel):
         self.setMinimumSize(320, 180)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setStyleSheet(
-            "background-color: #10151c; color: #6b7280; border: 1px solid #2a3441;"
-        )
+        self.setStyleSheet("background-color: #10151c; color: #6b7280; border: 1px solid #2a3441;")
         self.setText("Sin captura")
 
     def set_frame(self, frame: np.ndarray) -> None:

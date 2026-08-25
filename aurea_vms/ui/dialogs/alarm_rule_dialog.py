@@ -6,7 +6,16 @@ from __future__ import annotations
 
 from PySide6.QtCore import QTime
 from PySide6.QtWidgets import QDialog, QFormLayout, QHBoxLayout, QTimeEdit, QVBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, CheckBox, ComboBox, DoubleSpinBox, FluentIcon, PrimaryPushButton, PushButton, SpinBox
+from qfluentwidgets import (
+    CaptionLabel,
+    CheckBox,
+    ComboBox,
+    DoubleSpinBox,
+    FluentIcon,
+    PrimaryPushButton,
+    PushButton,
+    SpinBox,
+)
 
 from aurea_vms.core.analytics.registry import ANALYZER_DISPLAY_NAMES, AVAILABLE_ANALYZERS
 from aurea_vms.models import repository
@@ -169,7 +178,9 @@ class AlarmRuleDialog(QDialog):
         self.confidence_spin.setValue(rule.min_confidence)
         self.cooldown_spin.setValue(rule.cooldown_seconds)
         self.save_clip_check.setChecked(bool((rule.actions or {}).get("save_clip", True)))
-        self.notify_desktop_check.setChecked(bool((rule.actions or {}).get("notify_desktop", False)))
+        self.notify_desktop_check.setChecked(
+            bool((rule.actions or {}).get("notify_desktop", False))
+        )
         self.enabled_check.setChecked(rule.enabled)
 
         for day, check in self.day_checks.items():
@@ -194,7 +205,9 @@ class AlarmRuleDialog(QDialog):
         return {
             "device_id": self.device_selector.currentData(),
             "analyzer_name": self.analyzer_selector.currentData(),
-            "object_classes": [cls for cls, check in self.class_checks.items() if check.isChecked()],
+            "object_classes": [
+                cls for cls, check in self.class_checks.items() if check.isChecked()
+            ],
             "severity": self.severity_selector.currentData(),
             "min_confidence": self.confidence_spin.value(),
             "cooldown_seconds": self.cooldown_spin.value(),
@@ -205,6 +218,10 @@ class AlarmRuleDialog(QDialog):
             },
             "enabled": self.enabled_check.isChecked(),
             "schedule_days": [day for day, check in self.day_checks.items() if check.isChecked()],
-            "schedule_start": self.start_time_edit.time().toString("HH:mm") if schedule_active else None,
-            "schedule_end": self.end_time_edit.time().toString("HH:mm") if schedule_active else None,
+            "schedule_start": self.start_time_edit.time().toString("HH:mm")
+            if schedule_active
+            else None,
+            "schedule_end": self.end_time_edit.time().toString("HH:mm")
+            if schedule_active
+            else None,
         }

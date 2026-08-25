@@ -88,7 +88,9 @@ class PtzControlPanel(HeaderCardWidget):
     def _run(self, func) -> None:
         worker = FunctionWorker(func, self)
         worker.failed.connect(lambda msg: self.status_label.setText(f"Error PTZ: {msg}"))
-        worker.finished.connect(lambda: self._workers.remove(worker) if worker in self._workers else None)
+        worker.finished.connect(
+            lambda: self._workers.remove(worker) if worker in self._workers else None
+        )
         self._workers.append(worker)
         worker.start()
 
@@ -109,4 +111,6 @@ class PtzControlPanel(HeaderCardWidget):
         if device is None or device.onvif_port is None:
             return
         self.status_label.setText("")
-        self._run(lambda: ptz_control.stop(device.ip, device.onvif_port, device.username, device.password))
+        self._run(
+            lambda: ptz_control.stop(device.ip, device.onvif_port, device.username, device.password)
+        )

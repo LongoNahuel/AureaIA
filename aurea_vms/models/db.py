@@ -39,7 +39,13 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
     # Importar los modelos para que queden registrados en Base.metadata
-    from aurea_vms.models import alarm_event, alarm_rule, analytics_config, device, user  # noqa: F401
+    from aurea_vms.models import (  # noqa: F401
+        alarm_event,
+        alarm_rule,
+        analytics_config,
+        device,
+        user,
+    )
 
     Base.metadata.create_all(_engine)
 

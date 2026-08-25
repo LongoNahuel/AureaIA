@@ -34,7 +34,9 @@ def _ensure_model() -> str:
     return str(model_path)
 
 
-def create_object_detector(category_allowlist: list[str], confidence_threshold: float, max_results: int = 20):
+def create_object_detector(
+    category_allowlist: list[str], confidence_threshold: float, max_results: int = 20
+):
     """Devuelve (modulo mediapipe, ObjectDetector ya configurado). Cada
     analizador arma su propia instancia porque el allowlist/umbral se fija
     al crear el detector, no por llamada -- distinto al viejo backend YOLO

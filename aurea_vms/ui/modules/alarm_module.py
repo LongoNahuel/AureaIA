@@ -27,7 +27,12 @@ from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import AlarmEvent as AlarmEventDTO
 from aurea_vms.core.events import ClipReadyEvent
 from aurea_vms.models import repository
-from aurea_vms.models.alarm_event import STATUS_ACKNOWLEDGED, STATUS_INVESTIGATING, STATUS_NEW, STATUS_RESOLVED
+from aurea_vms.models.alarm_event import (
+    STATUS_ACKNOWLEDGED,
+    STATUS_INVESTIGATING,
+    STATUS_NEW,
+    STATUS_RESOLVED,
+)
 from aurea_vms.models.alarm_event import AlarmEvent as AlarmEventRow
 from aurea_vms.ui.labels import display_class
 from aurea_vms.ui.notify import notify, warn
@@ -128,7 +133,9 @@ class AlarmModule(QWidget):
         self.table.setItem(row, 1, QTableWidgetItem(device_name))
         self.table.setItem(row, 2, QTableWidgetItem(display_class(alarm_event.object_class)))
 
-        severity_item = QTableWidgetItem(SEVERITY_LABELS.get(alarm_event.severity, alarm_event.severity))
+        severity_item = QTableWidgetItem(
+            SEVERITY_LABELS.get(alarm_event.severity, alarm_event.severity)
+        )
         color = SEVERITY_COLORS.get(alarm_event.severity, "#e5e7eb")
         severity_item.setForeground(Qt.GlobalColor.white)
         severity_item.setBackground(QColor(color))
@@ -149,7 +156,9 @@ class AlarmModule(QWidget):
                 )
         self.table.setCellWidget(row, 5, thumb_label)
 
-        self.table.setItem(row, 6, QTableWidgetItem(STATUS_LABELS.get(alarm_event.status, alarm_event.status)))
+        self.table.setItem(
+            row, 6, QTableWidgetItem(STATUS_LABELS.get(alarm_event.status, alarm_event.status))
+        )
 
     def _selected_event(self) -> AlarmEventRow | None:
         rows = self.table.selectionModel().selectedRows()

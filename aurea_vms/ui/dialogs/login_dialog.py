@@ -7,7 +7,13 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, LineEdit, PasswordLineEdit, PrimaryPushButton, StrongBodyLabel
+from qfluentwidgets import (
+    CaptionLabel,
+    LineEdit,
+    PasswordLineEdit,
+    PrimaryPushButton,
+    StrongBodyLabel,
+)
 
 from aurea_vms.core import auth
 from aurea_vms.ui import icons

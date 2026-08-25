@@ -10,7 +10,14 @@ propios (sensibilidad, clases a contar, etiquetas, etc.).
 from __future__ import annotations
 
 from PySide6.QtWidgets import QDialog, QFormLayout, QHBoxLayout, QVBoxLayout, QWidget
-from qfluentwidgets import BodyLabel, CheckBox, DoubleSpinBox, FluentIcon, PrimaryPushButton, PushButton
+from qfluentwidgets import (
+    BodyLabel,
+    CheckBox,
+    DoubleSpinBox,
+    FluentIcon,
+    PrimaryPushButton,
+    PushButton,
+)
 
 from aurea_vms.core import device_manager
 from aurea_vms.models import repository

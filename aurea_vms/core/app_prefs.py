@@ -29,7 +29,7 @@ def _write(data: dict) -> None:
 
 
 def get_theme() -> str:
-    """"dark" | "light"."""
+    """ "dark" | "light"."""
     return _read().get("theme", "dark")
 
 

@@ -5,7 +5,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from aurea_vms.models.db import Base
 
-
 ROLE_ADMIN = "admin"
 ROLE_OPERATOR = "operador"
 

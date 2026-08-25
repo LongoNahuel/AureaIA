@@ -35,7 +35,9 @@ class TrackedObject:
 
 
 class CentroidTracker:
-    def __init__(self, max_distance: float = 80.0, max_age_s: float = 2.0, min_hits: int = 1) -> None:
+    def __init__(
+        self, max_distance: float = 80.0, max_age_s: float = 2.0, min_hits: int = 1
+    ) -> None:
         self.max_distance = max_distance
         self.max_age_s = max_age_s
         self.min_hits = max(1, min_hits)
@@ -44,7 +46,9 @@ class CentroidTracker:
 
     def update(self, detections: list[Detection], timestamp: float) -> dict[int, TrackedObject]:
         expired = [
-            tid for tid, track in self.tracks.items() if timestamp - track.last_seen > self.max_age_s
+            tid
+            for tid, track in self.tracks.items()
+            if timestamp - track.last_seen > self.max_age_s
         ]
         for tid in expired:
             del self.tracks[tid]

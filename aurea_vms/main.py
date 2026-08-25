@@ -55,9 +55,8 @@ def main() -> int:
 
     # Primer arranque (sin usuarios todavia): alta del Super Administrador.
     # Si se cierra el wizard sin completarlo, la app no llega a abrir.
-    if not auth.has_admin_user():
-        if SetupWizardDialog().exec() != QDialog.DialogCode.Accepted:
-            return 0
+    if not auth.has_admin_user() and SetupWizardDialog().exec() != QDialog.DialogCode.Accepted:
+        return 0
 
     # Login <-> MainWindow: "Cerrar sesión" cierra la ventana principal y
     # vuelve a mostrar el login (sin salir del proceso); cerrar la ventana

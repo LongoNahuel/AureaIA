@@ -43,7 +43,9 @@ def create_admin_user(username: str, password: str) -> User:
 def create_user(username: str, password: str, role: str) -> User:
     salt = os.urandom(16)
     password_hash = _hash_password(password, salt)
-    return repository.add_user(username=username, password_hash=password_hash, salt=salt.hex(), role=role)
+    return repository.add_user(
+        username=username, password_hash=password_hash, salt=salt.hex(), role=role
+    )
 
 
 def authenticate(username: str, password: str) -> User | None:
@@ -86,7 +88,9 @@ def change_password(username: str, current_password: str, new_password: str) -> 
     if error:
         return error
     salt = os.urandom(16)
-    repository.update_user(user.id, password_hash=_hash_password(new_password, salt), salt=salt.hex())
+    repository.update_user(
+        user.id, password_hash=_hash_password(new_password, salt), salt=salt.hex()
+    )
     return None
 
 
@@ -97,7 +101,9 @@ def admin_reset_password(user_id: int, new_password: str) -> str | None:
     if error:
         return error
     salt = os.urandom(16)
-    repository.update_user(user_id, password_hash=_hash_password(new_password, salt), salt=salt.hex())
+    repository.update_user(
+        user_id, password_hash=_hash_password(new_password, salt), salt=salt.hex()
+    )
     return None
 
 
@@ -116,7 +122,7 @@ def validate_password(password: str) -> str | None:
 
 
 def password_strength(password: str) -> str:
-    """"Débil" | "Media" | "Fuerte", para el indicador visual mientras se
+    """ "Débil" | "Media" | "Fuerte", para el indicador visual mientras se
     escribe (no bloquea nada por si sola, solo orienta)."""
     if not password:
         return ""

@@ -6,7 +6,14 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QVBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, LineEdit, PasswordLineEdit, PrimaryPushButton, ProgressBar, StrongBodyLabel
+from qfluentwidgets import (
+    CaptionLabel,
+    LineEdit,
+    PasswordLineEdit,
+    PrimaryPushButton,
+    ProgressBar,
+    StrongBodyLabel,
+)
 
 from aurea_vms.core import auth
 from aurea_vms.ui import icons
@@ -91,7 +98,9 @@ class SetupWizardDialog(QDialog):
         self.strength_bar.setFixedHeight(4)
         form_layout.addWidget(self.strength_bar)
 
-        self.strength_label = CaptionLabel("Al menos 9 caracteres, combinando letras, números y símbolos.", form_panel)
+        self.strength_label = CaptionLabel(
+            "Al menos 9 caracteres, combinando letras, números y símbolos.", form_panel
+        )
         self.strength_label.setWordWrap(True)
         form_layout.addWidget(self.strength_label)
 
@@ -121,7 +130,9 @@ class SetupWizardDialog(QDialog):
             self.strength_label.setText(f"Fortaleza: {text}")
             self.strength_label.setStyleSheet(f"color: {color};")
         else:
-            self.strength_label.setText("Al menos 9 caracteres, combinando letras, números y símbolos.")
+            self.strength_label.setText(
+                "Al menos 9 caracteres, combinando letras, números y símbolos."
+            )
             self.strength_label.setStyleSheet("")
 
     def _on_accept(self) -> None:

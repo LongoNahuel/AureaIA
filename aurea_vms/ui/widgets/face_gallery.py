@@ -20,7 +20,13 @@ import numpy as np
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, FluentIcon, HeaderCardWidget, ListWidget, TransparentToolButton
+from qfluentwidgets import (
+    CaptionLabel,
+    FluentIcon,
+    HeaderCardWidget,
+    ListWidget,
+    TransparentToolButton,
+)
 
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import DetectionEvent
@@ -114,7 +120,9 @@ class FaceGallery(HeaderCardWidget):
             reset_hour, reset_minute = 0, 0
 
         now = dt.datetime.now()
-        reset_moment_today = now.replace(hour=reset_hour, minute=reset_minute, second=0, microsecond=0)
+        reset_moment_today = now.replace(
+            hour=reset_hour, minute=reset_minute, second=0, microsecond=0
+        )
         if now >= reset_moment_today and self._last_reset_date != now.date():
             self._total_count = 0
             self._last_reset_date = now.date()
@@ -174,7 +182,9 @@ class FaceGallery(HeaderCardWidget):
                 Qt.TransformationMode.SmoothTransformation,
             )
             item = QListWidgetItem(QIcon(pixmap), when)
-            item.setData(Qt.ItemDataRole.UserRole, {"signature": signature, "count": already_captured + 1})
+            item.setData(
+                Qt.ItemDataRole.UserRole, {"signature": signature, "count": already_captured + 1}
+            )
             self.list_widget.insertItem(0, item)
 
             if counting_enabled:

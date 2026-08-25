@@ -35,7 +35,7 @@ class OnvifDiscoveryDialog(QDialog):
         self.password_edit = PasswordLineEdit()
         self.fetch_button = PushButton(FluentIcon.DOWNLOAD, "Obtener perfiles")
         self.fetch_button.setEnabled(False)
-        self.status_label = BodyLabel("Presioná \"Escanear LAN\" para buscar cámaras.")
+        self.status_label = BodyLabel('Presioná "Escanear LAN" para buscar cámaras.')
         self.status_label.setWordWrap(True)
 
         cred_row = QHBoxLayout()

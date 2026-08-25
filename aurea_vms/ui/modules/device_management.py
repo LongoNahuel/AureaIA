@@ -187,7 +187,9 @@ class DeviceManagementModule(QWidget):
         header = self.managed_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(len(MANAGED_COLUMNS) - 1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(
+            len(MANAGED_COLUMNS) - 1, QHeaderView.ResizeMode.ResizeToContents
+        )
         self.managed_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.managed_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.managed_table.setBorderVisible(True)
@@ -281,7 +283,9 @@ class DeviceManagementModule(QWidget):
             worker.succeeded.connect(on_success)
         if on_error:
             worker.failed.connect(on_error)
-        worker.finished.connect(lambda: self._workers.remove(worker) if worker in self._workers else None)
+        worker.finished.connect(
+            lambda: self._workers.remove(worker) if worker in self._workers else None
+        )
         self._workers.append(worker)
         worker.start()
 
@@ -314,11 +318,13 @@ class DeviceManagementModule(QWidget):
         if not device.onvif_port:
             warn(self, "Reiniciar", "Este dispositivo no tiene puerto ONVIF configurado.")
             return
-        if not confirm(self, "Reiniciar dispositivo", f"¿Reiniciar \"{device.name}\" ({device.ip})?"):
+        if not confirm(self, "Reiniciar dispositivo", f'¿Reiniciar "{device.name}" ({device.ip})?'):
             return
         self.status_label.setText(f"Reiniciando {device.name}...")
         self._run(
-            lambda: device_manager.reboot_device(device.ip, device.onvif_port, device.username, device.password),
+            lambda: device_manager.reboot_device(
+                device.ip, device.onvif_port, device.username, device.password
+            ),
             lambda _r: notify(self, "Reiniciar", f"Reinicio solicitado a {device.name}."),
             lambda msg: warn(self, "Reiniciar", f"No se pudo reiniciar: {msg}"),
         )
@@ -329,7 +335,9 @@ class DeviceManagementModule(QWidget):
             warn(self, "Eliminar dispositivos", "Marcá la casilla de los dispositivos a eliminar.")
             return
         plural = "s" if len(device_ids) > 1 else ""
-        if not confirm(self, "Eliminar dispositivos", f"¿Eliminar {len(device_ids)} dispositivo{plural}?"):
+        if not confirm(
+            self, "Eliminar dispositivos", f"¿Eliminar {len(device_ids)} dispositivo{plural}?"
+        ):
             return
         for device_id in device_ids:
             repository.delete_device(device_id)
@@ -375,7 +383,9 @@ class DeviceManagementModule(QWidget):
         self.discovered_table.setHorizontalHeaderLabels(DISCOVERED_COLUMNS)
         header = self.discovered_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(len(DISCOVERED_COLUMNS) - 1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(
+            len(DISCOVERED_COLUMNS) - 1, QHeaderView.ResizeMode.ResizeToContents
+        )
         self.discovered_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.discovered_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.discovered_table.setBorderVisible(True)
@@ -420,7 +430,9 @@ class DeviceManagementModule(QWidget):
                 self.discovered_table.setCellWidget(row, 6, added_label)
             else:
                 add_button = _row_icon_button(FluentIcon.ADD, "Agregar")
-                add_button.clicked.connect(lambda _checked=False, r=result: self._on_add_discovered(r))
+                add_button.clicked.connect(
+                    lambda _checked=False, r=result: self._on_add_discovered(r)
+                )
                 self.discovered_table.setCellWidget(row, 6, add_button)
         self._apply_discovered_filter(self.discovered_search.text())
 
@@ -445,7 +457,9 @@ class DeviceManagementModule(QWidget):
         self._run(
             lambda: device_manager.fetch_onvif_profiles(result.ip, result.port, username, password),
             lambda info: self._open_prefilled_dialog(result, username, password, info),
-            lambda msg: warn(self, "Descubrimiento ONVIF", f"No se pudieron obtener los perfiles: {msg}"),
+            lambda msg: warn(
+                self, "Descubrimiento ONVIF", f"No se pudieron obtener los perfiles: {msg}"
+            ),
         )
 
     def _open_prefilled_dialog(
@@ -476,6 +490,6 @@ class DeviceManagementModule(QWidget):
             serial_number=result.serial_number,
         )
         repository.add_device(**values)
-        notify(self, "Dispositivo agregado", f"\"{values['name']}\" se agregó correctamente.")
+        notify(self, "Dispositivo agregado", f'"{values["name"]}" se agregó correctamente.')
         self._reload_managed()
         self._reload_discovered_table()
