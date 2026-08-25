@@ -38,12 +38,13 @@ class Analyzer(ABC):
     @abstractmethod
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult: ...
 
-    def close(self) -> None:
+    def close(self) -> None:  # noqa: B027 - hook opcional, no abstracto a proposito
         """Libera recursos nativos (modelos de MediaPipe). Se llama al
         detener el analizador: sin esto el modelo (~12MB) queda vivo hasta
         el GC, y los destructores nativos de MediaPipe corriendo recien al
         cierre del interprete pueden crashear el proceso en entornos
-        headless (visto en CI)."""
+        headless (visto en CI). Los analizadores sin recursos nativos
+        (MOG2) no necesitan implementarlo."""
 
 
 def crop_to_roi(
