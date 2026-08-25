@@ -12,13 +12,11 @@ una camara de seguridad mirando una escena completa."""
 
 from __future__ import annotations
 
-import urllib.request
-
 import cv2
 import numpy as np
 
-from aurea_vms.config.settings import settings
 from aurea_vms.core.analytics.base import AnalysisResult, Analyzer, crop_to_roi
+from aurea_vms.core.analytics.model_assets import ensure_model
 from aurea_vms.core.events import Detection
 
 MODEL_URL = (
@@ -37,11 +35,7 @@ ANGLE_SYMMETRY_MIN = 0.45  # por debajo de esto se descarta como muy de perfil
 
 
 def _ensure_model() -> str:
-    model_path = settings.data_dir / "models" / MODEL_FILENAME
-    if not model_path.exists():
-        model_path.parent.mkdir(parents=True, exist_ok=True)
-        urllib.request.urlretrieve(MODEL_URL, model_path)
-    return str(model_path)
+    return ensure_model(MODEL_FILENAME, MODEL_URL)
 
 
 class FaceDetectionAnalyzer(Analyzer):

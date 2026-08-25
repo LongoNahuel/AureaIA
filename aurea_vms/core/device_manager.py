@@ -15,6 +15,7 @@ from urllib.parse import quote, unquote, urlparse, urlsplit, urlunsplit
 import cv2
 import numpy as np
 
+from aurea_vms.config import resources
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import DeviceStatusEvent
 from aurea_vms.models import repository
@@ -238,7 +239,7 @@ def fetch_onvif_profiles(ip: str, port: int, username: str, password: str) -> On
     las credenciales son invalidas o el dispositivo no responde."""
     from onvif import ONVIFCamera
 
-    cam = ONVIFCamera(ip, port, username, password)
+    cam = ONVIFCamera(ip, port, username, password, **resources.onvif_camera_kwargs())
     media = cam.create_media_service()
     profiles = media.GetProfiles()
     if not profiles:
@@ -266,7 +267,7 @@ def reboot_device(ip: str, port: int, username: str, password: str) -> None:
     de linea unos segundos/minutos mientras arranca de nuevo."""
     from onvif import ONVIFCamera
 
-    cam = ONVIFCamera(ip, port, username, password)
+    cam = ONVIFCamera(ip, port, username, password, **resources.onvif_camera_kwargs())
     devicemgmt = cam.create_devicemgmt_service()
     devicemgmt.SystemReboot()
     logger.info("Dispositivo %s: reinicio solicitado via ONVIF", ip)

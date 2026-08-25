@@ -61,7 +61,44 @@ def _stop_background_engines() -> None:
         _retention_worker.join(timeout=2.0)
 
 
+def _smoke_test() -> int:
+    """Verificacion minima de que el entorno (o el .exe empaquetado) esta
+    completo: directorios, DB, Qt y -- clave -- los CUATRO analizadores con
+    sus modelos nativos reales. Las DLL de MediaPipe cargan recien al
+    crear el primer detector (leccion del CI: importar mediapipe no
+    alcanza), asi que el smoke crea los detectores y procesa un frame.
+
+    Uso: AureaVMS.exe --smoke  (idealmente con AUREA_DATA_DIR a un tmp)."""
+    import numpy as np
+
+    from aurea_vms.core.analytics.registry import AVAILABLE_ANALYZERS, create_analyzer
+    from aurea_vms.models.analytics_config import AnalyticsConfig
+
+    settings.ensure_dirs()
+    setup_logging()
+    init_db()
+
+    frame = np.zeros((360, 640, 3), dtype=np.uint8)
+    for name in AVAILABLE_ANALYZERS:
+        params = {"line": [[0, 180], [640, 180]]} if name == "line_crossing" else {}
+        config = AnalyticsConfig(
+            device_id=0, analyzer_name=name, confidence_threshold=0.5, params=params
+        )
+        analyzer = create_analyzer(config)
+        analyzer.process_frame(frame, 0.0)
+        analyzer.close()
+        print(f"smoke: {name} OK")
+
+    app = QApplication(sys.argv[:1])
+    app.processEvents()
+    print("SMOKE OK")
+    return 0
+
+
 def main() -> int:
+    if "--smoke" in sys.argv:
+        return _smoke_test()
+
     settings.ensure_dirs()
     setup_logging()
     init_db()

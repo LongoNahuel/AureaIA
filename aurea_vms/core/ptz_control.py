@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import logging
 
+from aurea_vms.config import resources
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_SPEED = 0.5
@@ -15,7 +17,7 @@ DEFAULT_SPEED = 0.5
 def _ptz_service_and_token(ip: str, port: int, username: str, password: str):
     from onvif import ONVIFCamera
 
-    cam = ONVIFCamera(ip, port, username, password)
+    cam = ONVIFCamera(ip, port, username, password, **resources.onvif_camera_kwargs())
     media = cam.create_media_service()
     profiles = media.GetProfiles()
     if not profiles:

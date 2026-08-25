@@ -15,9 +15,7 @@ cuadro a cuadro)."""
 
 from __future__ import annotations
 
-import urllib.request
-
-from aurea_vms.config.settings import settings
+from aurea_vms.core.analytics.model_assets import ensure_model
 
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/object_detector/"
@@ -27,11 +25,7 @@ MODEL_FILENAME = "efficientdet_lite2.tflite"
 
 
 def _ensure_model() -> str:
-    model_path = settings.data_dir / "models" / MODEL_FILENAME
-    if not model_path.exists():
-        model_path.parent.mkdir(parents=True, exist_ok=True)
-        urllib.request.urlretrieve(MODEL_URL, model_path)
-    return str(model_path)
+    return ensure_model(MODEL_FILENAME, MODEL_URL)
 
 
 def create_object_detector(

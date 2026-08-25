@@ -1,0 +1,39 @@
+# Compila el .exe de Windows (onedir) y lo sube como artifact.
+# Se dispara a mano (workflow_dispatch) o al taggear vX.Y.Z -- no en cada
+# push: el build tarda y el CI normal ya valida el codigo.
+name: Build Windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      QT_QPA_PLATFORM: offscreen
+      # El smoke no debe ensuciar el perfil del runner.
+      AUREA_DATA_DIR: ${{ github.workspace }}\smoke-data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Instalar proyecto + PyInstaller
+        run: pip install -e . pyinstaller
+      - name: Smoke pre-build (entorno completo, 4 analizadores reales)
+        run: python -m aurea_vms.main --smoke
+      - name: Compilar onedir
+        run: pyinstaller aurea_vms.spec --noconfirm
+      - name: Smoke del ejecutable
+        run: .\dist\AureaVMS\AureaVMS.exe --smoke
+      - name: Empaquetar zip
+        run: Compress-Archive -Path dist\AureaVMS -DestinationPath AureaVMS-win64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AureaVMS-win64
+          path: AureaVMS-win64.zip
+          retention-days: 30
