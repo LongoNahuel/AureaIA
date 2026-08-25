@@ -13,11 +13,12 @@ import hashlib
 import os
 
 from aurea_vms.models import repository
-from aurea_vms.models.user import ROLE_ADMIN, ROLE_OPERATOR, User
+from aurea_vms.models.user import ROLE_ADMIN, ROLES, User
 
 _ITERATIONS = 260_000
 PASSWORD_MIN_LENGTH = 9
-ROLES = (ROLE_ADMIN, ROLE_OPERATOR)
+
+__all__ = ["ROLES"]  # re-export por compatibilidad
 
 current_user: User | None = None
 
