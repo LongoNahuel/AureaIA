@@ -1,26 +1,31 @@
-"""Vista en Vivo: arbol de camaras (izquierda) + area principal con dos
-modos:
+"""Vista en Vivo: arbol de camaras (izquierda) + una unica grilla de video
+(layout seleccionable 1x1..4x4, expandir/colapsar con doble click) que se
+comparte entre dos modos:
 
-- Vista Normal: grilla de video con layout seleccionable (1x1..4x4).
-- Vista Inteligente: una camara enfocada + un panel por cada analizador
-  que este HABILITADO para esa camara (Movimiento, Conteo de Personas,
-  Cruce de Linea, Detecciones Faciales) -- si no hay ninguno habilitado,
-  muestra un aviso invitando a configurarlos en el modulo Analizadores.
+- Vista en Vivo (pura): solo la grilla, sin panel de analitica -- para
+  simplemente mirar camaras.
+- Vista Inteligente: la MISMA grilla + un panel lateral con un submenu
+  moderno tipo pivot (uno por cada analizador HABILITADO en la camara
+  seleccionada: Movimiento, Conteo de Personas, Cruce de Linea,
+  Detecciones Faciales) que alterna cual panel se muestra -- si no hay
+  ninguno habilitado, muestra un aviso invitando a configurarlos en el
+  modulo Analizadores. Cambiar de modo no reordena ni reconstruye la
+  grilla: solo muestra u oculta el panel lateral.
 
 Asignar una camara a un tile se hace arrastrandola desde el arbol, o con
 doble click en el arbol estando el tile seleccionado (click simple sobre
-el tile lo selecciona) -- funciona igual en ambos modos.
+el tile lo selecciona, y ese es el tile que alimenta el panel lateral en
+Vista Inteligente) -- funciona igual en ambos modos.
 
-En Vista Normal, doble click SOBRE un tile con camara asignada lo expande
-a pantalla completa de la grilla y pasa de sub-flujo a flujo principal
-(RTSP main, mayor resolucion); doble click de nuevo lo colapsa y vuelve
-a sub-flujo.
+Doble click SOBRE un tile con camara asignada lo expande a pantalla
+completa de la grilla y pasa de sub-flujo a flujo principal (RTSP main,
+mayor resolucion); doble click de nuevo lo colapsa y vuelve a sub-flujo.
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QKeySequence, QShortcut
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
     QGridLayout,
@@ -30,12 +35,18 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from qfluentwidgets import CaptionLabel, FluentIcon, TogglePushButton, TransparentToolButton
+from qfluentwidgets import (
+    CaptionLabel,
+    FluentIcon,
+    SegmentedWidget,
+    TogglePushButton,
+    TransparentToolButton,
+)
 
+from aurea_vms.core import app_state
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.models import repository
 from aurea_vms.ui import icons
-from aurea_vms.ui.widgets.branded_background import BrandedBackground
 from aurea_vms.ui.widgets.device_tree import DeviceTreeWidget
 from aurea_vms.ui.widgets.face_gallery import FaceGallery
 from aurea_vms.ui.widgets.line_crossing_panel import LineCrossingPanel
@@ -54,17 +65,16 @@ MODE_SMART = 1
 class LiveViewModule(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._mode = MODE_NORMAL
         self._selected_tile: VideoTile | None = None
         self._expanded_tile: VideoTile | None = None
         self._fullscreen = False
 
         self.tiles: list[VideoTile] = [VideoTile(i, self) for i in range(MAX_TILES)]
-        self.smart_tile = VideoTile(-1, self)
-        for tile in (*self.tiles, self.smart_tile):
-            tile.clicked.connect(self._on_tile_clicked)
         for tile in self.tiles:
+            tile.clicked.connect(self._on_tile_clicked)
             tile.doubleClicked.connect(self._on_tile_double_clicked)
-        self.smart_tile.device_assigned.connect(self._on_smart_device_changed)
+            tile.device_assigned.connect(lambda _device_id, t=tile: self._on_tile_device_changed(t))
 
         self.device_tree = DeviceTreeWidget(self)
         self.device_tree.device_double_clicked.connect(self._assign_to_selected)
@@ -83,20 +93,21 @@ class LiveViewModule(QWidget):
         self.people_count_panel = PeopleCountPanel(self)
         self.line_crossing_panel = LineCrossingPanel(self)
         self.face_gallery = FaceGallery(self)
-        smart_container = self._build_smart_container()
-
-        self.view_stack = QStackedWidget(self)
-        self.view_stack.addWidget(self.grid_container)
-        self.view_stack.addWidget(smart_container)
+        self.side_panel = self._build_side_panel()
 
         mode_row = self._build_mode_toggle()
         toolbar = self._build_toolbar()
+
+        content_row = QHBoxLayout()
+        content_row.setSpacing(10)
+        content_row.addWidget(self.grid_container, stretch=1)
+        content_row.addWidget(self.side_panel)
 
         right_side = QWidget(self)
         right_layout = QVBoxLayout(right_side)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.addLayout(mode_row)
-        right_layout.addWidget(self.view_stack, stretch=1)
+        right_layout.addLayout(content_row, stretch=1)
         right_layout.addLayout(toolbar)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
@@ -114,46 +125,70 @@ class LiveViewModule(QWidget):
 
         self._apply_grid(*GRID_LAYOUTS[DEFAULT_LAYOUT_INDEX])
         self.layout_buttons.buttons()[DEFAULT_LAYOUT_INDEX].setChecked(True)
+        self.side_panel.setVisible(False)
+        self._refresh_side_panel()
 
-    def _build_smart_container(self) -> QWidget:
-        overlay = QColor(8, 11, 18, 190)
-        container = BrandedBackground(icons.algorithm_background_pixmap(), overlay, self)
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
-
-        layout.addWidget(self.smart_tile, stretch=1)
-
+    def _build_side_panel(self) -> QWidget:
         panel_style = "HeaderCardWidget { background-color: rgba(16, 21, 30, 210); }"
-        all_panels = (
-            self.motion_panel,
-            self.people_count_panel,
-            self.line_crossing_panel,
-            self.face_gallery,
-        )
-        for panel in all_panels:
+        # Orden fijo de submenu: mismo orden en el que aparecen las pestañas del
+        # pivot sea cual sea el orden en que la DB devuelva las configs.
+        self._analyzer_panels: dict[str, tuple[str, QWidget]] = {
+            "motion_detection": ("Movimiento", self.motion_panel),
+            "people_counting": ("Conteo de Personas", self.people_count_panel),
+            "line_crossing": ("Cruce de Línea", self.line_crossing_panel),
+            "face_detection": ("Detección Facial", self.face_gallery),
+        }
+        for _, panel in self._analyzer_panels.values():
             panel.setStyleSheet(panel_style)
 
+        side_panel = QWidget(self)
+        side_panel.setMaximumWidth(300)
+        side_panel.setMinimumWidth(280)
+
         self.no_analyzers_label = CaptionLabel(
-            "Esta cámara no tiene analizadores habilitados.\nConfiguralos en el módulo Analizadores.",
-            container,
+            "Seleccioná una cámara con analizadores habilitados.\n"
+            "Configuralos en el módulo Analizadores.",
+            side_panel,
         )
         self.no_analyzers_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.no_analyzers_label.setWordWrap(True)
 
-        side_panel = QWidget(container)
-        side_panel.setMaximumWidth(260)
-        side_panel.setStyleSheet("background: transparent;")
-        self.side_layout = QVBoxLayout(side_panel)
-        self.side_layout.setContentsMargins(0, 0, 0, 0)
-        self.side_layout.addWidget(self.no_analyzers_label)
-        for panel in all_panels:
-            self.side_layout.addWidget(panel)
-            panel.setVisible(False)
-        self.side_layout.addStretch(1)
+        # Submenu moderno tipo pivot: una pestaña por analizador habilitado en
+        # la camara seleccionada, alternando cual panel se ve en vez de
+        # apilarlos todos juntos.
+        self.analyzer_pivot = SegmentedWidget(side_panel)
+        self.analyzer_stack = QStackedWidget(side_panel)
 
-        layout.addWidget(side_panel)
-        return container
+        side_layout = QVBoxLayout(side_panel)
+        side_layout.setContentsMargins(0, 0, 0, 0)
+        side_layout.setSpacing(8)
+        side_layout.addWidget(self.no_analyzers_label)
+        side_layout.addWidget(self.analyzer_pivot)
+        side_layout.addWidget(self.analyzer_stack, stretch=1)
+
+        return side_panel
+
+    def _rebuild_analyzer_pivot(self, enabled_names: list[str]) -> None:
+        self.analyzer_pivot.clear()
+        while self.analyzer_stack.count():
+            self.analyzer_stack.removeWidget(self.analyzer_stack.widget(0))
+
+        for name in enabled_names:
+            label, panel = self._analyzer_panels[name]
+            self.analyzer_stack.addWidget(panel)
+            self.analyzer_pivot.addItem(
+                routeKey=name,
+                text=label,
+                onClick=lambda _checked=False, w=panel: self.analyzer_stack.setCurrentWidget(w),
+            )
+
+        has_any = bool(enabled_names)
+        self.no_analyzers_label.setVisible(not has_any)
+        self.analyzer_pivot.setVisible(has_any)
+        self.analyzer_stack.setVisible(has_any)
+        if has_any:
+            self.analyzer_pivot.setCurrentItem(enabled_names[0])
+            self.analyzer_stack.setCurrentWidget(self._analyzer_panels[enabled_names[0]][1])
 
     def _build_mode_toggle(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -161,7 +196,7 @@ class LiveViewModule(QWidget):
         self.mode_buttons = QButtonGroup(self)
         self.mode_buttons.setExclusive(True)
 
-        normal_button = TogglePushButton("Vista Normal", self)
+        normal_button = TogglePushButton("Vista en Vivo", self)
         normal_button.setChecked(True)
         normal_button.clicked.connect(lambda: self._set_mode(MODE_NORMAL))
 
@@ -177,11 +212,8 @@ class LiveViewModule(QWidget):
         return row
 
     def _set_mode(self, mode: int) -> None:
-        if mode != MODE_NORMAL and self._expanded_tile is not None:
-            self._collapse_tile()
-        self.view_stack.setCurrentIndex(mode)
-        for button in self.layout_buttons.buttons():
-            button.setVisible(mode == MODE_NORMAL)
+        self._mode = mode
+        self.side_panel.setVisible(mode == MODE_SMART)
 
     def _build_toolbar(self) -> QHBoxLayout:
         toolbar = QHBoxLayout()
@@ -206,25 +238,26 @@ class LiveViewModule(QWidget):
         return toolbar
 
     def showEvent(self, event) -> None:  # noqa: N802 - override de Qt
-        self.device_tree.reload()
+        self.device_tree.set_site_filter(app_state.current_site_id)
         super().showEvent(event)
 
-    def _on_site_filter_changed(self, _site_id: object) -> None:
-        self.device_tree.reload()
+    def _on_site_filter_changed(self, site_id: object) -> None:
+        self.device_tree.set_site_filter(site_id)
 
     def focus_camera(self, device_id: int) -> None:
         """API publica para otros modulos (ej. boton "Vista rapida" de
-        Dispositivos): cambia a Vista Inteligente y enfoca esta camara."""
+        Dispositivos): cambia a Vista Inteligente, selecciona el primer
+        tile de la grilla y le asigna esta camara."""
         self.mode_buttons.button(MODE_SMART).setChecked(True)
         self._set_mode(MODE_SMART)
-        self._on_tile_clicked(self.smart_tile)
-        self.smart_tile.assign_device(device_id)
+        self._on_tile_clicked(self.tiles[0])
+        self.tiles[0].assign_device(device_id)
 
     def on_window_closed(self) -> None:
         """Llamado por MainWindow al cerrar la pestaña: libera las camaras
         activas (si no se hace, sus StreamWorker quedarian corriendo
         indefinidamente, sin nadie que los libere)."""
-        for tile in (*self.tiles, self.smart_tile):
+        for tile in self.tiles:
             tile.release()
 
     # --- seleccion / asignacion -------------------------------------------------
@@ -234,45 +267,36 @@ class LiveViewModule(QWidget):
             self._selected_tile.set_selected(False)
         self._selected_tile = tile
         tile.set_selected(True)
+        self._refresh_side_panel()
 
     def _assign_to_selected(self, device_id: int) -> None:
         if self._selected_tile is None:
-            default_tile = (
-                self.smart_tile if self.view_stack.currentIndex() == MODE_SMART else self.tiles[0]
-            )
-            self._on_tile_clicked(default_tile)
+            self._on_tile_clicked(self.tiles[0])
         self._selected_tile.assign_device(device_id)
 
-    def _on_smart_device_changed(self, device_id: object) -> None:
-        panels = {
-            "motion_detection": self.motion_panel,
-            "people_counting": self.people_count_panel,
-            "line_crossing": self.line_crossing_panel,
-            "face_detection": self.face_gallery,
-        }
-        for panel in panels.values():
+    def _on_tile_device_changed(self, tile: VideoTile) -> None:
+        if tile is self._selected_tile:
+            self._refresh_side_panel()
+
+    def _refresh_side_panel(self) -> None:
+        device_id = self._selected_tile.device_id if self._selected_tile is not None else None
+        for _, panel in self._analyzer_panels.values():
             panel.set_device(device_id)
 
-        enabled_names: set[str] = set()
+        enabled: set[str] = set()
         if device_id is not None:
-            enabled_names = {
+            enabled = {
                 config.analyzer_name
                 for config in repository.list_analytics_configs(device_id)
                 if config.enabled
             }
-
-        any_visible = False
-        for analyzer_name, panel in panels.items():
-            visible = analyzer_name in enabled_names
-            panel.setVisible(visible)
-            any_visible = any_visible or visible
-        self.no_analyzers_label.setVisible(not any_visible)
+        # Orden fijo del pivot (definido en self._analyzer_panels), no el de la DB.
+        enabled_names = [name for name in self._analyzer_panels if name in enabled]
+        self._rebuild_analyzer_pivot(enabled_names)
 
     # --- expandir/colapsar (doble click) -------------------------------------------------
 
     def _on_tile_double_clicked(self, tile: VideoTile) -> None:
-        if self.view_stack.currentIndex() != MODE_NORMAL:
-            return
         if self._expanded_tile is tile:
             self._collapse_tile()
             return

@@ -45,6 +45,8 @@ class DeviceDialog(QDialog):
         self.name_edit = LineEdit()
 
         self.site_combo = ComboBox()
+        self.zone_combo = ComboBox()
+        self.site_combo.currentIndexChanged.connect(self._rebuild_zone_combo)
         self._reload_sites()
         new_site_button = PushButton(FluentIcon.ADD, "Nuevo")
         new_site_button.setToolTip("Crear un sitio nuevo")
@@ -82,6 +84,7 @@ class DeviceDialog(QDialog):
         form.addRow("Tipo de dispositivo:", self.device_type_combo)
         form.addRow("Nombre:", self.name_edit)
         form.addRow("Sitio:", site_row)
+        form.addRow("Zona:", self.zone_combo)
         form.addRow("IP:", self.ip_edit)
         form.addRow("Puerto RTSP:", self.port_spin)
         form.addRow("Canal (NVR/XVR):", self.channel_spin)
@@ -108,13 +111,14 @@ class DeviceDialog(QDialog):
 
         self.onvif_discovery_button.clicked.connect(self._open_onvif_discovery)
 
+        self._rebuild_zone_combo()
         if initial:
             self._load(initial)
 
     def _reload_sites(self, select_id: int | None = None) -> None:
         current = select_id if select_id is not None else self.site_combo.currentData()
         self.site_combo.clear()
-        self.site_combo.addItem("(Sin sitio)", userData=None)
+        self.site_combo.addItem("(sin asignar)", userData=None)
         for site in repository.list_sites():
             self.site_combo.addItem(site.name, userData=site.id)
         index = self.site_combo.findData(current)
@@ -131,6 +135,17 @@ class DeviceDialog(QDialog):
             warn(self, "Nuevo sitio", f'Ya existe un sitio llamado "{name}".')
             return
         self._reload_sites(select_id=site.id)
+
+    def _rebuild_zone_combo(self, *_args) -> None:
+        current_zone_id = self.zone_combo.currentData() if self.zone_combo.count() else None
+        self.zone_combo.clear()
+        self.zone_combo.addItem("(sin asignar)", userData=None)
+        site_id = self.site_combo.currentData()
+        if site_id is not None:
+            for zone in repository.list_zones(site_id):
+                self.zone_combo.addItem(zone.name, userData=zone.id)
+        index = self.zone_combo.findData(current_zone_id)
+        self.zone_combo.setCurrentIndex(index if index >= 0 else 0)
 
     def _apply_template(self, *_args) -> None:
         ip = self.ip_edit.text().strip()
@@ -153,8 +168,6 @@ class DeviceDialog(QDialog):
         if index >= 0:
             self.device_type_combo.setCurrentIndex(index)
         self.name_edit.setText(data.get("name", ""))
-        site_index = self.site_combo.findData(data.get("site_id"))
-        self.site_combo.setCurrentIndex(site_index if site_index >= 0 else 0)
         self.channel_spin.setValue(data.get("channel", 1))
         self.ip_edit.setText(data.get("ip", ""))
         self.port_spin.setValue(data.get("port", 554))
@@ -164,6 +177,18 @@ class DeviceDialog(QDialog):
         self.rtsp_sub_edit.setText(data.get("rtsp_sub_url") or "")
         self.onvif_port_spin.setValue(data.get("onvif_port") or 0)
         self.has_ptz_check.setChecked(bool(data.get("has_ptz", False)))
+
+        zone_id = data.get("zone_id")
+        if zone_id is not None:
+            zone = repository.get_zone(zone_id)
+            if zone is not None:
+                site_index = self.site_combo.findData(zone.site_id)
+                if site_index >= 0:
+                    self.site_combo.setCurrentIndex(site_index)
+                self._rebuild_zone_combo()
+                zone_index = self.zone_combo.findData(zone_id)
+                if zone_index >= 0:
+                    self.zone_combo.setCurrentIndex(zone_index)
 
     def _open_onvif_discovery(self) -> None:
         dialog = OnvifDiscoveryDialog(self)
@@ -197,7 +222,7 @@ class DeviceDialog(QDialog):
     def values(self) -> dict:
         return {
             "name": self.name_edit.text().strip(),
-            "site_id": self.site_combo.currentData(),
+            "zone_id": self.zone_combo.currentData(),
             "device_type": self.device_type_combo.currentData() or "ipc",
             "channel": self.channel_spin.value(),
             "ip": self.ip_edit.text().strip(),

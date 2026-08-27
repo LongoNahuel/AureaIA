@@ -6,9 +6,9 @@ import sqlalchemy.exc
 from aurea_vms.models import repository
 
 
-def _cam(name: str, site_id: int | None = None):
+def _cam(name: str, zone_id: int | None = None):
     return repository.add_device(
-        name=name, ip="10.0.0.1", rtsp_main_url="rtsp://c/x", site_id=site_id
+        name=name, ip="10.0.0.1", rtsp_main_url="rtsp://c/x", zone_id=zone_id
     )
 
 
@@ -38,29 +38,34 @@ class TestDevicesPorSitio:
     def test_filtro_por_sitio(self, temp_db):
         sala = repository.add_site(name="Sala Principal")
         anexo = repository.add_site(name="Anexo VIP")
-        _cam("C1", sala.id)
-        _cam("C2", sala.id)
-        _cam("C3", anexo.id)
-        _cam("C4")  # sin sitio
+        zona_sala = repository.add_zone(name="Zona A", site_id=sala.id)
+        zona_anexo = repository.add_zone(name="Zona B", site_id=anexo.id)
+        _cam("C1", zona_sala.id)
+        _cam("C2", zona_sala.id)
+        _cam("C3", zona_anexo.id)
+        _cam("C4")  # sin zona/sitio
 
         assert len(repository.list_devices()) == 4
         assert len(repository.list_devices(site_id=sala.id)) == 2
         assert len(repository.list_devices(site_id=anexo.id)) == 1
 
-    def test_borrar_sitio_deja_camaras_sin_sitio(self, temp_db):
+    def test_borrar_sitio_deja_camaras_sin_zona(self, temp_db):
         sala = repository.add_site(name="Sala Principal")
-        cam = _cam("C1", sala.id)
+        zona = repository.add_zone(name="Zona A", site_id=sala.id)
+        cam = _cam("C1", zona.id)
 
         repository.delete_site(sala.id)
 
         actualizado = repository.get_device(cam.id)
         assert actualizado is not None
-        assert actualizado.site_id is None
+        assert actualizado.zone_id is None
 
-    def test_reasignar_camara_de_sitio(self, temp_db):
+    def test_reasignar_camara_de_zona(self, temp_db):
         sala = repository.add_site(name="Sala Principal")
         anexo = repository.add_site(name="Anexo VIP")
-        cam = _cam("C1", sala.id)
+        zona_sala = repository.add_zone(name="Zona A", site_id=sala.id)
+        zona_anexo = repository.add_zone(name="Zona B", site_id=anexo.id)
+        cam = _cam("C1", zona_sala.id)
 
-        repository.update_device(cam.id, site_id=anexo.id)
-        assert repository.get_device(cam.id).site_id == anexo.id
+        repository.update_device(cam.id, zone_id=zona_anexo.id)
+        assert repository.get_device(cam.id).zone_id == zona_anexo.id

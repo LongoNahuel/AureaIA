@@ -62,6 +62,7 @@ def create_analyzer(config: AnalyticsConfig) -> Analyzer:
             roi=_roi_from_config(config),
             min_pupillary_distance_px=params.get("min_pupillary_distance_px", 40),
             filter_by_angle=params.get("filter_by_angle", False),
+            confirmation_frames=params.get("confirmation_frames", 2),
         )
 
     raise ValueError(f"Analizador desconocido: {config.analyzer_name}")

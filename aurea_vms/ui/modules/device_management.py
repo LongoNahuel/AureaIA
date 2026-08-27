@@ -58,7 +58,7 @@ MANAGED_COLUMNS = [
     "",
     "Nombre",
     "IP",
-    "Sitio",
+    "Zona",
     "Estado",
     "Modelo",
     "Configuración",
@@ -214,7 +214,6 @@ class DeviceManagementModule(QWidget):
 
     def _reload_managed(self) -> None:
         self._devices = repository.list_devices(site_id=app_state.current_site_id)
-        self._site_names = {site.id: site.name for site in repository.list_sites()}
         self.managed_title.setText(f"Dispositivos administrados ({len(self._devices)})")
         self.managed_table.setRowCount(len(self._devices))
         for row, device in enumerate(self._devices):
@@ -231,8 +230,7 @@ class DeviceManagementModule(QWidget):
         name_item.setData(Qt.ItemDataRole.UserRole, device.id)
         self.managed_table.setItem(row, 1, name_item)
         self.managed_table.setItem(row, 2, QTableWidgetItem(device.ip))
-        site_name = self._site_names.get(device.site_id, "Sin sitio")
-        self.managed_table.setItem(row, 3, QTableWidgetItem(site_name))
+        self.managed_table.setItem(row, 3, QTableWidgetItem(self._zone_label(device)))
         self.managed_table.setCellWidget(row, 4, self._status_widget(device.status))
         self.managed_table.setItem(row, 5, QTableWidgetItem(device.model or "—"))
 
@@ -242,6 +240,16 @@ class DeviceManagementModule(QWidget):
         self.managed_table.setItem(row, 6, QTableWidgetItem(config_bits))
         self.managed_table.setItem(row, 7, QTableWidgetItem(device.firmware_version or "—"))
         self.managed_table.setCellWidget(row, 8, self._operation_widget(device))
+
+    @staticmethod
+    def _zone_label(device: Device) -> str:
+        if device.zone_id is None:
+            return "—"
+        zone = repository.get_zone(device.zone_id)
+        if zone is None:
+            return "—"
+        sites = {s.id: s.name for s in repository.list_sites()}
+        return f"{sites.get(zone.site_id, '?')} · {zone.name}"
 
     def _status_widget(self, status: str) -> QWidget:
         widget = QWidget()
@@ -317,7 +325,7 @@ class DeviceManagementModule(QWidget):
         initial = {
             "device_type": device.device_type,
             "name": device.name,
-            "site_id": device.site_id,
+            "zone_id": device.zone_id,
             "channel": device.channel,
             "ip": device.ip,
             "port": device.port,

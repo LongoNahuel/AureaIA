@@ -15,6 +15,7 @@ from aurea_vms.models.device import Device
 from aurea_vms.models.media_asset import MediaAsset
 from aurea_vms.models.site import Site
 from aurea_vms.models.user import User
+from aurea_vms.models.zone import Zone
 
 
 def add_site(**fields: object) -> Site:
@@ -45,8 +46,9 @@ def update_site(site_id: int, **fields: object) -> None:
 
 
 def delete_site(site_id: int) -> None:
-    """Las camaras del sitio NO se borran: quedan con site_id NULL
-    ("Sin sitio") gracias al ondelete=SET NULL."""
+    """Borra el sitio y sus zonas (ondelete=CASCADE en Zone.site_id); las
+    camaras de esas zonas NO se borran, quedan con zone_id NULL ("Sin
+    zona") gracias al ondelete=SET NULL en Device.zone_id."""
     with get_session() as session:
         site = session.get(Site, site_id)
         if site is not None:
@@ -62,14 +64,55 @@ def add_device(**fields: object) -> Device:
         return device
 
 
-def list_devices(site_id: int | None = None) -> list[Device]:
-    """site_id=None lista todo; con site_id filtra por sitio (el filtro
-    del selector global de la topbar)."""
+def list_devices(zone_id: int | None = None, site_id: int | None = None) -> list[Device]:
+    """zone_id filtra por una zona puntual; site_id filtra por todas las
+    zonas de un sitio (el filtro del selector global de la topbar).
+    None/None = todas las camaras."""
     with get_session() as session:
         query = session.query(Device).order_by(Device.id)
+        if zone_id is not None:
+            query = query.filter(Device.zone_id == zone_id)
         if site_id is not None:
-            query = query.filter(Device.site_id == site_id)
+            zone_ids = [z.id for z in session.query(Zone).filter(Zone.site_id == site_id).all()]
+            query = query.filter(Device.zone_id.in_(zone_ids))
         return list(query.all())
+
+
+def add_zone(**fields: object) -> Zone:
+    with get_session() as session:
+        zone = Zone(**fields)
+        session.add(zone)
+        session.flush()
+        session.refresh(zone)
+        return zone
+
+
+def list_zones(site_id: int | None = None) -> list[Zone]:
+    with get_session() as session:
+        query = session.query(Zone).order_by(Zone.id)
+        if site_id is not None:
+            query = query.filter(Zone.site_id == site_id)
+        return list(query.all())
+
+
+def get_zone(zone_id: int) -> Zone | None:
+    with get_session() as session:
+        return session.get(Zone, zone_id)
+
+
+def update_zone(zone_id: int, **fields: object) -> None:
+    with get_session() as session:
+        zone = session.get(Zone, zone_id)
+        if zone is not None:
+            for key, value in fields.items():
+                setattr(zone, key, value)
+
+
+def delete_zone(zone_id: int) -> None:
+    with get_session() as session:
+        zone = session.get(Zone, zone_id)
+        if zone is not None:
+            session.delete(zone)
 
 
 def get_device(device_id: int) -> Device | None:

@@ -27,7 +27,11 @@ class AnalyticsWorker(threading.Thread):
         self._device = device
         self._analyzer_name = config.analyzer_name
         self._analyzer = create_analyzer(config)
-        self._interval_s = 1.0 / settings.analytics_fps
+        # Cada analizador puede pedir su propio fps de muestreo (ej. Deteccion
+        # Facial en modo forense a 25fps); si no lo configura, usa el
+        # default global.
+        fps = (config.params or {}).get("fps", settings.analytics_fps)
+        self._interval_s = 1.0 / max(0.1, float(fps))
         self._stop_event = threading.Event()
 
     def run(self) -> None:

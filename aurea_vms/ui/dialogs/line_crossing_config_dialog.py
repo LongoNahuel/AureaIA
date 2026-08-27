@@ -41,16 +41,19 @@ class LineCrossingConfigDialog(AnalyticsConfigDialogBase):
 
         self.confirmation_spin = SpinBox()
         self.confirmation_spin.setRange(1, 10)
+        self.confirmation_spin.setMaximumWidth(130)
         self.confirmation_spin.setValue(params.get("confirmation_frames", 2))
-        form.addRow("Confirmación (muestras):", self.confirmation_spin)
-        form.addRow(
-            CaptionLabel(
-                "Un objeto solo puede disparar un cruce después de esta cantidad de muestras "
-                "seguidas detectado (1 = sin confirmación). Más alto = evita cruces falsos por "
-                "ruido de un solo frame."
-            )
+        self.confirmation_spin.setToolTip(
+            "Un objeto solo dispara un cruce tras esta cantidad de muestras seguidas (1 = sin "
+            "confirmación)."
         )
-        form.addRow(BodyLabel("Dibujá la línea de cruce sobre la captura."))
+        form.addRow("Confirmación (muestras):", self.confirmation_spin)
+        caption = CaptionLabel("Más alto = evita cruces falsos por ruido de un solo frame.")
+        caption.setWordWrap(True)
+        form.addRow(caption)
+        line_label = BodyLabel("Dibujá la línea de cruce sobre la captura.")
+        line_label.setWordWrap(True)
+        form.addRow(line_label)
 
     def build_params(self) -> dict:
         line = self.selector_widget.get_line()

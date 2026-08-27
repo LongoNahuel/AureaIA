@@ -39,6 +39,14 @@ class AnalyticsConfigDialogBase(QDialog):
         self.device = device
         self.setWindowTitle(f"{self.display_name} — {device.name}")
         self.resize(680, 600)
+        # Techo duro de ancho: un CaptionLabel/BodyLabel de descripcion sin
+        # wordWrap fuerza un minimumSizeHint enorme en la fila del
+        # QFormLayout (todo el texto en una sola linea), lo que termina
+        # estirando el dialogo entero mucho mas alla de los 680px pedidos
+        # arriba. Ademas de que cada subclase envuelva sus textos largos,
+        # este limite evita que el dialogo vuelva a "explotar" en ancho si
+        # alguna se olvida.
+        self.setMaximumWidth(820)
 
         existing = repository.get_analytics_config_for(device.id, self.analyzer_name)
         self._worker: FunctionWorker | None = None
@@ -72,6 +80,7 @@ class AnalyticsConfigDialogBase(QDialog):
                 self.selector_widget.set_initial_line((tuple(line[0]), tuple(line[1])))
 
         self.snapshot_status = BodyLabel("")
+        self.snapshot_status.setWordWrap(True)
         refresh_button = PushButton(FluentIcon.SYNC, "Actualizar captura")
         refresh_button.clicked.connect(self._load_snapshot)
         clear_button = PushButton(FluentIcon.BROOM, "Limpiar selección")

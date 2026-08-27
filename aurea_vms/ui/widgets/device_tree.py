@@ -1,26 +1,21 @@
-"""Arbol de dispositivos con buscador, agrupado por sitio (multisede),
+"""Arbol de dispositivos con buscador, agrupado Sitio > Zona > Camara,
 para arrastrar una camara a un tile de la grilla de Vista en Vivo (o
-asignarla con doble click al tile seleccionado). Si no hay sitios
-definidos se mantiene el unico grupo "Camaras" de siempre. El
-agrupamiento por tipo de dispositivo (NVR, control de acceso, etc.)
-queda para cuando la app soporte esos tipos."""
+asignarla con doble click al tile seleccionado). Zonas marcadas
+"critical" se resaltan en rojo. Las camaras sin zona asignada aparecen en
+un grupo aparte, solo cuando se estan viendo todos los sitios."""
 
 from __future__ import annotations
 
 from PySide6.QtCore import QMimeData, Qt, Signal
-from PySide6.QtGui import QDrag
+from PySide6.QtGui import QColor, QDrag
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 from qfluentwidgets import SearchLineEdit, TreeWidget
 
-from aurea_vms.core import app_state
 from aurea_vms.models import repository
 from aurea_vms.ui import icons
 
 DEVICE_ID_MIME = "application/x-aurea-device-id"
-
-# Sentinela: reload() sin argumento respeta el filtro global de sitio
-# (None ya significa "todos", no sirve como default).
-_USE_GLOBAL_FILTER = object()
+CRITICAL_COLOR = QColor("#e5534b")
 
 
 class _DraggableTree(TreeWidget):
@@ -45,6 +40,7 @@ class DeviceTreeWidget(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._site_filter: int | None = None
 
         self.search_edit = SearchLineEdit(self)
         self.search_edit.setPlaceholderText("Buscar cámara...")
@@ -63,46 +59,70 @@ class DeviceTreeWidget(QWidget):
 
         self.reload()
 
-    def reload(self, site_id: int | None | object = _USE_GLOBAL_FILTER) -> None:
-        """Sin argumento aplica el filtro global de sitio de la topbar;
-        con site_id explicito filtra a ese sitio; con None muestra todos,
-        agrupados por sitio."""
-        if site_id is _USE_GLOBAL_FILTER:
-            site_id = app_state.current_site_id
+    def set_site_filter(self, site_id: int | None) -> None:
+        """None = mostrar todos los sitios (y las camaras sin asignar)."""
+        self._site_filter = site_id
+        self.reload()
+
+    def reload(self) -> None:
         self.tree.clear()
-        sites = repository.list_sites()
-        devices = repository.list_devices(site_id=site_id)
 
-        by_site: dict[int | None, list] = {}
-        for device in devices:
-            by_site.setdefault(device.site_id, []).append(device)
+        zones_by_site: dict[int, list] = {}
+        for zone in repository.list_zones():
+            zones_by_site.setdefault(zone.site_id, []).append(zone)
 
-        if not sites:
-            # Instalacion sin sitios definidos: mismo arbol plano de siempre.
-            self._add_group(f"Cámaras ({len(devices)})", devices)
-        else:
-            for site in sites:
-                if site_id is not None and site.id != site_id:
-                    continue
-                site_devices = by_site.pop(site.id, [])
-                self._add_group(f"{site.name} ({len(site_devices)})", site_devices)
-            unassigned = [d for devs in by_site.values() for d in devs]
-            if unassigned:
-                self._add_group(f"Sin sitio ({len(unassigned)})", unassigned)
-
-    def _add_group(self, label: str, devices: list) -> None:
-        group = QTreeWidgetItem([label])
-        group.setFlags(group.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
-        self.tree.addTopLevelItem(group)
+        devices_by_zone: dict[int, list] = {}
+        unassigned = []
+        for device in repository.list_devices():
+            if device.zone_id is not None:
+                devices_by_zone.setdefault(device.zone_id, []).append(device)
+            else:
+                unassigned.append(device)
 
         camera_icon = icons.icon_live_view("#9aa3af")
-        for device in devices:
-            item = QTreeWidgetItem([f"{device.name}  ({device.ip})"])
-            item.setIcon(0, camera_icon)
-            item.setData(0, Qt.ItemDataRole.UserRole, device.id)
-            group.addChild(item)
 
-        group.setExpanded(True)
+        for site in repository.list_sites():
+            if self._site_filter is not None and site.id != self._site_filter:
+                continue
+            site_zones = zones_by_site.get(site.id, [])
+            site_device_count = sum(len(devices_by_zone.get(z.id, [])) for z in site_zones)
+            if site_device_count == 0:
+                continue
+
+            site_item = QTreeWidgetItem([f"{site.name} ({site_device_count})"])
+            site_item.setFlags(site_item.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
+            self.tree.addTopLevelItem(site_item)
+
+            for zone in site_zones:
+                zone_devices = devices_by_zone.get(zone.id, [])
+                if not zone_devices:
+                    continue
+                zone_item = QTreeWidgetItem([f"{zone.name} ({len(zone_devices)})"])
+                zone_item.setFlags(zone_item.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
+                if zone.critical:
+                    zone_item.setForeground(0, CRITICAL_COLOR)
+                site_item.addChild(zone_item)
+
+                for device in zone_devices:
+                    item = QTreeWidgetItem([f"{device.name}  ({device.ip})"])
+                    item.setIcon(0, camera_icon)
+                    item.setData(0, Qt.ItemDataRole.UserRole, device.id)
+                    zone_item.addChild(item)
+
+                zone_item.setExpanded(True)
+
+            site_item.setExpanded(True)
+
+        if self._site_filter is None and unassigned:
+            root = QTreeWidgetItem([f"Sin asignar ({len(unassigned)})"])
+            root.setFlags(root.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
+            self.tree.addTopLevelItem(root)
+            for device in unassigned:
+                item = QTreeWidgetItem([f"{device.name}  ({device.ip})"])
+                item.setIcon(0, camera_icon)
+                item.setData(0, Qt.ItemDataRole.UserRole, device.id)
+                root.addChild(item)
+            root.setExpanded(True)
 
     def _on_double_click(self, item: QTreeWidgetItem, _column: int) -> None:
         device_id = item.data(0, Qt.ItemDataRole.UserRole)
@@ -111,13 +131,21 @@ class DeviceTreeWidget(QWidget):
 
     def _apply_filter(self, text: str) -> None:
         needle = text.strip().lower()
-        for g in range(self.tree.topLevelItemCount()):
-            group = self.tree.topLevelItem(g)
-            visible_children = 0
-            for i in range(group.childCount()):
-                item = group.child(i)
-                hidden = needle not in item.text(0).lower()
-                item.setHidden(hidden)
-                visible_children += not hidden
-            # Un grupo sin coincidencias se oculta mientras se busca.
-            group.setHidden(bool(needle) and visible_children == 0)
+        for i in range(self.tree.topLevelItemCount()):
+            self._filter_item(self.tree.topLevelItem(i), needle)
+
+    def _filter_item(self, item: QTreeWidgetItem, needle: str) -> bool:
+        """Devuelve True si el item (o algun hijo) sigue visible; oculta
+        grupos que se quedan sin ningun hijo visible tras filtrar."""
+        device_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if device_id is not None:
+            visible = not needle or needle in item.text(0).lower()
+            item.setHidden(not visible)
+            return visible
+
+        any_child_visible = False
+        for i in range(item.childCount()):
+            if self._filter_item(item.child(i), needle):
+                any_child_visible = True
+        item.setHidden(not any_child_visible)
+        return any_child_visible

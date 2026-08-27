@@ -78,6 +78,11 @@ def icon_history(color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -> QIcon:
     return FluentIcon.HISTORY.icon(color=QColor(color))
 
 
+def icon_sites(color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -> QIcon:
+    """Sitios y Zonas -- mismo motivo que icon_users."""
+    return FluentIcon.PIN.icon(color=QColor(color))
+
+
 # --- iconos de acciones / toolbar -------------------------------------------------
 
 

@@ -35,6 +35,7 @@ from aurea_vms.ui.modules.alert_config import AlertConfigModule
 from aurea_vms.ui.modules.analytics_config import AnalyticsConfigModule
 from aurea_vms.ui.modules.device_management import DeviceManagementModule
 from aurea_vms.ui.modules.live_view import LiveViewModule
+from aurea_vms.ui.modules.sites_zones_module import SitesZonesModule
 from aurea_vms.ui.modules.system_module import SystemModule
 from aurea_vms.ui.modules.user_management_module import UserManagementModule
 from aurea_vms.ui.notify import confirm, warn
@@ -53,11 +54,19 @@ MODULES = [
     ("Alertas", icons.icon_alerts, AlertConfigModule),
     ("Sistema", icons.icon_system, SystemModule),
     ("Usuarios", icons.icon_users, UserManagementModule),
+    ("Sitios y Zonas", icons.icon_sites, SitesZonesModule),
 ]
 
 CATEGORIES = {
     "Operación": ["Vista en Vivo", "Alarmas"],
-    "Configuración": ["Dispositivos", "Analizadores", "Alertas", "Sistema", "Usuarios"],
+    "Configuración": [
+        "Dispositivos",
+        "Analizadores",
+        "Alertas",
+        "Sistema",
+        "Usuarios",
+        "Sitios y Zonas",
+    ],
 }
 
 # Permiso requerido para ver/abrir cada modulo. Chequeado tanto al armar
@@ -72,6 +81,7 @@ MODULE_PERMISSIONS = {
     "Alertas": Perm.ANALYTICS_CONFIG,
     "Sistema": Perm.GLOBAL_CONFIG,
     "Usuarios": Perm.USER_ADMIN,
+    "Sitios y Zonas": Perm.DEVICE_ADMIN,
 }
 
 HOME_INDEX = 0
@@ -130,6 +140,7 @@ class MainWindow(QMainWindow):
             self._on_open_analytics_config_requested, Qt.ConnectionType.QueuedConnection
         )
         event_bus.alarm.connect(self._on_global_alarm, Qt.ConnectionType.QueuedConnection)
+        event_bus.site_filter_changed.connect(self._on_site_filter_changed)
 
         # Capa de popups de alarma, visible sobre cualquier pestaña. Se
         # autoajusta a su contenido (ver GlobalAlertPopupLayer) y queda
@@ -142,11 +153,12 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         row.setContentsMargins(14, 8, 14, 8)
 
+        row.addStretch(1)
+
         user = auth.current_user
         role_label = ROLE_LABELS.get(user.role, user.role) if user is not None else "?"
         name = user.username if user is not None else "?"
         row.addWidget(BodyLabel(f"{name} · {role_label}"))
-        row.addStretch(1)
 
         # Selector global de sitio: filtra Vista en Vivo, Dispositivos y
         # Alarmas en toda la app (via app_state + site_filter_changed).
@@ -167,6 +179,16 @@ class MainWindow(QMainWindow):
         logout_button.clicked.connect(self._on_logout)
         row.addWidget(logout_button)
         return row
+
+    def _on_site_filter_changed(self, site_id: object) -> None:
+        """Propaga el filtro global de sitio a los DeviceTreeWidget de las
+        pestañas ya abiertas (las que se abran despues se inicializan con
+        el filtro vigente en open_module_by_index)."""
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            device_tree = getattr(widget, "device_tree", None)
+            if device_tree is not None and hasattr(device_tree, "set_site_filter"):
+                device_tree.set_site_filter(site_id)
 
     def _visible_categories(self) -> dict:
         return compute_visible_categories()
@@ -247,6 +269,9 @@ class MainWindow(QMainWindow):
                 return
 
         content = module_cls()
+        device_tree = getattr(content, "device_tree", None)
+        if device_tree is not None and hasattr(device_tree, "set_site_filter"):
+            device_tree.set_site_filter(app_state.current_site_id)
         self.tabs.addTab(content, label, icon_factory(), routeKey=route_key)
         self.tabs.setCurrentWidget(content)
 

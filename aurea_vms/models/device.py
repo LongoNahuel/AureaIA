@@ -11,10 +11,11 @@ class Device(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
-    # Sitio/sede al que pertenece la camara. SET NULL: borrar un sitio no
-    # borra sus camaras, quedan "Sin sitio" hasta reasignarse.
-    site_id: Mapped[int | None] = mapped_column(
-        ForeignKey("sites.id", ondelete="SET NULL"), nullable=True, index=True
+    # Zona a la que pertenece la camara (None = sin asignar todavia).
+    # SET NULL: borrar una zona no borra sus camaras, quedan "Sin zona"
+    # hasta reasignarse.
+    zone_id: Mapped[int | None] = mapped_column(
+        ForeignKey("zones.id", ondelete="SET NULL"), nullable=True, index=True
     )
     device_type: Mapped[str] = mapped_column(String(10), default="ipc")  # ipc | nvr | xvr
     channel: Mapped[int] = mapped_column(Integer, default=1)  # numero de canal (NVR/XVR)

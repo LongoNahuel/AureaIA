@@ -132,6 +132,10 @@ class VideoTile(QWidget):
     def has_device(self) -> bool:
         return self._device is not None
 
+    @property
+    def device_id(self) -> int | None:
+        return self._device.id if self._device is not None else None
+
     def set_stream_kind(self, kind: str) -> None:
         """Cambia entre flujo "main" y "sub" para la camara ya asignada
         (usado al expandir/colapsar un tile con doble click)."""

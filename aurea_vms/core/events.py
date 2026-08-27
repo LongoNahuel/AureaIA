@@ -18,6 +18,12 @@ class Detection:
     # dibujar la silueta real en vez de un rectangulo -- None en el resto
     # de los analizadores, que solo tienen bbox.
     polygon: tuple[tuple[int, int], ...] | None = None
+    # Puntos de referencia en pixeles del frame original (solo Detección
+    # Facial: ojo derecho, ojo izquierdo, nariz, boca, oreja derecha,
+    # oreja izquierda, en ese orden) -- se usan para una firma geometrica
+    # mas robusta que comparar pixeles crudos al decidir si dos capturas
+    # son la misma cara.
+    keypoints: tuple[tuple[float, float], ...] | None = None
 
 
 @dataclass(frozen=True)

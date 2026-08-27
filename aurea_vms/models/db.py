@@ -60,6 +60,7 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
         media_asset,
         site,
         user,
+        zone,
     )
 
     Base.metadata.create_all(_engine)
@@ -77,9 +78,9 @@ def _apply_adhoc_migrations() -> None:
         return
     with _engine.connect() as conn:
         cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(devices)")}
-        if cols and "site_id" not in cols:
+        if cols and "zone_id" not in cols:
             conn.exec_driver_sql(
-                "ALTER TABLE devices ADD COLUMN site_id INTEGER REFERENCES sites(id)"
+                "ALTER TABLE devices ADD COLUMN zone_id INTEGER REFERENCES zones(id)"
             )
             conn.commit()
 

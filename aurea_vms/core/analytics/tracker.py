@@ -32,6 +32,10 @@ class TrackedObject:
     last_seen: float
     hits: int = 1
     side: int | None = None  # lado de la linea de cruce en la ultima actualizacion
+    # Puntos de referencia de la ultima deteccion asociada a este track (solo
+    # Deteccion Facial los usa) -- se propagan para que un track recien
+    # confirmado no pierda la geometria que necesita la galeria de rostros.
+    keypoints: tuple[tuple[float, float], ...] | None = None
 
 
 class CentroidTracker:
@@ -78,6 +82,7 @@ class CentroidTracker:
                 track.confidence = det.confidence
                 track.last_seen = timestamp
                 track.hits += 1
+                track.keypoints = det.keypoints
                 unmatched_ids.discard(best_id)
                 assigned[best_id] = track
             else:
@@ -91,6 +96,7 @@ class CentroidTracker:
                     confidence=det.confidence,
                     last_seen=timestamp,
                     hits=1,
+                    keypoints=det.keypoints,
                 )
                 self.tracks[tid] = track
                 assigned[tid] = track

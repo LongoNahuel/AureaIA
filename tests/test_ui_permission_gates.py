@@ -32,6 +32,7 @@ class TestCategoriasVisibles:
             "Alertas",
             "Sistema",
             "Usuarios",
+            "Sitios y Zonas",
         }
 
     def test_supervisor_configura_analiticas_pero_no_administra(self):
