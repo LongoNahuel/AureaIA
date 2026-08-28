@@ -99,6 +99,10 @@ class LineCrossingConfigDialog(AnalyticsConfigDialogBase):
         return selected or ["person"]
 
     def validate(self) -> str | None:
-        if self.enabled_check.isChecked() and self.selector_widget.get_line() is None:
+        # La línea se exige siempre, no solo con "habilitado" tildado: un
+        # config persistido con line=None puede prenderse después desde el
+        # switch del módulo Analíticas (o en el arranque), y ahí
+        # create_analyzer no tiene línea con la que construir el analizador.
+        if self.selector_widget.get_line() is None:
             return "Dibujá una línea de cruce sobre la captura antes de guardar."
         return None

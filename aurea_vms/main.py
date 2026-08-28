@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import sys
 
@@ -32,8 +33,17 @@ def _start_enabled_analytics() -> None:
         if not config.enabled:
             continue
         device = repository.get_device(config.device_id)
-        if device is not None:
+        if device is None:
+            continue
+        try:
             analytics_engine.start(config, device)
+        except Exception:  # noqa: BLE001 - un config roto no debe impedir el arranque
+            logging.getLogger(__name__).exception(
+                "No se pudo iniciar la analítica %s de la cámara %s (config %s)",
+                config.analyzer_name,
+                device.name,
+                config.id,
+            )
 
 
 # Un thread no puede re-arrancarse: el ciclo logout->login crea un

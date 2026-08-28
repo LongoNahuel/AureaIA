@@ -183,7 +183,17 @@ class AnalyticsConfigModule(QWidget):
             device = repository.get_device(device_id)
             if device is not None:
                 config = repository.get_analytics_config_for(device_id, analyzer_name)
-                analytics_engine.start(config, device)
+                try:
+                    analytics_engine.start(config, device)
+                except Exception as exc:  # noqa: BLE001 - config inválido o modelo no descargable
+                    # Si quedara enabled=True en la DB, el próximo arranque
+                    # repetiría este fallo en _start_enabled_analytics.
+                    repository.set_analytics_config_enabled(config.id, False)
+                    warn(
+                        self,
+                        ANALYZER_DISPLAY_NAMES.get(analyzer_name, analyzer_name),
+                        f"No se pudo iniciar la analítica: {exc}",
+                    )
         else:
             analytics_engine.stop(config.id)
         self._refresh_table()
