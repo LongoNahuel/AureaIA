@@ -76,7 +76,10 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
 # la primera instalacion en campo.
 _ADHOC_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "devices": [
-        ("zone_id", "INTEGER REFERENCES zones(id)"),
+        # El ON DELETE SET NULL replica el ondelete del modelo (Device.zone_id):
+        # sin él, con PRAGMA foreign_keys=ON, borrar una zona con cámaras
+        # asignadas falla con IntegrityError en las DBs migradas.
+        ("zone_id", "INTEGER REFERENCES zones(id) ON DELETE SET NULL"),
         ("device_type", "VARCHAR(10) NOT NULL DEFAULT 'ipc'"),
         ("channel", "INTEGER NOT NULL DEFAULT 1"),
         ("manufacturer", "VARCHAR(80)"),
