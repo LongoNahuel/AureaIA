@@ -9,7 +9,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from qfluentwidgets import BodyLabel, ComboBox, PushButton, SimpleCardWidget, TableWidget
+from qfluentwidgets import (
+    BodyLabel,
+    ComboBox,
+    PushButton,
+    SimpleCardWidget,
+    SwitchButton,
+    TableWidget,
+)
 
 from aurea_vms.core.analytics.registry import ANALYZER_DISPLAY_NAMES, AVAILABLE_ANALYZERS
 from aurea_vms.core.analytics_engine import analytics_engine
@@ -33,7 +40,13 @@ DIALOG_BY_ANALYZER = {
 class AnalyticsConfigModule(QWidget):
     """Activar/configurar cada tipo de analítica por cámara, con un
     dashboard embebido que muestra las métricas en vivo (ej. ocupación de
-    Conteo de Personas, entradas/salidas de Cruce de Línea)."""
+    Conteo de Personas, entradas/salidas de Cruce de Línea).
+
+    El switch de "Habilitado" prende/apaga una analítica YA configurada
+    sin pasar por el diálogo completo (que ademas pide una captura nueva
+    de la cámara cada vez que se abre); solo queda deshabilitado para una
+    analítica que nunca se configuró -- ahi hace falta "Configurar" al
+    menos una vez (ROI/línea, parámetros)."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -44,9 +57,12 @@ class AnalyticsConfigModule(QWidget):
 
         self.table = TableWidget(self)
         self.table.setRowCount(len(AVAILABLE_ANALYZERS))
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Analizador", "Estado", ""])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["Analizador", "Habilitado", "Estado", ""])
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -55,10 +71,20 @@ class AnalyticsConfigModule(QWidget):
 
         for row, analyzer_name in enumerate(AVAILABLE_ANALYZERS):
             self.table.setItem(row, 0, QTableWidgetItem(ANALYZER_DISPLAY_NAMES[analyzer_name]))
-            self.table.setItem(row, 1, QTableWidgetItem("—"))
+
+            switch = SwitchButton()
+            switch.setOnText("")
+            switch.setOffText("")
+            switch.checkedChanged.connect(
+                lambda checked, name=analyzer_name: self._on_toggle(name, checked)
+            )
+            self.table.setCellWidget(row, 1, switch)
+
+            self.table.setItem(row, 2, QTableWidgetItem("—"))
+
             button = PushButton("Configurar")
             button.clicked.connect(lambda _checked=False, name=analyzer_name: self._configure(name))
-            self.table.setCellWidget(row, 2, button)
+            self.table.setCellWidget(row, 3, button)
 
         self.dashboard_card = SimpleCardWidget(self)
         dashboard_layout = QVBoxLayout(self.dashboard_card)
@@ -122,14 +148,45 @@ class AnalyticsConfigModule(QWidget):
 
         for row, analyzer_name in enumerate(AVAILABLE_ANALYZERS):
             config = configs.get(analyzer_name)
+            switch: SwitchButton = self.table.cellWidget(row, 1)
+            switch.blockSignals(True)
             if config is None:
+                switch.setChecked(False)
+                switch.setEnabled(False)
+                switch.setToolTip("Configurala primero para poder habilitarla.")
                 status = "No configurada"
-            elif config.enabled:
-                running = " (corriendo)" if analytics_engine.is_running(config.id) else ""
-                status = f"Habilitada{running}"
             else:
-                status = "Deshabilitada"
-            self.table.setItem(row, 1, QTableWidgetItem(status))
+                switch.setEnabled(True)
+                switch.setToolTip("")
+                switch.setChecked(config.enabled)
+                if config.enabled:
+                    running = " (corriendo)" if analytics_engine.is_running(config.id) else ""
+                    status = f"Habilitada{running}"
+                else:
+                    status = "Deshabilitada"
+            switch.blockSignals(False)
+            self.table.setItem(row, 2, QTableWidgetItem(status))
+
+    def _on_toggle(self, analyzer_name: str, checked: bool) -> None:
+        """Prende/apaga una analítica YA configurada sin abrir el diálogo
+        completo. El switch queda deshabilitado (ver _refresh_table)
+        mientras no exista un AnalyticsConfig, asi que aca siempre hay
+        uno."""
+        device_id = self._current_device_id()
+        if device_id is None:
+            return
+        config = repository.get_analytics_config_for(device_id, analyzer_name)
+        if config is None:
+            return
+        repository.set_analytics_config_enabled(config.id, checked)
+        if checked:
+            device = repository.get_device(device_id)
+            if device is not None:
+                config = repository.get_analytics_config_for(device_id, analyzer_name)
+                analytics_engine.start(config, device)
+        else:
+            analytics_engine.stop(config.id)
+        self._refresh_table()
 
     def _configure(self, analyzer_name: str) -> None:
         device_id = self._current_device_id()
