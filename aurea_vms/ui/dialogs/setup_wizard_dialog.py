@@ -58,7 +58,7 @@ class SetupWizardDialog(QDialog):
         name_label.setStyleSheet("font-size: 17px;")
         brand_layout.addWidget(name_label)
 
-        tagline_label = CaptionLabel("Software VMS de vigilancia por RTSP", brand_panel)
+        tagline_label = CaptionLabel("Smart Video Surveillance", brand_panel)
         tagline_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tagline_label.setWordWrap(True)
         brand_layout.addWidget(tagline_label)

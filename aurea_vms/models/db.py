@@ -67,30 +67,56 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
     _apply_adhoc_migrations()
 
 
+# Columnas nuevas por tabla, agregadas a los modelos despues de que bases
+# de desarrollo pre-existentes ya tenian la tabla creada (create_all crea
+# tablas nuevas pero no altera las existentes). Cada entrada es
+# (columna, DDL sin "ADD COLUMN"); se aplican en orden y solo si faltan.
+# Cualquier cambio mas profundo (renombrar, borrar) se resuelve recreando
+# la DB. Alembic reemplaza esto cuando el esquema se estabilice, antes de
+# la primera instalacion en campo.
+_ADHOC_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "devices": [
+        ("zone_id", "INTEGER REFERENCES zones(id)"),
+        ("device_type", "VARCHAR(10) NOT NULL DEFAULT 'ipc'"),
+        ("channel", "INTEGER NOT NULL DEFAULT 1"),
+        ("manufacturer", "VARCHAR(80)"),
+        ("model", "VARCHAR(120)"),
+        ("firmware_version", "VARCHAR(120)"),
+        ("serial_number", "VARCHAR(120)"),
+    ],
+    "sites": [
+        ("description", "VARCHAR(300) NOT NULL DEFAULT ''"),
+    ],
+    "alarm_events": [
+        ("severity", "VARCHAR(20) NOT NULL DEFAULT 'medio'"),
+        ("status", "VARCHAR(20) NOT NULL DEFAULT 'nueva'"),
+        ("notes", "VARCHAR(4000) NOT NULL DEFAULT ''"),
+    ],
+    "alarm_rules": [
+        ("severity", "VARCHAR(20) NOT NULL DEFAULT 'medio'"),
+        ("schedule_days", "JSON NOT NULL DEFAULT '[]'"),
+        ("schedule_start", "VARCHAR(5)"),
+        ("schedule_end", "VARCHAR(5)"),
+    ],
+}
+
+
 def _apply_adhoc_migrations() -> None:
-    """Parche minimo para bases de desarrollo pre-existentes: create_all
-    crea tablas nuevas pero no altera las existentes. Cubre solo columnas
-    nuevas baratas (devices.zone_id, sites.description); cualquier cambio
-    mas profundo se resuelve recreando la DB. Alembic reemplaza esto
-    cuando el esquema se estabilice, antes de la primera instalacion en
-    campo."""
+    """Aplica las columnas de _ADHOC_COLUMNS que falten en cada tabla ya
+    existente (una tabla nueva, creada recien por create_all, ya sale con
+    el esquema completo y no necesita nada de esto)."""
     assert _engine is not None
     if _engine.dialect.name != "sqlite":
         return
     with _engine.connect() as conn:
-        device_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(devices)")}
-        if device_cols and "zone_id" not in device_cols:
-            conn.exec_driver_sql(
-                "ALTER TABLE devices ADD COLUMN zone_id INTEGER REFERENCES zones(id)"
-            )
-            conn.commit()
-
-        site_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(sites)")}
-        if site_cols and "description" not in site_cols:
-            conn.exec_driver_sql(
-                "ALTER TABLE sites ADD COLUMN description VARCHAR(300) NOT NULL DEFAULT ''"
-            )
-            conn.commit()
+        for table, columns in _ADHOC_COLUMNS.items():
+            existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            if not existing:
+                continue
+            for name, ddl in columns:
+                if name not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+        conn.commit()
 
 
 @contextmanager
