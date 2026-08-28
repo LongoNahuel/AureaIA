@@ -69,18 +69,26 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
 
 def _apply_adhoc_migrations() -> None:
     """Parche minimo para bases de desarrollo pre-existentes: create_all
-    crea tablas nuevas pero no altera las existentes. Cubre solo el caso
-    barato (columna nueva en devices); cualquier cambio mas profundo se
-    resuelve recreando la DB. Alembic reemplaza esto cuando el esquema se
-    estabilice, antes de la primera instalacion en campo."""
+    crea tablas nuevas pero no altera las existentes. Cubre solo columnas
+    nuevas baratas (devices.zone_id, sites.description); cualquier cambio
+    mas profundo se resuelve recreando la DB. Alembic reemplaza esto
+    cuando el esquema se estabilice, antes de la primera instalacion en
+    campo."""
     assert _engine is not None
     if _engine.dialect.name != "sqlite":
         return
     with _engine.connect() as conn:
-        cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(devices)")}
-        if cols and "zone_id" not in cols:
+        device_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(devices)")}
+        if device_cols and "zone_id" not in device_cols:
             conn.exec_driver_sql(
                 "ALTER TABLE devices ADD COLUMN zone_id INTEGER REFERENCES zones(id)"
+            )
+            conn.commit()
+
+        site_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(sites)")}
+        if site_cols and "description" not in site_cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE sites ADD COLUMN description VARCHAR(300) NOT NULL DEFAULT ''"
             )
             conn.commit()
 

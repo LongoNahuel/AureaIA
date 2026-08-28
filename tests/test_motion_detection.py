@@ -20,6 +20,16 @@ def _warmup(analyzer: MotionDetectionAnalyzer, frames: int = 30) -> None:
         analyzer.process_frame(_static_frame(), timestamp=float(i))
 
 
+def _settle(analyzer: MotionDetectionAnalyzer, frame: np.ndarray, hits: int = 2):
+    """Alimenta el mismo cuadro `hits` veces seguidas -- lo que tarda una
+    region nueva en confirmarse contra la histeresis del CentroidTracker
+    (confirmation_frames por default = 2)."""
+    result = None
+    for i in range(hits):
+        result = analyzer.process_frame(frame, timestamp=100.0 + i * 0.2)
+    return result
+
+
 class TestMotionDetection:
     def test_escena_estatica_sin_detecciones(self):
         analyzer = MotionDetectionAnalyzer(sensitivity=50, min_area_percent=0.5)
@@ -29,11 +39,20 @@ class TestMotionDetection:
         assert result.detections == ()
         assert result.metrics == {"regiones": 0}
 
-    def test_objeto_nuevo_dispara_deteccion_con_poligono(self):
+    def test_objeto_nuevo_no_cuenta_hasta_confirmarse(self):
+        """Un solo cuadro con el objeto no alcanza -- histeresis (ver
+        _settle) evita que ruido de un frame dispare una deteccion."""
         analyzer = MotionDetectionAnalyzer(sensitivity=50, min_area_percent=0.5)
         _warmup(analyzer)
 
         result = analyzer.process_frame(_frame_with_object(), timestamp=100.0)
+        assert result.detections == ()
+
+    def test_objeto_sostenido_dispara_deteccion_con_poligono(self):
+        analyzer = MotionDetectionAnalyzer(sensitivity=50, min_area_percent=0.5)
+        _warmup(analyzer)
+
+        result = _settle(analyzer, _frame_with_object())
 
         assert len(result.detections) >= 1
         det = result.detections[0]
@@ -50,7 +69,7 @@ class TestMotionDetection:
         analyzer = MotionDetectionAnalyzer(sensitivity=50, min_area_percent=50.0)
         _warmup(analyzer)
 
-        result = analyzer.process_frame(_frame_with_object(), timestamp=100.0)
+        result = _settle(analyzer, _frame_with_object())
         assert result.detections == ()
 
     def test_roi_desplaza_las_coordenadas_al_frame_nativo(self):
@@ -58,7 +77,7 @@ class TestMotionDetection:
         analyzer = MotionDetectionAnalyzer(sensitivity=50, min_area_percent=0.5, roi=roi)
         _warmup(analyzer)
 
-        result = analyzer.process_frame(_frame_with_object(), timestamp=100.0)
+        result = _settle(analyzer, _frame_with_object())
 
         assert len(result.detections) >= 1
         x, y, _w, _h = result.detections[0].bbox

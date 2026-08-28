@@ -1,10 +1,14 @@
 """Cruce de linea: cuenta cuantos objetos trackeados cruzan una linea
 virtual, discriminando el sentido del cruce (in/out).
 
-Histeresis: un track solo empieza a evaluarse contra la linea (y solo
-puede disparar un cruce) una vez "confirmado" -- sostenido varias muestras
-seguidas por el CentroidTracker -- para no contar un cruce falso a partir
-de una deteccion espuria de un unico frame."""
+Cada deteccion cruda pasa primero por dos filtros baratos, independientes
+del `confidence_threshold` del modelo (ver `object_detector_backend.py`):
+forma de caja plausible y tamaño minimo (% del cuadro completo, descarta
+detecciones chiquitas/lejanas). Histeresis: un track solo empieza a
+evaluarse contra la linea (y solo puede disparar un cruce) una vez
+"confirmado" -- sostenido varias muestras seguidas por el CentroidTracker
+-- para no contar un cruce falso a partir de una deteccion espuria de un
+unico frame."""
 
 from __future__ import annotations
 
@@ -17,7 +21,12 @@ from aurea_vms.core.analytics.base import (
     rescale_bbox,
     resize_for_inference,
 )
-from aurea_vms.core.analytics.object_detector_backend import create_object_detector
+from aurea_vms.core.analytics.object_detector_backend import (
+    create_object_detector,
+    deduplicate_by_iou,
+    passes_box_shape_filter,
+    passes_min_area_filter,
+)
 from aurea_vms.core.analytics.tracker import CentroidTracker
 from aurea_vms.core.events import Detection
 
@@ -45,12 +54,14 @@ class LineCrossingAnalyzer(Analyzer):
         label_out: str = "Salida",
         confirmation_frames: int = 2,
         track_max_age_s: float = 1.5,
+        min_area_percent: float = 0.15,
     ) -> None:
         classes = object_classes or ["person"]
         self._mp, self._detector = create_object_detector(classes, confidence_threshold)
         (self._x1, self._y1), (self._x2, self._y2) = line
         self.label_in = label_in
         self.label_out = label_out
+        self._min_area_percent = max(0.0, min_area_percent)
         self._tracker = CentroidTracker(
             max_age_s=track_max_age_s, min_hits=max(1, confirmation_frames)
         )
@@ -61,13 +72,26 @@ class LineCrossingAnalyzer(Analyzer):
         self._detector.close()
 
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
+        frame_area = frame.shape[0] * frame.shape[1]
         small, scale = resize_for_inference(frame)
         inv_scale = 1.0 / scale
         rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
         mp_image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
         result = self._detector.detect(mp_image)
 
-        detections = [self._to_detection(det, inv_scale) for det in result.detections]
+        raw_detections = []
+        for det in result.detections:
+            detection = self._to_detection(det, inv_scale)
+            if not passes_box_shape_filter(det.bounding_box.width, det.bounding_box.height):
+                continue
+            w, h = detection.bbox[2], detection.bbox[3]
+            if not passes_min_area_filter(w, h, frame_area, self._min_area_percent):
+                continue
+            raw_detections.append(detection)
+
+        # Dos cajas casi superpuestas sobre el MISMO objeto no deben crear
+        # dos tracks (contaria un solo cruce dos veces).
+        detections = deduplicate_by_iou(raw_detections)
         self._tracker.update(detections, timestamp)
 
         for track in self._tracker.confirmed_tracks():

@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFormLayout, QHBoxLayout
-from qfluentwidgets import BodyLabel, CaptionLabel, DoubleSpinBox, Slider
+from qfluentwidgets import BodyLabel, CaptionLabel, DoubleSpinBox, Slider, SpinBox
 
 from aurea_vms.models.analytics_config import AnalyticsConfig
 from aurea_vms.ui.dialogs.analytics_config_dialog_base import AnalyticsConfigDialogBase
+
+FPS_RANGE = (1, 30)
+DEFAULT_FPS = 15
+CONFIRMATION_RANGE = (1, 10)
+DEFAULT_CONFIRMATION_FRAMES = 2
+FIELD_WIDTH = 130
 
 
 class MotionDetectionConfigDialog(AnalyticsConfigDialogBase):
@@ -52,6 +58,33 @@ class MotionDetectionConfigDialog(AnalyticsConfigDialogBase):
         )
         min_size_caption.setWordWrap(True)
         form.addRow(min_size_caption)
+
+        self.confirmation_spin = SpinBox()
+        self.confirmation_spin.setRange(*CONFIRMATION_RANGE)
+        self.confirmation_spin.setMaximumWidth(FIELD_WIDTH)
+        self.confirmation_spin.setValue(
+            params.get("confirmation_frames", DEFAULT_CONFIRMATION_FRAMES)
+        )
+        self.confirmation_spin.setToolTip(
+            "Una región solo se reporta tras esta cantidad de cuadros seguidos (1 = al instante). "
+            "Filtra ruido de un solo frame (parpadeo de IR, compresión) sin agregar demora "
+            "perceptible."
+        )
+        form.addRow("Confirmación (frames):", self.confirmation_spin)
+        form.addRow(
+            CaptionLabel("Más alto = menos falsos positivos, pero tarda un poco más en marcar.")
+        )
+
+        self.fps_spin = SpinBox()
+        self.fps_spin.setRange(*FPS_RANGE)
+        self.fps_spin.setMaximumWidth(FIELD_WIDTH)
+        self.fps_spin.setValue(params.get("fps", DEFAULT_FPS))
+        self.fps_spin.setToolTip(
+            "Cuadros por segundo para esta cámara, independiente del FPS global del resto de los "
+            "analizadores. MOG2 es liviano: se puede pedir más FPS que en los analizadores con IA."
+        )
+        form.addRow("FPS de análisis:", self.fps_spin)
+
         roi_label = BodyLabel("ROI opcional: dibujá un rectángulo para limitar la zona vigilada.")
         roi_label.setWordWrap(True)
         form.addRow(roi_label)
@@ -60,4 +93,6 @@ class MotionDetectionConfigDialog(AnalyticsConfigDialogBase):
         return {
             "sensitivity": self.sensitivity_slider.value(),
             "min_area_percent": self.min_size_spin.value(),
+            "confirmation_frames": self.confirmation_spin.value(),
+            "fps": self.fps_spin.value(),
         }

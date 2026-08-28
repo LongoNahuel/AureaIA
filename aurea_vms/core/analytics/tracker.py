@@ -36,6 +36,10 @@ class TrackedObject:
     # Deteccion Facial los usa) -- se propagan para que un track recien
     # confirmado no pierda la geometria que necesita la galeria de rostros.
     keypoints: tuple[tuple[float, float], ...] | None = None
+    # Contorno simplificado de la ultima deteccion asociada (solo Deteccion
+    # de Movimiento) -- mismo motivo que keypoints: sin esto, un track
+    # recien confirmado dibujaria un rectangulo en vez de la silueta real.
+    polygon: tuple[tuple[int, int], ...] | None = None
 
 
 class CentroidTracker:
@@ -83,6 +87,7 @@ class CentroidTracker:
                 track.last_seen = timestamp
                 track.hits += 1
                 track.keypoints = det.keypoints
+                track.polygon = det.polygon
                 unmatched_ids.discard(best_id)
                 assigned[best_id] = track
             else:
@@ -97,6 +102,7 @@ class CentroidTracker:
                     last_seen=timestamp,
                     hits=1,
                     keypoints=det.keypoints,
+                    polygon=det.polygon,
                 )
                 self.tracks[tid] = track
                 assigned[tid] = track

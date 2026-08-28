@@ -10,15 +10,24 @@ pensado para camara selfie (caras grandes y cerca, tipo videollamada);
 "full_range" cubre caras chicas y lejanas tambien, que es el caso real de
 una camara de seguridad mirando una escena completa.
 
-Estabilidad / falsos disparos: cada deteccion cruda pasa primero por un
-punto de validacion geometrico (orden vertical ojos-nariz-boca, ver
-`_passes_geometry_filter`) que descarta detecciones con puntos de
-referencia degenerados -- tipico de una textura o patron que dispara el
-modelo por casualidad, no una cara real. Las que pasan se acumulan en un
-`CentroidTracker` con histeresis (igual que Conteo de Personas / Cruce de
-Linea): una cara nueva no se reporta como deteccion "real" hasta
-sostenerse un par de cuadros seguidos, lo que filtra el ruido de un solo
-frame sin agregar un modelo nuevo."""
+Estabilidad / falsos disparos: cada deteccion cruda pasa primero por dos
+puntos de validacion, antes de llegar al tracker de histeresis o a la
+galeria:
+
+1. `_passes_box_shape_filter`: la caja tiene que tener una proporcion
+   ancho/alto plausible para una cara.
+2. `_passes_geometry_filter`: los 4 puntos de referencia centrales tienen
+   que guardar la disposicion de una cara real (orden vertical
+   ojos-nariz-boca, linea entre ojos mas horizontal que vertical, nariz
+   centrada entre los ojos en X, boca a distancia comparable de cada
+   ojo) -- no solo existir.
+
+Ambos descartan detecciones con puntos/caja degenerados, tipico de una
+textura o patron que dispara el modelo por casualidad, no una cara real.
+Las que pasan se acumulan en un `CentroidTracker` con histeresis (igual
+que Conteo de Personas / Cruce de Linea): una cara nueva no se reporta
+como deteccion "real" hasta sostenerse un par de cuadros seguidos, lo que
+filtra el ruido de un solo frame sin agregar un modelo nuevo."""
 
 from __future__ import annotations
 
@@ -43,6 +52,12 @@ MOUTH_CENTER = 3
 RIGHT_EAR, LEFT_EAR = 4, 5
 
 ANGLE_SYMMETRY_MIN = 0.45  # por debajo de esto se descarta como muy de perfil
+EYE_MOUTH_SYMMETRY_MIN = 0.25  # por debajo, los puntos no guardan forma de cara
+BOX_ASPECT_RATIO_RANGE = (0.35, 2.5)  # ancho/alto plausible para una cara real
+
+
+def _distance(a, b) -> float:
+    return ((a.x - b.x) ** 2 + (a.y - b.y) ** 2) ** 0.5
 
 
 def _ensure_model() -> str:
@@ -91,6 +106,9 @@ class FaceDetectionAnalyzer(Analyzer):
         raw_detections: list[Detection] = []
         for face in result.detections:
             keypoints = face.keypoints or []
+            box = face.bounding_box
+            if not self._passes_box_shape_filter(box):
+                continue
             if not self._passes_geometry_filter(keypoints):
                 continue
             if not self._passes_pupillary_filter(keypoints, crop_w, crop_h):
@@ -98,7 +116,6 @@ class FaceDetectionAnalyzer(Analyzer):
             if self._filter_by_angle and not self._passes_angle_filter(keypoints):
                 continue
 
-            box = face.bounding_box
             confidence = face.categories[0].score if face.categories else 0.0
             pixel_keypoints = None
             if keypoints:
@@ -129,17 +146,64 @@ class FaceDetectionAnalyzer(Analyzer):
 
     @staticmethod
     def _passes_geometry_filter(keypoints) -> bool:
-        """Punto de validacion geometrica: en una cara real los ojos estan
-        arriba de la nariz y la nariz arriba de la boca. Una deteccion
-        espuria (textura, patron u objeto que por casualidad dispara el
-        modelo) suele dar puntos de referencia desordenados -- se descarta
-        aca, antes de que llegue al tracker de histeresis o a la galeria."""
+        """Punto de validacion geometrica: descarta detecciones espurias
+        (textura, patron u objeto que por casualidad dispara el modelo,
+        no una cara real) chequeando que los 4 puntos de referencia
+        centrales guarden la disposicion de una cara real, no solo que
+        existan:
+
+        1. Orden vertical ojos-nariz-boca (de arriba a abajo).
+        2. La linea entre los dos ojos es mas horizontal que vertical --
+           tolera cabeza inclinada hasta 45 grados; un par de "ojos" casi
+           en vertical es geometricamente imposible en una cara.
+        3. La nariz cae entre los dos ojos en X (con margen) -- una
+           deteccion espuria tipicamente tiene la nariz descentrada.
+        4. La boca queda a distancia comparable de cada ojo -- un
+           triangulo ojo-ojo-boca muy asimetrico no es una cara (ver
+           EYE_MOUTH_SYMMETRY_MIN; el umbral es laxo a proposito para no
+           rechazar caras de perfil, que ya tienen su propio filtro
+           opcional en `_passes_angle_filter`).
+
+        Cualquiera de las cuatro que falle es una fuerte señal de que no
+        es una cara real. Se descarta aca, antes de que llegue al tracker
+        de histeresis o a la galeria."""
         if len(keypoints) <= MOUTH_CENTER:
             return True
-        eyes_y = (keypoints[RIGHT_EYE].y + keypoints[LEFT_EYE].y) / 2
-        nose_y = keypoints[NOSE_TIP].y
-        mouth_y = keypoints[MOUTH_CENTER].y
-        return eyes_y < nose_y < mouth_y
+        right_eye, left_eye = keypoints[RIGHT_EYE], keypoints[LEFT_EYE]
+        nose, mouth = keypoints[NOSE_TIP], keypoints[MOUTH_CENTER]
+
+        eye_dx = abs(left_eye.x - right_eye.x)
+        eye_dy = abs(left_eye.y - right_eye.y)
+        if eye_dx < 1e-6 or eye_dy > eye_dx:
+            return False
+
+        eyes_y = (right_eye.y + left_eye.y) / 2
+        if not (eyes_y < nose.y < mouth.y):
+            return False
+
+        eyes_x_min, eyes_x_max = sorted((right_eye.x, left_eye.x))
+        slack = eye_dx * 0.5
+        if not (eyes_x_min - slack) <= nose.x <= (eyes_x_max + slack):
+            return False
+
+        d_right_mouth = _distance(right_eye, mouth)
+        d_left_mouth = _distance(left_eye, mouth)
+        if d_right_mouth + d_left_mouth == 0:
+            return False
+        symmetry = min(d_right_mouth, d_left_mouth) / max(d_right_mouth, d_left_mouth)
+        return symmetry >= EYE_MOUTH_SYMMETRY_MIN
+
+    @staticmethod
+    def _passes_box_shape_filter(box) -> bool:
+        """Ultima red de seguridad, independiente de los puntos de
+        referencia: descarta cajas con una proporcion ancho/alto
+        imposible para una cara real (una tira angosta o un rectangulo
+        muy chato), tipico de una deteccion espuria sobre un borde o
+        patron repetitivo de la escena."""
+        if box.height <= 0:
+            return False
+        ratio = box.width / box.height
+        return BOX_ASPECT_RATIO_RANGE[0] <= ratio <= BOX_ASPECT_RATIO_RANGE[1]
 
     def _passes_pupillary_filter(self, keypoints, crop_w: int, crop_h: int) -> bool:
         """Descarta caras demasiado chicas/lejanas: la distancia entre ojos

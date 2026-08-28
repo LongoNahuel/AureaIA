@@ -34,6 +34,7 @@ def create_analyzer(config: AnalyticsConfig) -> Analyzer:
             sensitivity=params.get("sensitivity", 50),
             min_area_percent=params.get("min_area_percent", 0.5),
             roi=_roi_from_config(config),
+            confirmation_frames=params.get("confirmation_frames", 2),
         )
 
     if config.analyzer_name == "people_counting":
@@ -41,6 +42,8 @@ def create_analyzer(config: AnalyticsConfig) -> Analyzer:
             confidence_threshold=config.confidence_threshold,
             roi=_roi_from_config(config),
             confirmation_frames=params.get("confirmation_frames", 2),
+            min_area_percent=params.get("min_area_percent", 0.15),
+            track_max_age_s=params.get("track_max_age_s", 1.5),
         )
 
     if config.analyzer_name == "line_crossing":
@@ -54,6 +57,7 @@ def create_analyzer(config: AnalyticsConfig) -> Analyzer:
             label_in=params.get("label_in", "Entrada"),
             label_out=params.get("label_out", "Salida"),
             confirmation_frames=params.get("confirmation_frames", 2),
+            min_area_percent=params.get("min_area_percent", 0.15),
         )
 
     if config.analyzer_name == "face_detection":

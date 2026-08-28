@@ -124,6 +124,15 @@ class TestLineCrossing:
         analyzer.close()
         assert fake_backend.closed
 
+    def test_dos_cajas_superpuestas_no_duplican_el_track(self, fake_backend):
+        analyzer = self._analyzer()
+        fake_backend.script = [
+            [_mp_detection(100, 120), _mp_detection(102, 121)],
+        ]
+        result = analyzer.process_frame(FRAME, 0.0)
+
+        assert len(result.detections) == 1
+
 
 class TestPeopleCounting:
     def test_ocupacion_requiere_confirmacion(self, fake_backend):
@@ -151,5 +160,26 @@ class TestPeopleCounting:
         fake_backend.script = [[_mp_detection(50, 50)], []]
         analyzer.process_frame(FRAME, 0.0)
         result = analyzer.process_frame(FRAME, 5.0)  # mucho despues
+
+        assert result.metrics == {"occupancy": 0}
+
+    def test_dos_cajas_superpuestas_de_la_misma_persona_cuentan_una_vez(self, fake_backend):
+        """El detector a veces deja pasar dos cajas casi iguales sobre el
+        mismo blob -- sin deduplicar por IoU, cada una arma su propio
+        track y la ocupacion queda inflada."""
+        analyzer = PeopleCountingAnalyzer(confirmation_frames=1)
+        fake_backend.script = [[_mp_detection(50, 50), _mp_detection(52, 51)]]
+        result = analyzer.process_frame(FRAME, 0.0)
+
+        assert result.metrics == {"occupancy": 1}
+
+    def test_caja_con_forma_de_persona_imposible_se_descarta(self, fake_backend):
+        analyzer = PeopleCountingAnalyzer(confirmation_frames=1)
+        wide_box = SimpleNamespace(
+            bounding_box=SimpleNamespace(origin_x=40, origin_y=40, width=100, height=20),
+            categories=[SimpleNamespace(category_name="person", score=0.9)],
+        )
+        fake_backend.script = [[wide_box]]
+        result = analyzer.process_frame(FRAME, 0.0)
 
         assert result.metrics == {"occupancy": 0}
