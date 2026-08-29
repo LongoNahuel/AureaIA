@@ -6,7 +6,7 @@ las reconoce; el resto se auto-descarta a los pocos segundos."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
@@ -35,8 +35,15 @@ class _AlertCard(QWidget):
         color = SEVERITY_COLORS.get(event.severity, "#3b82f6")
 
         self.setFixedWidth(300)
+        # Selector con objectName y WA_StyledBackground: un QWidget pelado no
+        # pinta el fondo de su stylesheet, y una hoja SIN selector se propaga
+        # a los hijos (cada label terminaba dibujando su propio border-left
+        # redondeado y la tarjeta quedaba invisible).
+        self.setObjectName("alertCard")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(
-            f"background-color: rgba(18, 23, 33, 240); border-left: 3px solid {color}; border-radius: 6px;"
+            f"QWidget#alertCard {{ background-color: rgba(18, 23, 33, 240); "
+            f"border-left: 3px solid {color}; border-radius: 6px; }}"
         )
 
         layout = QVBoxLayout(self)
@@ -96,7 +103,8 @@ class GlobalAlertPopupLayer(QWidget):
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
-        self.setStyleSheet("background: transparent;")
+        # Sin stylesheet propio: un QWidget plano ya no pinta fondo, y una
+        # hoja sin selector se filtraria a las tarjetas hijas.
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
