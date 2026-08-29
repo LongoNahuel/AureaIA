@@ -170,3 +170,50 @@ class TestIsStale:
         worker = sm_module.StreamWorker(_device(1))
         worker._latest_frame_ts = time.monotonic()
         assert not worker.is_stale()
+
+
+class TestReportStatus:
+    """_report_status persiste online/offline en DB (antes solo lo escribia
+    el boton "probar conexion" y el dashboard mostraba streams vivos como
+    "Sin probar"), pero solo en transiciones: el loop de reconexion de una
+    camara caida no debe escribir "offline" en cada reintento."""
+
+    def _worker_con_spy(self, monkeypatch) -> tuple:
+        calls: list[tuple[int, str]] = []
+        monkeypatch.setattr(
+            sm_module.repository,
+            "update_device_status",
+            lambda device_id, status: calls.append((device_id, status)),
+        )
+        return sm_module.StreamWorker(_device(7)), calls
+
+    def test_persiste_solo_transiciones(self, monkeypatch):
+        worker, calls = self._worker_con_spy(monkeypatch)
+
+        worker._report_status(True, "Conectado")
+        worker._report_status(True, "Conectado")  # sin cambio: no escribe
+        worker._report_status(False, "Se perdió la conexión")
+        worker._report_status(False, "No se pudo abrir el stream")  # reintento
+        worker._report_status(True, "Conectado")
+
+        assert calls == [(7, "online"), (7, "offline"), (7, "online")]
+
+    def test_error_de_db_no_mata_el_hilo_y_reintenta(self, monkeypatch):
+        worker, _ = self._worker_con_spy(monkeypatch)
+
+        def explota(device_id, status):
+            raise RuntimeError("db caida")
+
+        monkeypatch.setattr(sm_module.repository, "update_device_status", explota)
+        worker._report_status(True, "Conectado")  # no debe propagar
+
+        # La DB se recupera: como la escritura anterior fallo, el estado no
+        # quedo marcado como persistido y el proximo reporte SI escribe.
+        calls: list[tuple[int, str]] = []
+        monkeypatch.setattr(
+            sm_module.repository,
+            "update_device_status",
+            lambda device_id, status: calls.append((device_id, status)),
+        )
+        worker._report_status(True, "Conectado")
+        assert calls == [(7, "online")]

@@ -31,6 +31,7 @@ from aurea_vms.config.settings import settings
 from aurea_vms.core.device_manager import build_authenticated_url
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import DeviceStatusEvent
+from aurea_vms.models import repository
 from aurea_vms.models.device import Device
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,9 @@ class StreamWorker(threading.Thread):
         self._latest_frame: np.ndarray | None = None
         self._latest_frame_ts: float = 0.0
         self._stop_event = threading.Event()
+        # Ultimo estado persistido en DB por ESTE worker: sin esto, el loop
+        # de reconexion escribiria "offline" cada ~13s por camara caida.
+        self._last_persisted_online: bool | None = None
 
         self._history: deque[tuple[float, bytes]] = deque()
         self._history_interval = 1.0 / HISTORY_FPS
@@ -124,6 +128,17 @@ class StreamWorker(threading.Thread):
         event_bus.device_status.emit(
             DeviceStatusEvent(device_id=self.device_id, online=online, detail=detail)
         )
+        # Persistir el estado real del stream: antes solo lo escribia el
+        # boton "probar conexion", asi que el dashboard mostraba camaras
+        # transmitiendo como "Sin probar". Solo en transiciones (dedup por
+        # worker) y sin dejar que un error de DB mate el hilo de captura.
+        if online == self._last_persisted_online:
+            return
+        try:
+            repository.update_device_status(self.device_id, "online" if online else "offline")
+            self._last_persisted_online = online
+        except Exception:  # noqa: BLE001 - la captura sigue aunque la DB falle
+            logger.exception("Cámara %s: no se pudo persistir el estado", self.device_id)
 
     def get_latest_frame(self) -> np.ndarray | None:
         with self._lock:
