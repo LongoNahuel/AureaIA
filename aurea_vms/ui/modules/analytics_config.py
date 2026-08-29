@@ -62,7 +62,9 @@ class AnalyticsConfigModule(QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        # La columna del boton lleva ancho fijo: ResizeToContents mide los
+        # items, no los cellWidget, y recortaba el "Configurar".
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -85,6 +87,7 @@ class AnalyticsConfigModule(QWidget):
             button = PushButton("Configurar")
             button.clicked.connect(lambda _checked=False, name=analyzer_name: self._configure(name))
             self.table.setCellWidget(row, 3, button)
+            self.table.setColumnWidth(3, button.sizeHint().width() + 24)
 
         self.dashboard_card = SimpleCardWidget(self)
         dashboard_layout = QVBoxLayout(self.dashboard_card)

@@ -159,10 +159,12 @@ class MainWindow(QMainWindow):
         role_label = ROLE_LABELS.get(user.role, user.role) if user is not None else "?"
         name = user.username if user is not None else "?"
         row.addWidget(BodyLabel(f"{name} · {role_label}"))
+        row.addSpacing(18)
 
         # Selector global de sitio: filtra Vista en Vivo, Dispositivos y
         # Alarmas en toda la app (via app_state + site_filter_changed).
         row.addWidget(BodyLabel("Sitio:"))
+        row.addSpacing(6)
         self.site_combo = ComboBox()
         self.site_combo.addItem("Todos los sitios", userData=None)
         for site in repository.list_sites():
