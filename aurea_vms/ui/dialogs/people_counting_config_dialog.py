@@ -3,11 +3,11 @@ from __future__ import annotations
 from PySide6.QtWidgets import QFormLayout
 from qfluentwidgets import BodyLabel, CaptionLabel, DoubleSpinBox, SpinBox
 
+from aurea_vms.config.settings import settings
 from aurea_vms.models.analytics_config import AnalyticsConfig
 from aurea_vms.ui.dialogs.analytics_config_dialog_base import AnalyticsConfigDialogBase
 
 FPS_RANGE = (1, 30)
-DEFAULT_FPS = 10
 FIELD_WIDTH = 130
 
 
@@ -58,7 +58,7 @@ class PeopleCountingConfigDialog(AnalyticsConfigDialogBase):
         self.fps_spin = SpinBox()
         self.fps_spin.setRange(*FPS_RANGE)
         self.fps_spin.setMaximumWidth(FIELD_WIDTH)
-        self.fps_spin.setValue(params.get("fps", DEFAULT_FPS))
+        self.fps_spin.setValue(params.get("fps", settings.analytics_fps))
         self.fps_spin.setToolTip(
             "Cuadros por segundo para esta cámara, independiente del FPS global del resto de los "
             "analizadores."

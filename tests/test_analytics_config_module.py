@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import aurea_vms.ui.modules.analytics_config as ac_module
+from aurea_vms.config.settings import settings
 from aurea_vms.models import repository
 from aurea_vms.ui.dialogs.line_crossing_config_dialog import LineCrossingConfigDialog
 from aurea_vms.ui.modules.analytics_config import AnalyticsConfigModule
@@ -126,3 +127,28 @@ class TestValidacionDeCruceDeLinea:
 
     def test_con_linea_dibujada_valida_ok(self):
         assert LineCrossingConfigDialog.validate(self._stub(((0, 0), (100, 100)))) is None
+
+
+class TestFpsDefaultDelDialogo:
+    """M8: el fallback del spin de FPS es el global EFECTIVO (lo que el
+    engine usa cuando el config no trae fps). Antes defaulteaba a 10-25 por
+    dialogo: abrir y re-guardar un config existente le duplicaba o
+    triplicaba el FPS sin que nadie lo tocara."""
+
+    def test_config_sin_fps_muestra_el_global(self, qtbot, temp_db):
+        device = _device()
+        repository.upsert_analytics_config(
+            device.id, "line_crossing", params={"line": [[0, 0], [10, 10]]}
+        )
+        dialog = LineCrossingConfigDialog(device)
+        qtbot.addWidget(dialog)
+        assert dialog.fps_spin.value() == settings.analytics_fps
+
+    def test_config_con_fps_explicito_lo_respeta(self, qtbot, temp_db):
+        device = _device()
+        repository.upsert_analytics_config(
+            device.id, "line_crossing", params={"line": [[0, 0], [10, 10]], "fps": 12}
+        )
+        dialog = LineCrossingConfigDialog(device)
+        qtbot.addWidget(dialog)
+        assert dialog.fps_spin.value() == 12
