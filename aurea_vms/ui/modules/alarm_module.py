@@ -9,7 +9,7 @@ import os
 import shutil
 
 from PySide6.QtCore import QSize, Qt, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QPixmap
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 from qfluentwidgets import CaptionLabel, FluentIcon, PrimaryPushButton, PushButton, TableWidget
 
-from aurea_vms.core import app_state, media_store
+from aurea_vms.core import app_prefs, app_state, media_store
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import AlarmEvent as AlarmEventDTO
 from aurea_vms.core.events import ClipReadyEvent
@@ -39,7 +39,7 @@ from aurea_vms.models.alarm_event import AlarmEvent as AlarmEventRow
 from aurea_vms.models.media_asset import KIND_CLIP, KIND_SNAPSHOT
 from aurea_vms.ui.labels import display_class
 from aurea_vms.ui.notify import notify, warn
-from aurea_vms.ui.theme import SEVERITY_COLORS
+from aurea_vms.ui.theme import severity_soft_qcolor, severity_text_qcolor
 
 COLUMNS = ["Hora", "Cámara", "Clase", "Severidad", "Confianza", "Captura", "Estado"]
 THUMBNAIL_SIZE = QSize(72, 40)
@@ -167,9 +167,12 @@ class AlarmModule(QWidget):
         severity_item = QTableWidgetItem(
             SEVERITY_LABELS.get(alarm_event.severity, alarm_event.severity)
         )
-        color = SEVERITY_COLORS.get(alarm_event.severity, "#e5e7eb")
-        severity_item.setForeground(Qt.GlobalColor.white)
-        severity_item.setBackground(QColor(color))
+        # Chip discreto (texto en el color de severidad + fondo soft 12%,
+        # tokens NOVA) en vez del bloque de color pleno que dominaba la
+        # tabla entera cuando habia muchas filas de la misma severidad.
+        dark = app_prefs.get_theme() == "dark"
+        severity_item.setForeground(severity_text_qcolor(alarm_event.severity, dark))
+        severity_item.setBackground(severity_soft_qcolor(alarm_event.severity))
         self.table.setItem(row, 3, severity_item)
 
         self.table.setItem(row, 4, QTableWidgetItem(f"{alarm_event.confidence:.0%}"))

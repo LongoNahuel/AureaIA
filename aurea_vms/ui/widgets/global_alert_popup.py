@@ -23,7 +23,9 @@ from aurea_vms.ui.labels import display_class
 from aurea_vms.ui.theme import SEVERITY_COLORS
 
 SEVERITY_LABELS = {"critico": "Crítico", "alto": "Alto", "medio": "Medio", "info": "Info"}
-AUTO_DISMISS_MS = 8000
+# 12s como el prototipo NOVA: 8s se quedaba corto para leer y decidir si
+# reconocer desde el popup (los criticos igual persisten hasta reconocer).
+AUTO_DISMISS_MS = 12000
 MAX_VISIBLE = 5
 
 

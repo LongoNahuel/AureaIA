@@ -4,6 +4,7 @@ Sistema > Sistema > Apariencia."""
 
 from __future__ import annotations
 
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication
 from qfluentwidgets import Theme, setTheme
 
@@ -11,16 +12,49 @@ ACCENT = "#3b82f6"
 
 # Escala de severidad de alarmas -- UNICA fuente de verdad (antes vivia
 # duplicada en alarm_module y global_alert_popup). Cualquier badge, borde
-# de popup o dot que comunique severidad sale de aca. Candidata a
-# evolucionar a los tokens del prototipo NOVA (crit #ff4d5e / high
-# #ff9f43 / med #ffd166 / info #4f8cff + variantes soft): cambiar SOLO
-# estos valores re-pinta toda la app.
+# de popup o dot que comunique severidad sale de aca. Valores tomados de
+# los tokens del prototipo NOVA (design system de referencia del
+# proyecto): cambiar SOLO estos valores re-pinta toda la app.
 SEVERITY_COLORS = {
-    "critico": "#e5534b",
-    "alto": "#f0a020",
-    "medio": "#3b82f6",
-    "info": "#6e7681",
+    "critico": "#ff4d5e",
+    "alto": "#ff9f43",
+    "medio": "#ffd166",
+    "info": "#4f8cff",
 }
+
+
+def severity_qcolor(severity: str) -> QColor:
+    return QColor(SEVERITY_COLORS.get(severity, SEVERITY_COLORS["info"]))
+
+
+def severity_soft_qcolor(severity: str) -> QColor:
+    """Variante "soft" NOVA (12% de alpha) -- fondo de chips y badges."""
+    color = severity_qcolor(severity)
+    color.setAlphaF(0.12)
+    return color
+
+
+def severity_text_qcolor(severity: str, dark: bool) -> QColor:
+    """Color de texto del chip: el token pleno sobre fondo oscuro; sobre
+    tema claro se oscurece (el medio #ffd166 es ilegible sobre blanco)."""
+    color = severity_qcolor(severity)
+    return color if dark else color.darker(140)
+
+
+def enable_tabular_numbers(widget) -> None:
+    """Cifras tabulares (todas del mismo ancho) en un widget cuyo numero
+    se refresca en el lugar: sin esto el valor "baila" al cambiar de
+    digitos. QFont.setFeature existe desde Qt 6.7; si no esta, se degrada
+    a la fuente normal sin romper."""
+    try:
+        from PySide6.QtGui import QFont
+
+        font = widget.font()
+        font.setFeature(QFont.Tag("tnum"), 1)
+        widget.setFont(font)
+    except (AttributeError, TypeError):
+        pass
+
 
 # Colores de estado de camara (online/offline/sin probar) -- reservados
 # para estado, no reciclarlos para otra semantica.
