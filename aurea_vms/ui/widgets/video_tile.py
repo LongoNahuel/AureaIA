@@ -32,6 +32,7 @@ from aurea_vms.models import repository
 from aurea_vms.models.device import Device
 from aurea_vms.ui import icons
 from aurea_vms.ui.labels import display_class
+from aurea_vms.ui.theme import STATUS_COLORS
 from aurea_vms.ui.widgets.device_tree import DEVICE_ID_MIME
 
 BORDER_IDLE = "#2a3441"
@@ -80,6 +81,9 @@ class VideoTile(QWidget):
         self._device: Device | None = None
         self._latest_detections: tuple[Detection, ...] = ()
         self._selected = False
+        # True mientras el pixmap actual es el estado "sin señal": evita
+        # redibujar las rayas en cada tick del timer de display.
+        self._offline_rendered = False
         # Tiles de grilla (index >= 0) arrancan en sub-flujo (liviano, para
         # miniaturas); el tile de Vista Inteligente (index < 0) y cualquier
         # tile expandido con doble click usan el flujo principal.
@@ -186,6 +190,7 @@ class VideoTile(QWidget):
     def resizeEvent(self, event) -> None:  # noqa: N802 - override de Qt
         if self._device is None:
             self._render_empty_state()
+        self._offline_rendered = False  # el proximo tick redibuja al tamaño nuevo
         super().resizeEvent(event)
 
     def _show_context_menu(self, pos) -> None:
@@ -229,14 +234,54 @@ class VideoTile(QWidget):
         painter.end()
         self.video_label.setPixmap(pixmap)
 
+    def _render_offline_state(self) -> None:
+        """Camara asignada sin señal: patron rayado diagonal (spec NOVA)
+        para distinguir "stream caido" de "video oscuro" de un vistazo."""
+        size = self.video_label.size()
+        if size.width() < 10 or size.height() < 10:
+            return
+
+        pixmap = QPixmap(size)
+        pixmap.fill(QColor("#10151c"))
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        pen = QPen(QColor(110, 118, 129, 22))
+        pen.setWidth(5)
+        painter.setPen(pen)
+        step = 18
+        for x in range(-size.height(), size.width(), step):
+            painter.drawLine(x, size.height(), x + size.height(), 0)
+
+        center_y = size.height() // 2
+        painter.setPen(QColor(STATUS_COLORS["offline"]))
+        painter.drawText(
+            QRectF(0, center_y - 22, size.width(), 20), Qt.AlignmentFlag.AlignCenter, "Sin señal"
+        )
+        painter.setPen(QColor("#9aa3af"))
+        name = self._device.name if self._device is not None else ""
+        painter.drawText(
+            QRectF(0, center_y + 2, size.width(), 20),
+            Qt.AlignmentFlag.AlignCenter,
+            f"{name} — reconectando…",
+        )
+        painter.end()
+        self.video_label.setPixmap(pixmap)
+
     def _refresh_frame(self) -> None:
         if self._device is None:
             return
 
         worker = stream_manager.get_worker(self._device.id, self._stream_kind)
         frame = worker.get_latest_frame() if worker else None
-        if frame is None:
+        if frame is None or worker.is_stale():
+            # Antes quedaba el ultimo frame congelado, que parece en vivo --
+            # exactamente lo que is_stale() existia para evitar.
+            if not self._offline_rendered:
+                self._offline_rendered = True
+                self._render_offline_state()
             return
+        self._offline_rendered = False
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         height, width, _ = rgb.shape
