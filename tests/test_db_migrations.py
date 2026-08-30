@@ -137,6 +137,74 @@ def test_borrar_zona_en_db_migrada_con_el_fk_sin_set_null(tmp_path):
         db_module._SessionLocal = None
 
 
+LEGACY_SITE_COLUMN = """
+ALTER TABLE devices ADD COLUMN site_id INTEGER REFERENCES sites(id);
+UPDATE devices SET site_id = 1;
+"""
+
+
+@pytest.fixture()
+def old_db_con_site_id(tmp_path):
+    """DB de la era pre-zonas con camaras asignadas a sitio via
+    devices.site_id (la columna que el modelo actual ya no declara)."""
+    db_path = tmp_path / "vieja-con-sitio.sqlite3"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(OLD_SCHEMA)
+    conn.executescript(LEGACY_SITE_COLUMN)
+    conn.close()
+    db_module.init_db(db_path, force=True)
+    yield db_path
+    db_module._engine = None
+    db_module._SessionLocal = None
+
+
+class TestBackfillDeZonas:
+    """M5: sin backfill, una camara asignada a sitio en la DB vieja quedaba
+    "Sin zona" en silencio y ademas invisible para el filtro global de
+    sitio (que filtra via las zonas del sitio)."""
+
+    def test_camara_asignada_a_sitio_queda_en_zona_general(self, old_db_con_site_id):
+        device = repository.list_devices()[0]
+        assert device.zone_id is not None
+        zone = repository.get_zone(device.zone_id)
+        assert zone.name == "General"
+        assert zone.site_id == repository.list_sites()[0].id
+
+    def test_el_filtro_global_de_sitio_vuelve_a_ver_la_camara(self, old_db_con_site_id):
+        site = repository.list_sites()[0]
+        assert [d.name for d in repository.list_devices(site_id=site.id)] == ["Cam vieja"]
+
+    def test_el_backfill_es_de_una_sola_vez(self, old_db_con_site_id):
+        """El site_id legado se consume: desasignar la camara y reiniciar
+        NO la re-asigna, y la zona General no se duplica."""
+        device = repository.list_devices()[0]
+        repository.update_device(device.id, zone_id=None)
+
+        db_module.init_db(old_db_con_site_id, force=True)
+
+        assert repository.get_device(device.id).zone_id is None
+        assert len([z for z in repository.list_zones() if z.name == "General"]) == 1
+
+    def test_site_id_apuntando_a_sitio_inexistente_queda_sin_zona(self, tmp_path):
+        """El site_id legado no tenia FK confiable: si apunta a un sitio
+        borrado no hay donde colgar la camara y no debe explotar."""
+        db_path = tmp_path / "sitio-borrado.sqlite3"
+        conn = sqlite3.connect(db_path)
+        conn.executescript(OLD_SCHEMA)
+        conn.executescript(
+            "ALTER TABLE devices ADD COLUMN site_id INTEGER REFERENCES sites(id);"
+            "UPDATE devices SET site_id = 99;"
+        )
+        conn.close()
+        db_module.init_db(db_path, force=True)
+        try:
+            assert repository.list_devices()[0].zone_id is None
+            assert repository.list_zones() == []
+        finally:
+            db_module._engine = None
+            db_module._SessionLocal = None
+
+
 def test_borrar_sitio_con_zonas_y_camaras_no_borra_las_camaras(old_db):
     site = repository.list_sites()[0]
     zone = repository.add_zone(site_id=site.id, name="Acceso")
