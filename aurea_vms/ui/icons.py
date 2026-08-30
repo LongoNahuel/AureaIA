@@ -8,7 +8,7 @@ from functools import cache
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from qfluentwidgets import FluentIcon
 
@@ -26,14 +26,22 @@ def _load_svg_template(name: str) -> str:
 
 def load_icon(name: str, color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -> QIcon:
     """Carga assets/icons/<name>.svg (formato Lucide) y lo recolorea
-    reemplazando stroke="currentColor" por el color pedido."""
+    reemplazando stroke="currentColor" por el color pedido.
+
+    Rasteriza al devicePixelRatio de la pantalla: a escala fraccional o 2x
+    un pixmap DPR-1 se reescala y todos los iconos salen borrosos."""
     svg = _load_svg_template(name).replace("currentColor", color)
     renderer = QSvgRenderer(svg.encode("utf-8"))
-    pixmap = QPixmap(size, size)
+    screen = QGuiApplication.primaryScreen()
+    dpr = screen.devicePixelRatio() if screen is not None else 1.0
+    pixmap = QPixmap(round(size * dpr), round(size * dpr))
+    pixmap.setDevicePixelRatio(dpr)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    renderer.render(painter)
+    # Rect logico explicito: sin el, render() usa el viewport fisico del
+    # pixmap (size*dpr) sobre coordenadas logicas y el glifo sale al doble.
+    renderer.render(painter, QRectF(0, 0, size, size))
     painter.end()
     return QIcon(pixmap)
 
