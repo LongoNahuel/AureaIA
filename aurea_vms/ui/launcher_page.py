@@ -180,7 +180,12 @@ class HomeConfigPanel(QWidget):
     def __init__(self, is_admin: bool, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setFixedWidth(260)
-        self.setStyleSheet("background-color: rgba(13, 18, 26, 225);")
+        # Selector scoped: una hoja sin selector se propaga a los hijos
+        # (la misma familia de bug que tuvo el popup de alarmas). El fondo
+        # del panel lo pinta el QSS global de theme.py; aca solo se ajusta
+        # el tono.
+        self.setObjectName("homeConfigPanel")
+        self.setStyleSheet("QWidget#homeConfigPanel { background-color: rgba(13, 18, 26, 225); }")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 14, 0, 14)
