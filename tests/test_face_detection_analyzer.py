@@ -15,6 +15,10 @@ def _face(right_eye, left_eye, nose, mouth) -> list[_Kp]:
     return [_Kp(*right_eye), _Kp(*left_eye), _Kp(*nose), _Kp(*mouth)]
 
 
+def _face6(right_eye, left_eye, nose, mouth, right_ear, left_ear) -> list[_Kp]:
+    return [_Kp(*p) for p in (right_eye, left_eye, nose, mouth, right_ear, left_ear)]
+
+
 class TestFiltroGeometrico:
     def test_cara_frontal_pasa(self):
         kps = _face((0.35, 0.4), (0.55, 0.4), (0.45, 0.5), (0.45, 0.6))
@@ -51,6 +55,50 @@ class TestFiltroGeometrico:
         boca queda pegada a un ojo y lejos del otro -- no es una cara."""
         kps = _face((0.3, 0.4), (0.5, 0.4), (0.4, 0.42), (0.31, 0.44))
         assert FaceDetectionAnalyzer._passes_geometry_filter(kps) is False
+
+
+class TestFiltroDeOrejas:
+    """Los 4 puntos centrales (ojos/nariz/boca) de un objeto plano -- una
+    caja, un cartel -- a veces caen por casualidad en una disposicion que
+    parece una cara. Que ADEMAS las orejas caigan en el lugar anatomico
+    correcto es mucho mas raro por azar; estos tests simulan justamente
+    ese caso: los 4 puntos centrales pasarian solos, pero las orejas los
+    delatan."""
+
+    BASE = {
+        "right_eye": (0.35, 0.4),
+        "left_eye": (0.55, 0.4),
+        "nose": (0.45, 0.5),
+        "mouth": (0.45, 0.6),
+    }
+
+    def test_cara_con_orejas_bien_ubicadas_pasa(self):
+        kps = _face6(**self.BASE, right_ear=(0.25, 0.42), left_ear=(0.65, 0.42))
+        assert FaceDetectionAnalyzer._passes_geometry_filter(kps) is True
+
+    def test_oreja_derecha_mas_cerca_del_centro_que_el_ojo_se_rechaza(self):
+        """La "oreja" cae del lado de adentro del ojo -- imposible en una
+        cara real, tipico de un punto espurio sobre una caja."""
+        kps = _face6(**self.BASE, right_ear=(0.4, 0.42), left_ear=(0.65, 0.42))
+        assert FaceDetectionAnalyzer._passes_geometry_filter(kps) is False
+
+    def test_oreja_izquierda_mas_cerca_del_centro_que_el_ojo_se_rechaza(self):
+        kps = _face6(**self.BASE, right_ear=(0.25, 0.42), left_ear=(0.5, 0.42))
+        assert FaceDetectionAnalyzer._passes_geometry_filter(kps) is False
+
+    def test_oreja_muy_por_encima_de_la_cara_se_rechaza(self):
+        kps = _face6(**self.BASE, right_ear=(0.25, 0.02), left_ear=(0.65, 0.42))
+        assert FaceDetectionAnalyzer._passes_geometry_filter(kps) is False
+
+    def test_oreja_muy_por_debajo_de_la_cara_se_rechaza(self):
+        kps = _face6(**self.BASE, right_ear=(0.25, 0.42), left_ear=(0.65, 0.98))
+        assert FaceDetectionAnalyzer._passes_geometry_filter(kps) is False
+
+    def test_sin_puntos_de_orejas_no_se_puede_validar_pasa(self):
+        """Solo 4 keypoints (sin orejas): el chequeo se omite, no rechaza
+        por defecto."""
+        kps = _face(**self.BASE)
+        assert FaceDetectionAnalyzer._passes_geometry_filter(kps) is True
 
 
 @dataclass

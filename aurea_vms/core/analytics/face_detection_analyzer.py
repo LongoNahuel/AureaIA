@@ -16,11 +16,15 @@ galeria:
 
 1. `_passes_box_shape_filter`: la caja tiene que tener una proporcion
    ancho/alto plausible para una cara.
-2. `_passes_geometry_filter`: los 4 puntos de referencia centrales tienen
-   que guardar la disposicion de una cara real (orden vertical
+2. `_passes_geometry_filter`: los 6 puntos de referencia tienen que
+   guardar la disposicion de una cara real (orden vertical
    ojos-nariz-boca, linea entre ojos mas horizontal que vertical, nariz
    centrada entre los ojos en X, boca a distancia comparable de cada
-   ojo) -- no solo existir.
+   ojo, orejas por fuera de los ojos y a la altura de la cara) -- no
+   solo existir. Este ultimo chequeo (orejas) es el que mas distingue a
+   una cara real de una caja/objeto plano: que 6 puntos, no solo 4,
+   caigan en el lugar anatomico correcto es mucho mas dificil de
+   replicar por casualidad.
 
 Ambos descartan detecciones con puntos/caja degenerados, tipico de una
 textura o patron que dispara el modelo por casualidad, no una cara real.
@@ -147,10 +151,10 @@ class FaceDetectionAnalyzer(Analyzer):
     @staticmethod
     def _passes_geometry_filter(keypoints) -> bool:
         """Punto de validacion geometrica: descarta detecciones espurias
-        (textura, patron u objeto que por casualidad dispara el modelo,
-        no una cara real) chequeando que los 4 puntos de referencia
-        centrales guarden la disposicion de una cara real, no solo que
-        existan:
+        (textura, patron, esquina o borde de una caja/objeto que por
+        casualidad dispara el modelo, no una cara real) chequeando que
+        los 6 puntos de referencia guarden la disposicion de una cara
+        real, no solo que existan:
 
         1. Orden vertical ojos-nariz-boca (de arriba a abajo).
         2. La linea entre los dos ojos es mas horizontal que vertical --
@@ -163,8 +167,14 @@ class FaceDetectionAnalyzer(Analyzer):
            EYE_MOUTH_SYMMETRY_MIN; el umbral es laxo a proposito para no
            rechazar caras de perfil, que ya tienen su propio filtro
            opcional en `_passes_angle_filter`).
+        5. Las orejas caen por FUERA de los ojos en X y a la altura de la
+           cara en Y. Es el chequeo mas discriminante contra objetos
+           planos (cajas, carteles, texturas): que 4 puntos centrales
+           parezcan una cara ya es raro por azar, que ADEMAS los otros 2
+           caigan en el lugar anatomico correcto de las orejas es mucho
+           mas dificil de replicar por casualidad.
 
-        Cualquiera de las cuatro que falle es una fuerte señal de que no
+        Cualquiera de los cinco que falle es una fuerte señal de que no
         es una cara real. Se descarta aca, antes de que llegue al tracker
         de histeresis o a la galeria."""
         if len(keypoints) <= MOUTH_CENTER:
@@ -191,7 +201,25 @@ class FaceDetectionAnalyzer(Analyzer):
         if d_right_mouth + d_left_mouth == 0:
             return False
         symmetry = min(d_right_mouth, d_left_mouth) / max(d_right_mouth, d_left_mouth)
-        return symmetry >= EYE_MOUTH_SYMMETRY_MIN
+        if symmetry < EYE_MOUTH_SYMMETRY_MIN:
+            return False
+
+        if len(keypoints) > max(RIGHT_EAR, LEFT_EAR):
+            right_ear, left_ear = keypoints[RIGHT_EAR], keypoints[LEFT_EAR]
+            eyes_center_x = (right_eye.x + left_eye.x) / 2
+            if abs(right_ear.x - eyes_center_x) < abs(right_eye.x - eyes_center_x):
+                return False
+            if abs(left_ear.x - eyes_center_x) < abs(left_eye.x - eyes_center_x):
+                return False
+
+            face_height = max(mouth.y - eyes_y, eye_dx * 0.3)
+            ear_y_min, ear_y_max = eyes_y - face_height, mouth.y + face_height
+            if not (ear_y_min <= right_ear.y <= ear_y_max):
+                return False
+            if not (ear_y_min <= left_ear.y <= ear_y_max):
+                return False
+
+        return True
 
     @staticmethod
     def _passes_box_shape_filter(box) -> bool:
