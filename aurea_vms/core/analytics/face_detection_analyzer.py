@@ -10,28 +10,35 @@ pensado para camara selfie (caras grandes y cerca, tipo videollamada);
 "full_range" cubre caras chicas y lejanas tambien, que es el caso real de
 una camara de seguridad mirando una escena completa.
 
-Estabilidad / falsos disparos: cada deteccion cruda pasa primero por dos
-puntos de validacion, antes de llegar al tracker de histeresis o a la
-galeria:
+Estabilidad / falsos disparos: cada deteccion cruda pasa primero por tres
+puntos de validacion (ojos, nariz, boca, orejas y la cabeza -- la caja --
+como parametros geometricos), antes de llegar al tracker de histeresis o
+a la galeria:
 
-1. `_passes_box_shape_filter`: la caja tiene que tener una proporcion
-   ancho/alto plausible para una cara.
+1. `_passes_box_shape_filter`: la CABEZA (caja) tiene que tener una
+   proporcion ancho/alto plausible para una cara.
 2. `_passes_geometry_filter`: los 6 puntos de referencia tienen que
-   guardar la disposicion de una cara real (orden vertical
+   guardar la disposicion de una cara real ENTRE SI (orden vertical
    ojos-nariz-boca, linea entre ojos mas horizontal que vertical, nariz
    centrada entre los ojos en X, boca a distancia comparable de cada
    ojo, orejas por fuera de los ojos y a la altura de la cara) -- no
-   solo existir. Este ultimo chequeo (orejas) es el que mas distingue a
-   una cara real de una caja/objeto plano: que 6 puntos, no solo 4,
-   caigan en el lugar anatomico correcto es mucho mas dificil de
-   replicar por casualidad.
+   solo existir. El chequeo de orejas es el que mas distingue a una cara
+   real de una caja/objeto plano: que 6 puntos, no solo 4, caigan en el
+   lugar anatomico correcto es mucho mas dificil de replicar por
+   casualidad.
+3. `_passes_head_alignment_filter`: cruza esos mismos puntos contra la
+   CABEZA -- ojos cerca de la mitad superior de la caja, boca cerca de
+   la inferior, nariz cerca del centro horizontal. Puntos autoconsistentes
+   entre si (paso 2) pero amontonados en una esquina de una caja mucho
+   mas grande, o fuera de ella, no describen una cabeza real.
 
-Ambos descartan detecciones con puntos/caja degenerados, tipico de una
-textura o patron que dispara el modelo por casualidad, no una cara real.
-Las que pasan se acumulan en un `CentroidTracker` con histeresis (igual
-que Conteo de Personas / Cruce de Linea): una cara nueva no se reporta
-como deteccion "real" hasta sostenerse un par de cuadros seguidos, lo que
-filtra el ruido de un solo frame sin agregar un modelo nuevo."""
+Los tres descartan detecciones con puntos/caja degenerados, tipico de una
+textura, borde o patron que dispara el modelo por casualidad, no una cara
+real. Las que pasan se acumulan en un `CentroidTracker` con histeresis
+(igual que Conteo de Personas / Cruce de Linea): una cara nueva no se
+reporta como deteccion "real" hasta sostenerse un par de cuadros
+seguidos, lo que filtra el ruido de un solo frame sin agregar un modelo
+nuevo."""
 
 from __future__ import annotations
 
@@ -58,6 +65,16 @@ RIGHT_EAR, LEFT_EAR = 4, 5
 ANGLE_SYMMETRY_MIN = 0.45  # por debajo de esto se descarta como muy de perfil
 EYE_MOUTH_SYMMETRY_MIN = 0.25  # por debajo, los puntos no guardan forma de cara
 BOX_ASPECT_RATIO_RANGE = (0.35, 2.5)  # ancho/alto plausible para una cara real
+
+# Posicion anatomica esperada de cada punto DENTRO de la caja de cabeza
+# (0 = borde superior/izquierdo de la caja, 1 = borde inferior/derecho),
+# generosa a proposito -- no es una calibracion fina, solo descarta
+# keypoints que caen muy lejos de donde la propia caja dice que esta la
+# cabeza (tipico cuando el "objeto" que disparo el modelo no tiene nada
+# que ver con la caja que le calculo alrededor).
+HEAD_EYES_Y_RANGE = (-0.10, 0.70)
+HEAD_MOUTH_Y_RANGE = (0.30, 1.10)
+HEAD_NOSE_X_RANGE = (0.10, 0.90)
 
 
 def _distance(a, b) -> float:
@@ -114,6 +131,8 @@ class FaceDetectionAnalyzer(Analyzer):
             if not self._passes_box_shape_filter(box):
                 continue
             if not self._passes_geometry_filter(keypoints):
+                continue
+            if not self._passes_head_alignment_filter(keypoints, box, crop_w, crop_h):
                 continue
             if not self._passes_pupillary_filter(keypoints, crop_w, crop_h):
                 continue
@@ -232,6 +251,40 @@ class FaceDetectionAnalyzer(Analyzer):
             return False
         ratio = box.width / box.height
         return BOX_ASPECT_RATIO_RANGE[0] <= ratio <= BOX_ASPECT_RATIO_RANGE[1]
+
+    @staticmethod
+    def _passes_head_alignment_filter(keypoints, box, crop_w: int, crop_h: int) -> bool:
+        """Cruza los puntos de referencia contra la CABEZA (la caja que el
+        modelo calculo alrededor de la deteccion), no solo entre si: los
+        ojos tienen que caer cerca de la mitad superior de la caja, la
+        boca cerca de la mitad inferior, la nariz cerca del centro
+        horizontal. `_passes_geometry_filter` ya garantiza que los puntos
+        son autoconsistentes (forman "una cara"); esto ademas exige que
+        esa cara este DONDE la caja dice que esta la cabeza -- un objeto
+        que dispara keypoints autoconsistentes pero desalineados de su
+        propia caja (ej. amontonados en una esquina) queda descartado
+        aca."""
+        if len(keypoints) <= MOUTH_CENTER or box.width <= 0 or box.height <= 0:
+            return True
+        right_eye, left_eye = keypoints[RIGHT_EYE], keypoints[LEFT_EYE]
+        nose, mouth = keypoints[NOSE_TIP], keypoints[MOUTH_CENTER]
+
+        box_x = box.origin_x / crop_w
+        box_y = box.origin_y / crop_h
+        box_w = box.width / crop_w
+        box_h = box.height / crop_h
+
+        eyes_y = (right_eye.y + left_eye.y) / 2
+        eyes_rel_y = (eyes_y - box_y) / box_h
+        if not (HEAD_EYES_Y_RANGE[0] <= eyes_rel_y <= HEAD_EYES_Y_RANGE[1]):
+            return False
+
+        mouth_rel_y = (mouth.y - box_y) / box_h
+        if not (HEAD_MOUTH_Y_RANGE[0] <= mouth_rel_y <= HEAD_MOUTH_Y_RANGE[1]):
+            return False
+
+        nose_rel_x = (nose.x - box_x) / box_w
+        return HEAD_NOSE_X_RANGE[0] <= nose_rel_x <= HEAD_NOSE_X_RANGE[1]
 
     def _passes_pupillary_filter(self, keypoints, crop_w: int, crop_h: int) -> bool:
         """Descarta caras demasiado chicas/lejanas: la distancia entre ojos
