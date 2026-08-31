@@ -8,8 +8,8 @@ dentro de Sistema), no modulos nuevos."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtCore import QPointF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
@@ -62,6 +62,24 @@ HOME_SHORTCUTS = [
 ]
 
 
+def _badge_pixmap(icon_factory, icon_size: int, dpr: float) -> QPixmap:
+    """Pixmap del glifo al devicePixelRatio real. Pedirlo explicito importa:
+    los QIcon de qfluentwidgets ya devuelven pixmaps DPR-aware y los de
+    icons.load_icon tambien -- pero mezclar ambos con .pixmap(w, h) pelado
+    daba tamaños fisicos distintos segun el origen del icono."""
+    return icon_factory(color="white", size=icon_size).pixmap(QSize(icon_size, icon_size), dpr)
+
+
+def _draw_centered_pixmap(painter: QPainter, widget: QWidget, pixmap: QPixmap) -> None:
+    """Centra usando el tamaño LOGICO del pixmap: width() es fisico, y a
+    escala 2x centrar con el fisico corria el glifo fuera del badge (el bug
+    de "Gestion de usuarios" con el icono colgando de la esquina)."""
+    dpr = pixmap.devicePixelRatio()
+    x = (widget.width() - pixmap.width() / dpr) / 2
+    y = (widget.height() - pixmap.height() / dpr) / 2
+    painter.drawPixmap(QPointF(x, y), pixmap)
+
+
 class _IconBadge(QWidget):
     """Icono Lucide (blanco) centrado sobre una placa circular de color."""
 
@@ -69,7 +87,7 @@ class _IconBadge(QWidget):
         super().__init__(parent)
         self._color = QColor(color)
         icon_size = BADGE_SIZE // 2
-        self._pixmap = icon_factory(color="white", size=icon_size).pixmap(icon_size, icon_size)
+        self._pixmap = _badge_pixmap(icon_factory, icon_size, self.devicePixelRatioF())
         self.setFixedSize(BADGE_SIZE, BADGE_SIZE)
 
     def paintEvent(self, event) -> None:  # noqa: N802 - override de Qt
@@ -78,9 +96,7 @@ class _IconBadge(QWidget):
         painter.setBrush(self._color)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(self.rect())
-        x = (self.width() - self._pixmap.width()) // 2
-        y = (self.height() - self._pixmap.height()) // 2
-        painter.drawPixmap(x, y, self._pixmap)
+        _draw_centered_pixmap(painter, self, self._pixmap)
 
 
 class _SquareIconBadge(QWidget):
@@ -93,7 +109,7 @@ class _SquareIconBadge(QWidget):
         super().__init__(parent)
         self._color = QColor(color)
         icon_size = self.SIZE - 14
-        self._pixmap = icon_factory(color="white", size=icon_size).pixmap(icon_size, icon_size)
+        self._pixmap = _badge_pixmap(icon_factory, icon_size, self.devicePixelRatioF())
         self.setFixedSize(self.SIZE, self.SIZE)
 
     def paintEvent(self, event) -> None:  # noqa: N802 - override de Qt
@@ -102,9 +118,7 @@ class _SquareIconBadge(QWidget):
         painter.setBrush(self._color)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(self.rect(), 8, 8)
-        x = (self.width() - self._pixmap.width()) // 2
-        y = (self.height() - self._pixmap.height()) // 2
-        painter.drawPixmap(x, y, self._pixmap)
+        _draw_centered_pixmap(painter, self, self._pixmap)
 
 
 class ModuleCard(CardWidget):
@@ -166,7 +180,12 @@ class HomeConfigPanel(QWidget):
     def __init__(self, is_admin: bool, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setFixedWidth(260)
-        self.setStyleSheet("background-color: rgba(13, 18, 26, 225);")
+        # Selector scoped: una hoja sin selector se propaga a los hijos
+        # (la misma familia de bug que tuvo el popup de alarmas). El fondo
+        # del panel lo pinta el QSS global de theme.py; aca solo se ajusta
+        # el tono.
+        self.setObjectName("homeConfigPanel")
+        self.setStyleSheet("QWidget#homeConfigPanel { background-color: rgba(13, 18, 26, 225); }")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 14, 0, 14)

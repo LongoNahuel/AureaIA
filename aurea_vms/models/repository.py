@@ -48,10 +48,19 @@ def update_site(site_id: int, **fields: object) -> None:
 def delete_site(site_id: int) -> None:
     """Borra el sitio y sus zonas (ondelete=CASCADE en Zone.site_id); las
     camaras de esas zonas NO se borran, quedan con zone_id NULL ("Sin
-    zona") gracias al ondelete=SET NULL en Device.zone_id."""
+    zona").
+
+    La nulificacion se hace aca ademas del ondelete=SET NULL del modelo:
+    una DB que migro devices.zone_id via ALTER TABLE puede tener el FK
+    sin accion de borrado, y con PRAGMA foreign_keys=ON el CASCADE de las
+    zonas fallaria con IntegrityError."""
     with get_session() as session:
         site = session.get(Site, site_id)
         if site is not None:
+            zone_ids = session.query(Zone.id).filter(Zone.site_id == site_id)
+            session.query(Device).filter(Device.zone_id.in_(zone_ids)).update(
+                {Device.zone_id: None}, synchronize_session=False
+            )
             session.delete(site)
 
 
@@ -109,9 +118,15 @@ def update_zone(zone_id: int, **fields: object) -> None:
 
 
 def delete_zone(zone_id: int) -> None:
+    """Las camaras de la zona quedan con zone_id NULL ("Sin zona"). Se
+    nulifica aca por el mismo motivo que en delete_site: en DBs migradas
+    el FK de devices.zone_id puede no tener ON DELETE SET NULL."""
     with get_session() as session:
         zone = session.get(Zone, zone_id)
         if zone is not None:
+            session.query(Device).filter(Device.zone_id == zone_id).update(
+                {Device.zone_id: None}, synchronize_session=False
+            )
             session.delete(zone)
 
 

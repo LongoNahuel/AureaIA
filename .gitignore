@@ -7,6 +7,7 @@ build/
 dist/
 
 data/*.sqlite3
+data/*.sqlite3.bak*
 data/clips/*
 data/snapshots/*
 data/media/*
@@ -29,4 +30,11 @@ htmlcov/
 !aurea_vms/ui/assets/**
 .claude/
 sesiones/
+
+# Rig de demo: binario (se baja de github, ver tools/demo/README.md) y
+# certificado autofirmado que mediamtx genera al arrancar.
+tools/demo/mediamtx
+tools/demo/mediamtx.exe
+auto.crt
+auto.key
 

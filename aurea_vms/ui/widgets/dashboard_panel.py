@@ -12,6 +12,7 @@ from qfluentwidgets import CaptionLabel, SimpleCardWidget, StrongBodyLabel, Titl
 
 from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.models import repository
+from aurea_vms.ui.theme import enable_tabular_numbers
 
 # Mismos colores de estado que Dispositivos (online/offline/desconocido) --
 # reservados para estado, no se reciclan para otra cosa.
@@ -83,6 +84,7 @@ class _StatTile(QWidget):
         layout.setSpacing(2)
 
         self.value_label = TitleLabel("—", self)
+        enable_tabular_numbers(self.value_label)
         layout.addWidget(self.value_label)
 
         caption = CaptionLabel(title, self)

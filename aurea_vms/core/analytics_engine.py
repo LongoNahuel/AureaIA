@@ -19,6 +19,19 @@ from aurea_vms.models.device import Device
 
 logger = logging.getLogger(__name__)
 
+# Piso de espera cuando la inferencia consume todo el intervalo: sin el,
+# wait(0.0) vuelve al instante y el loop clava un core al 100% persiguiendo
+# un FPS que el CPU no puede dar.
+MIN_YIELD_S = 0.05
+
+
+def pacing_wait_s(interval_s: float, elapsed_s: float) -> float:
+    """Cuanto dormir entre frames: el resto del intervalo si sobra tiempo,
+    MIN_YIELD_S si la inferencia se comio el presupuesto (funcion pura
+    para poder testearla sin levantar threads)."""
+    remaining = interval_s - elapsed_s
+    return remaining if remaining > 0 else MIN_YIELD_S
+
 
 class AnalyticsWorker(threading.Thread):
     def __init__(self, config: AnalyticsConfig, device: Device) -> None:
@@ -31,8 +44,10 @@ class AnalyticsWorker(threading.Thread):
         # Facial en modo forense a 25fps); si no lo configura, usa el
         # default global.
         fps = (config.params or {}).get("fps", settings.analytics_fps)
-        self._interval_s = 1.0 / max(0.1, float(fps))
+        self._fps = max(0.1, float(fps))
+        self._interval_s = 1.0 / self._fps
         self._stop_event = threading.Event()
+        self._overrun_warned = False
 
     def run(self) -> None:
         stream_manager.acquire(self._device)
@@ -55,7 +70,19 @@ class AnalyticsWorker(threading.Thread):
                     )
 
                 elapsed = time.monotonic() - start
-                self._stop_event.wait(max(0.0, self._interval_s - elapsed))
+                if not self._overrun_warned and frame is not None and elapsed > self._interval_s:
+                    # Feedback unico: antes esto degradaba en silencio (y con
+                    # wait(0.0) ademas quemaba el core).
+                    self._overrun_warned = True
+                    logger.warning(
+                        "Analizador %s (cámara %s): la inferencia tarda %.0f ms y no alcanza "
+                        "los %.1f fps configurados; corre al ritmo que da el CPU",
+                        self._analyzer_name,
+                        self._device.id,
+                        elapsed * 1000,
+                        self._fps,
+                    )
+                self._stop_event.wait(pacing_wait_s(self._interval_s, elapsed))
         finally:
             stream_manager.release(self._device.id)
             try:

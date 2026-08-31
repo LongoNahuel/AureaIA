@@ -69,3 +69,18 @@ def test_stop_all(engine):
 
     engine.stop_all()
     assert engine.running_count() == 0
+
+
+class TestPacingWait:
+    """M8: con la inferencia mas lenta que el intervalo, wait(0.0) volvia al
+    instante y el loop clavaba un core al 100%."""
+
+    def test_con_tiempo_de_sobra_duerme_el_resto_del_intervalo(self):
+        assert ae_module.pacing_wait_s(0.2, 0.05) == pytest.approx(0.15)
+
+    def test_con_overrun_cede_el_thread_igual(self):
+        assert ae_module.pacing_wait_s(0.2, 0.5) == ae_module.MIN_YIELD_S
+        assert ae_module.pacing_wait_s(0.2, 0.2) == ae_module.MIN_YIELD_S
+
+    def test_justo_en_el_limite_no_devuelve_cero(self):
+        assert ae_module.pacing_wait_s(0.1, 0.1) > 0.0

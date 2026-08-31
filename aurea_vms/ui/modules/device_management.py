@@ -214,6 +214,13 @@ class DeviceManagementModule(QWidget):
 
     def _reload_managed(self) -> None:
         self._devices = repository.list_devices(site_id=app_state.current_site_id)
+        # Prefetch de etiquetas de zona: hacer get_zone() + list_sites() POR
+        # FILA era el mismo N+1 que 43d29c3 ya habia pagado en Alarmas
+        # (~400 queries por recarga con 200 camaras).
+        sites = {s.id: s.name for s in repository.list_sites()}
+        self._zone_labels = {
+            z.id: f"{sites.get(z.site_id, '?')} · {z.name}" for z in repository.list_zones()
+        }
         self.managed_title.setText(f"Dispositivos administrados ({len(self._devices)})")
         self.managed_table.setRowCount(len(self._devices))
         for row, device in enumerate(self._devices):
@@ -241,15 +248,10 @@ class DeviceManagementModule(QWidget):
         self.managed_table.setItem(row, 7, QTableWidgetItem(device.firmware_version or "—"))
         self.managed_table.setCellWidget(row, 8, self._operation_widget(device))
 
-    @staticmethod
-    def _zone_label(device: Device) -> str:
+    def _zone_label(self, device: Device) -> str:
         if device.zone_id is None:
             return "—"
-        zone = repository.get_zone(device.zone_id)
-        if zone is None:
-            return "—"
-        sites = {s.id: s.name for s in repository.list_sites()}
-        return f"{sites.get(zone.site_id, '?')} · {zone.name}"
+        return self._zone_labels.get(device.zone_id, "—")
 
     def _status_widget(self, status: str) -> QWidget:
         widget = QWidget()

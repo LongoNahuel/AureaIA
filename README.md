@@ -46,6 +46,24 @@ python -m aurea_vms.main          # primera vez: wizard de Super Administrador
 Sin cámaras físicas: usar el rig de cámaras RTSP falsas + seed —
 ver [`tools/demo/README.md`](tools/demo/README.md).
 
+### Correr la UI en un escritorio Linux
+
+Además de las libs que ya pide el CI (`libegl1 libgl1 libgles2
+libglib2.0-0 libxkbcommon0 libdbus-1-3 libfontconfig1`), abrir ventanas
+bajo X11 requiere:
+
+```bash
+sudo apt install libxcb-cursor0    # obligatoria para el plugin xcb de Qt >= 6.5
+sudo apt install ffmpeg            # solo si vas a usar el rig de tools/demo
+```
+
+El wheel Linux de `opencv-python` trae su propia copia de Qt que pisa
+los plugins de plataforma de PySide6 (síntoma: "Could not load the Qt
+platform plugin xcb ... cv2/qt/plugins" y core dump). `main()` lo
+corrige solo re-apuntando `QT_QPA_PLATFORM_PLUGIN_PATH` a PySide6, así
+que no hay nada que configurar — pero si se setea esa variable a mano,
+se respeta.
+
 ### Calidad
 
 ```bash

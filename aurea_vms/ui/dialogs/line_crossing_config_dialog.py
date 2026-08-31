@@ -3,13 +3,13 @@ from __future__ import annotations
 from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QWidget
 from qfluentwidgets import BodyLabel, CaptionLabel, CheckBox, DoubleSpinBox, LineEdit, SpinBox
 
+from aurea_vms.config.settings import settings
 from aurea_vms.models.analytics_config import AnalyticsConfig
 from aurea_vms.ui.dialogs.analytics_config_dialog_base import AnalyticsConfigDialogBase
 from aurea_vms.ui.labels import display_class
 
 COMMON_CLASSES = ["person", "car", "motorcycle", "bicycle", "bus", "truck"]
 FPS_RANGE = (1, 30)
-DEFAULT_FPS = 10
 FIELD_WIDTH = 130
 
 
@@ -72,7 +72,7 @@ class LineCrossingConfigDialog(AnalyticsConfigDialogBase):
         self.fps_spin = SpinBox()
         self.fps_spin.setRange(*FPS_RANGE)
         self.fps_spin.setMaximumWidth(FIELD_WIDTH)
-        self.fps_spin.setValue(params.get("fps", DEFAULT_FPS))
+        self.fps_spin.setValue(params.get("fps", settings.analytics_fps))
         self.fps_spin.setToolTip(
             "Cuadros por segundo para esta cámara, independiente del FPS global del resto de los "
             "analizadores."
@@ -99,6 +99,10 @@ class LineCrossingConfigDialog(AnalyticsConfigDialogBase):
         return selected or ["person"]
 
     def validate(self) -> str | None:
-        if self.enabled_check.isChecked() and self.selector_widget.get_line() is None:
+        # La línea se exige siempre, no solo con "habilitado" tildado: un
+        # config persistido con line=None puede prenderse después desde el
+        # switch del módulo Analíticas (o en el arranque), y ahí
+        # create_analyzer no tiene línea con la que construir el analizador.
+        if self.selector_widget.get_line() is None:
             return "Dibujá una línea de cruce sobre la captura antes de guardar."
         return None

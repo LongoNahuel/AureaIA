@@ -1,5 +1,5 @@
 """Lanzador de AureaIA VMS -- corre bien sin importar desde donde se
-ejecute (doble click, "Run" del editor, o `python AureaRun.py` parado en
+ejecute (doble click, "Run" del editor, o `python aurea_run.py` parado en
 cualquier carpeta). Se para en la raiz del proyecto y arma sys.path con
 esta carpeta antes de importar aurea_vms, asi el paquete se encuentra
 aunque no este instalado (`pip install -e .`) en el entorno activo.
