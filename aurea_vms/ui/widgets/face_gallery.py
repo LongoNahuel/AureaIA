@@ -6,9 +6,9 @@ los snapshots de alarma cuando hay una regla de Deteccion Facial activa.
 Un ID catalogado por rostro distinto, una sola captura por ID: cada
 deteccion se compara contra las ya capturadas con dos firmas combinadas
 -- una chica en escala de grises (apariencia) y otra geometrica, a partir
-de las distancias entre los 6 puntos de referencia que ya da el detector
-(ojos/nariz/boca/orejas), normalizadas por la distancia entre ojos para
-que no dependa de que tan cerca este la cara. Ninguna de las dos es
+de las distancias entre los 5 puntos de referencia que ya da el detector
+(ojos/nariz/comisuras de boca), normalizadas por la distancia entre ojos
+para que no dependa de que tan cerca este la cara. Ninguna de las dos es
 reconocimiento real (no hay un embedding aprendido), pero combinar forma
 + apariencia es bastante mas robusto a cambios de luz o gesto que
 comparar pixeles solos.
@@ -69,11 +69,11 @@ def _face_signature(crop_bgr: np.ndarray) -> np.ndarray:
 
 
 def _geometry_signature(keypoints: tuple[tuple[float, float], ...] | None) -> np.ndarray | None:
-    """Distancias entre cada par de los 6 puntos de referencia (ojo der,
-    ojo izq, nariz, boca, oreja der, oreja izq), normalizadas por la
-    distancia entre ojos -- da una firma de "forma" de la cara que no
-    depende de que tan cerca/lejos este de la camara."""
-    if not keypoints or len(keypoints) < 6:
+    """Distancias entre cada par de los 5 puntos de referencia (ojo der,
+    ojo izq, nariz, comisura de boca der, comisura de boca izq),
+    normalizadas por la distancia entre ojos -- da una firma de "forma"
+    de la cara que no depende de que tan cerca/lejos este de la camara."""
+    if not keypoints or len(keypoints) < 5:
         return None
     points = np.array(keypoints, dtype=np.float32)
     eye_distance = float(np.linalg.norm(points[0] - points[1]))

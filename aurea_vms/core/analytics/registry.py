@@ -65,7 +65,6 @@ def create_analyzer(config: AnalyticsConfig) -> Analyzer:
             confidence_threshold=config.confidence_threshold,
             roi=_roi_from_config(config),
             min_pupillary_distance_px=params.get("min_pupillary_distance_px", 40),
-            filter_by_angle=params.get("filter_by_angle", False),
             confirmation_frames=params.get("confirmation_frames", 2),
         )
 

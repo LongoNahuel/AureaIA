@@ -1,10 +1,12 @@
 """Cruce de linea: cuenta cuantos objetos trackeados cruzan una linea
 virtual, discriminando el sentido del cruce (in/out).
 
-Cada deteccion cruda pasa primero por dos filtros baratos, independientes
-del `confidence_threshold` del modelo (ver `object_detector_backend.py`):
-forma de caja plausible y tamaño minimo (% del cuadro completo, descarta
-detecciones chiquitas/lejanas). Histeresis: un track solo empieza a
+Usa YOLOX-Tiny (ONNX via onnxruntime, ver `object_detector_backend.py`).
+Cada deteccion cruda pasa primero por tres filtros baratos, independientes
+del `confidence_threshold` del modelo: forma de caja plausible, tamaño
+minimo (% del cuadro completo, descarta detecciones chiquitas/lejanas) y
+deduplicacion por IoU (dos cajas casi superpuestas sobre el MISMO objeto
+no deben contar dos cruces). Histeresis: un track solo empieza a
 evaluarse contra la linea (y solo puede disparar un cruce) una vez
 "confirmado" -- sostenido varias muestras seguidas por el CentroidTracker
 -- para no contar un cruce falso a partir de una deteccion espuria de un
@@ -12,17 +14,11 @@ unico frame."""
 
 from __future__ import annotations
 
-import cv2
 import numpy as np
 
-from aurea_vms.core.analytics.base import (
-    AnalysisResult,
-    Analyzer,
-    rescale_bbox,
-    resize_for_inference,
-)
+from aurea_vms.core.analytics.base import AnalysisResult, Analyzer
 from aurea_vms.core.analytics.object_detector_backend import (
-    create_object_detector,
+    YoloxDetector,
     deduplicate_by_iou,
     passes_box_shape_filter,
     passes_min_area_filter,
@@ -56,8 +52,9 @@ class LineCrossingAnalyzer(Analyzer):
         track_max_age_s: float = 1.5,
         min_area_percent: float = 0.15,
     ) -> None:
-        classes = object_classes or ["person"]
-        self._mp, self._detector = create_object_detector(classes, confidence_threshold)
+        self._detector = YoloxDetector()
+        self._classes = object_classes or ["person"]
+        self._confidence_threshold = confidence_threshold
         (self._x1, self._y1), (self._x2, self._y2) = line
         self.label_in = label_in
         self.label_out = label_out
@@ -68,26 +65,17 @@ class LineCrossingAnalyzer(Analyzer):
         self._count_in = 0
         self._count_out = 0
 
-    def close(self) -> None:
-        self._detector.close()
-
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
         frame_area = frame.shape[0] * frame.shape[1]
-        small, scale = resize_for_inference(frame)
-        inv_scale = 1.0 / scale
-        rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
-        mp_image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
-        result = self._detector.detect(mp_image)
 
-        raw_detections = []
-        for det in result.detections:
-            detection = self._to_detection(det, inv_scale)
-            if not passes_box_shape_filter(det.bounding_box.width, det.bounding_box.height):
+        raw_detections: list[Detection] = []
+        for det in self._detector.detect(frame, self._classes, self._confidence_threshold):
+            w, h = det.bbox[2], det.bbox[3]
+            if not passes_box_shape_filter(w, h):
                 continue
-            w, h = detection.bbox[2], detection.bbox[3]
             if not passes_min_area_filter(w, h, frame_area, self._min_area_percent):
                 continue
-            raw_detections.append(detection)
+            raw_detections.append(det)
 
         # Dos cajas casi superpuestas sobre el MISMO objeto no deben crear
         # dos tracks (contaria un solo cruce dos veces).
@@ -114,15 +102,4 @@ class LineCrossingAnalyzer(Analyzer):
                 "count_out": self._count_out,
                 "total": self._count_in + self._count_out,
             },
-        )
-
-    @staticmethod
-    def _to_detection(det, inv_scale: float) -> Detection:
-        box = det.bounding_box
-        category = det.categories[0]
-        raw_bbox = (box.origin_x, box.origin_y, box.width, box.height)
-        return Detection(
-            label=category.category_name,
-            confidence=float(category.score),
-            bbox=rescale_bbox(raw_bbox, inv_scale),
         )

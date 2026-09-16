@@ -1,7 +1,7 @@
 """Conteo de personas: ocupacion actual dentro de una zona (ROI).
 
-Usa el detector de objetos liviano de MediaPipe (EfficientDet-Lite2,
-filtrado a la clase "person"). Cada deteccion cruda pasa por una cadena
+Usa YOLOX-Tiny (ONNX via onnxruntime, ver `object_detector_backend.py`)
+filtrado a la clase "person". Cada deteccion cruda pasa por una cadena
 de filtros baratos, independientes del `confidence_threshold` del
 modelo, antes de llegar al tracker:
 
@@ -23,18 +23,11 @@ hasta perderse varios frames seguidos (evita el parpadeo del numero)."""
 
 from __future__ import annotations
 
-import cv2
 import numpy as np
 
-from aurea_vms.core.analytics.base import (
-    AnalysisResult,
-    Analyzer,
-    crop_to_roi,
-    rescale_bbox,
-    resize_for_inference,
-)
+from aurea_vms.core.analytics.base import AnalysisResult, Analyzer, crop_to_roi
 from aurea_vms.core.analytics.object_detector_backend import (
-    create_object_detector,
+    YoloxDetector,
     deduplicate_by_iou,
     passes_min_area_filter,
 )
@@ -66,40 +59,30 @@ class PeopleCountingAnalyzer(Analyzer):
         track_max_age_s: float = 1.5,
         min_area_percent: float = 0.15,
     ) -> None:
-        self._mp, self._detector = create_object_detector(["person"], confidence_threshold)
+        self._detector = YoloxDetector()
+        self._confidence_threshold = confidence_threshold
         self._roi = roi
         self._min_area_percent = max(0.0, min_area_percent)
         self._tracker = CentroidTracker(
             max_age_s=track_max_age_s, min_hits=max(1, confirmation_frames)
         )
 
-    def close(self) -> None:
-        self._detector.close()
-
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
         crop, offset_x, offset_y = crop_to_roi(frame, self._roi)
         crop_area = crop.shape[0] * crop.shape[1]
-        small, scale = resize_for_inference(crop)
-        inv_scale = 1.0 / scale
-        rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
-        mp_image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
-        result = self._detector.detect(mp_image)
 
         raw_detections: list[Detection] = []
-        for det in result.detections:
-            box = det.bounding_box
-            if not _passes_person_shape_filter(box.width, box.height):
+        for det in self._detector.detect(crop, ["person"], self._confidence_threshold):
+            x, y, w, h = det.bbox
+            if not _passes_person_shape_filter(w, h):
                 continue
-            category = det.categories[0]
-            raw_bbox = (box.origin_x, box.origin_y, box.width, box.height)
-            bbox = rescale_bbox(raw_bbox, inv_scale, offset_x, offset_y)
-            if not passes_min_area_filter(bbox[2], bbox[3], crop_area, self._min_area_percent):
+            if not passes_min_area_filter(w, h, crop_area, self._min_area_percent):
                 continue
             raw_detections.append(
                 Detection(
-                    label=category.category_name,
-                    confidence=float(category.score),
-                    bbox=bbox,
+                    label=det.label,
+                    confidence=det.confidence,
+                    bbox=(x + offset_x, y + offset_y, w, h),
                 )
             )
 

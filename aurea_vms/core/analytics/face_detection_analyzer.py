@@ -1,44 +1,42 @@
-"""Deteccion facial (sin reconocimiento) via la Tasks API de MediaPipe.
+"""Deteccion facial (sin reconocimiento) via YuNet (`cv2.FaceDetectorYN`,
+OpenCV Zoo, modelo 2023mar).
 
-Nota: los wheels de mediapipe para Windows no incluyen la API legacy
-`mediapipe.solutions` (fue removida por completo, incluso en 0.10.x) --
-solo viene la Tasks API nueva, que necesita un modelo .tflite descargado
-aparte. Se cachea en `data/models/` la primera vez que se usa.
+Reemplaza a BlazeFace (MediaPipe Tasks, usado hasta esta version): pese a
+varias rondas de filtros geometricos post-hoc, BlazeFace seguia
+disparando sobre objetos planos (cajas, carteles) -- es una red muy
+liviana, pensada para velocidad antes que precision, con solo 6
+keypoints crudos y sin un score de confianza demasiado discriminante.
 
-Se usa el modelo "full_range" en vez de "short_range": este ultimo esta
-pensado para camara selfie (caras grandes y cerca, tipo videollamada);
-"full_range" cubre caras chicas y lejanas tambien, que es el caso real de
-una camara de seguridad mirando una escena completa.
+YuNet es una red mas moderna (anchor-free, entrenada sobre WIDER FACE con
+mineria de negativos dificiles) que ya viene con OpenCV -- no suma
+dependencias nuevas al proyecto, que ya usa cv2 en todos los
+analizadores. Da 5 puntos de referencia (ojo derecho, ojo izquierdo,
+nariz, comisura de boca derecha, comisura de boca izquierda -- sin
+puntos de oreja, a diferencia de BlazeFace) mas un score de confianza
+propio del modelo, no una heuristica post-hoc adivinando si "parece" una
+cara.
 
-Estabilidad / falsos disparos: cada deteccion cruda pasa primero por tres
-puntos de validacion (ojos, nariz, boca, orejas y la cabeza -- la caja --
-como parametros geometricos), antes de llegar al tracker de histeresis o
-a la galeria:
+Estabilidad / falsos disparos: cada deteccion cruda pasa igual por tres
+puntos de validacion baratos, mas livianos que antes porque el modelo de
+por si ya filtra mucho mejor:
 
-1. `_passes_box_shape_filter`: la CABEZA (caja) tiene que tener una
-   proporcion ancho/alto plausible para una cara.
-2. `_passes_geometry_filter`: los 6 puntos de referencia tienen que
-   guardar la disposicion de una cara real ENTRE SI (orden vertical
-   ojos-nariz-boca, linea entre ojos mas horizontal que vertical, nariz
-   centrada entre los ojos en X, boca a distancia comparable de cada
-   ojo, orejas por fuera de los ojos y a la altura de la cara) -- no
-   solo existir. El chequeo de orejas es el que mas distingue a una cara
-   real de una caja/objeto plano: que 6 puntos, no solo 4, caigan en el
-   lugar anatomico correcto es mucho mas dificil de replicar por
-   casualidad.
+1. `_passes_box_shape_filter`: la caja tiene que tener una proporcion
+   ancho/alto plausible para una cara.
+2. `_passes_geometry_filter`: los 5 puntos guardan la disposicion de una
+   cara real ENTRE SI (orden vertical ojos-nariz-boca, linea de ojos no
+   demasiado vertical, nariz cerca de los ojos y de las comisuras de
+   boca en X, ancho de boca proporcional a la distancia entre ojos) --
+   umbrales calibrados contra deteccion real (no a ojo): una primera
+   version, mas estricta, rechazaba el 84% de las caras reales de alta
+   confianza en capturas guardadas del proyecto.
 3. `_passes_head_alignment_filter`: cruza esos mismos puntos contra la
-   CABEZA -- ojos cerca de la mitad superior de la caja, boca cerca de
-   la inferior, nariz cerca del centro horizontal. Puntos autoconsistentes
-   entre si (paso 2) pero amontonados en una esquina de una caja mucho
-   mas grande, o fuera de ella, no describen una cabeza real.
+   CABEZA (la caja) -- ojos cerca de la mitad superior, boca cerca de la
+   inferior, nariz cerca del centro horizontal.
 
-Los tres descartan detecciones con puntos/caja degenerados, tipico de una
-textura, borde o patron que dispara el modelo por casualidad, no una cara
-real. Las que pasan se acumulan en un `CentroidTracker` con histeresis
-(igual que Conteo de Personas / Cruce de Linea): una cara nueva no se
-reporta como deteccion "real" hasta sostenerse un par de cuadros
-seguidos, lo que filtra el ruido de un solo frame sin agregar un modelo
-nuevo."""
+Las que pasan se acumulan en un `CentroidTracker` con histeresis (igual
+que Conteo de Personas / Cruce de Linea): una cara nueva no se reporta
+como deteccion "real" hasta sostenerse un par de cuadros seguidos, lo que
+filtra el ruido de un solo frame."""
 
 from __future__ import annotations
 
@@ -51,34 +49,43 @@ from aurea_vms.core.analytics.tracker import CentroidTracker
 from aurea_vms.core.events import Detection
 
 MODEL_URL = (
-    "https://storage.googleapis.com/mediapipe-models/face_detector/"
-    "blaze_face_full_range/float16/latest/blaze_face_full_range.tflite"
+    "https://github.com/opencv/opencv_zoo/raw/main/models/"
+    "face_detection_yunet/face_detection_yunet_2023mar.onnx"
 )
-MODEL_FILENAME = "blaze_face_full_range.tflite"
+MODEL_FILENAME = "face_detection_yunet_2023mar.onnx"
 
-# Orden fijo de los 6 keypoints que devuelve BlazeFace short-range.
-RIGHT_EYE, LEFT_EYE = 0, 1
-NOSE_TIP = 2
-MOUTH_CENTER = 3
-RIGHT_EAR, LEFT_EAR = 4, 5
+# Columnas del array Nx15 que devuelve YuNet.detect(): bbox (4) + 5
+# landmarks (10) + score (1), todo en pixeles de la imagen de entrada.
+BOX_X, BOX_Y, BOX_W, BOX_H = 0, 1, 2, 3
+RIGHT_EYE_X, RIGHT_EYE_Y = 4, 5
+LEFT_EYE_X, LEFT_EYE_Y = 6, 7
+NOSE_X, NOSE_Y = 8, 9
+MOUTH_R_X, MOUTH_R_Y = 10, 11
+MOUTH_L_X, MOUTH_L_Y = 12, 13
+SCORE = 14
 
-ANGLE_SYMMETRY_MIN = 0.45  # por debajo de esto se descarta como muy de perfil
-EYE_MOUTH_SYMMETRY_MIN = 0.25  # por debajo, los puntos no guardan forma de cara
+# Calibrados contra deteccion real de YuNet sobre capturas guardadas (no
+# a ojo): los puntos de una cara chica/lejana en una camara de seguridad
+# traen ruido de estimacion real, y normalizar ese ruido por eye_dx (a
+# veces de pocos pixeles) amplifica cualquier margen ajustado. La primera
+# calibracion (a ojo) rechazaba el 84% de las caras reales de alta
+# confianza -- estos umbrales son deliberadamente laxos.
+EYE_TILT_MAX_RATIO = 2.5  # eye_dy/eye_dx maximo tolerado (cabeza inclinada + angulo de camara)
+NOSE_SLACK_RATIO = 3.0  # margen (x eye_dx) para nariz vs. ojos/comisuras en X
+MOUTH_WIDTH_RATIO_RANGE = (0.15, 3.0)  # ancho de boca plausible, en unidades de eye_dx
 BOX_ASPECT_RATIO_RANGE = (0.35, 2.5)  # ancho/alto plausible para una cara real
-
-# Posicion anatomica esperada de cada punto DENTRO de la caja de cabeza
-# (0 = borde superior/izquierdo de la caja, 1 = borde inferior/derecho),
-# generosa a proposito -- no es una calibracion fina, solo descarta
-# keypoints que caen muy lejos de donde la propia caja dice que esta la
-# cabeza (tipico cuando el "objeto" que disparo el modelo no tiene nada
-# que ver con la caja que le calculo alrededor).
-HEAD_EYES_Y_RANGE = (-0.10, 0.70)
+HEAD_EYES_Y_RANGE = (-0.10, 0.70)  # posicion esperada de los ojos dentro de la caja (ver docstring)
 HEAD_MOUTH_Y_RANGE = (0.30, 1.10)
-HEAD_NOSE_X_RANGE = (0.10, 0.90)
+# La caja de YuNet no queda centrada en los puntos tan ajustado como se
+# asumio al principio (dato real: nariz observada entre -0.05 y 1.12 del
+# ancho de caja, practicamente de punta a punta); margen generoso.
+HEAD_NOSE_X_RANGE = (-0.30, 1.30)
 
-
-def _distance(a, b) -> float:
-    return ((a.x - b.x) ** 2 + (a.y - b.y) ** 2) ** 0.5
+NMS_THRESHOLD = 0.3
+TOP_K = 500
+# Tamaño inicial dummy: se pisa con el tamaño real del crop en el primer
+# process_frame (setInputSize es obligatorio antes de detect()).
+_INIT_INPUT_SIZE = (320, 320)
 
 
 def _ensure_model() -> str:
@@ -93,63 +100,65 @@ class FaceDetectionAnalyzer(Analyzer):
         confidence_threshold: float = 0.5,
         roi: tuple[int, int, int, int] | None = None,
         min_pupillary_distance_px: int = 40,
-        filter_by_angle: bool = False,
         confirmation_frames: int = 2,
         track_max_age_s: float = 0.6,
     ) -> None:
-        import mediapipe as mp
-        from mediapipe.tasks.python import vision
-        from mediapipe.tasks.python.core.base_options import BaseOptions
-
-        self._mp = mp
-        options = vision.FaceDetectorOptions(
-            base_options=BaseOptions(model_asset_path=_ensure_model()),
-            min_detection_confidence=confidence_threshold,
+        self._detector = cv2.FaceDetectorYN.create(
+            _ensure_model(),
+            "",
+            _INIT_INPUT_SIZE,
+            score_threshold=confidence_threshold,
+            nms_threshold=NMS_THRESHOLD,
+            top_k=TOP_K,
         )
-        self._detector = vision.FaceDetector.create_from_options(options)
         self._roi = roi
         self._min_pupillary_distance_px = max(0, min_pupillary_distance_px)
-        self._filter_by_angle = filter_by_angle
         self._tracker = CentroidTracker(
             max_age_s=track_max_age_s, min_hits=max(1, confirmation_frames)
         )
-
-    def close(self) -> None:
-        self._detector.close()
+        self._input_size: tuple[int, int] | None = None
 
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
         crop, offset_x, offset_y = crop_to_roi(frame, self._roi)
         crop_h, crop_w = crop.shape[:2]
-        rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-        mp_image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
-        result = self._detector.detect(mp_image)
+        size = (crop_w, crop_h)
+        if size != self._input_size:
+            self._detector.setInputSize(size)
+            self._input_size = size
+
+        # YuNet espera BGR (el formato nativo de OpenCV) -- a diferencia
+        # de MediaPipe, no hace falta convertir a RGB.
+        _, faces = self._detector.detect(crop)
 
         raw_detections: list[Detection] = []
-        for face in result.detections:
-            keypoints = face.keypoints or []
-            box = face.bounding_box
-            if not self._passes_box_shape_filter(box):
+        for face in faces if faces is not None else []:
+            if not self._passes_box_shape_filter(face):
                 continue
-            if not self._passes_geometry_filter(keypoints):
+            if not self._passes_geometry_filter(face):
                 continue
-            if not self._passes_head_alignment_filter(keypoints, box, crop_w, crop_h):
+            if not self._passes_head_alignment_filter(face):
                 continue
-            if not self._passes_pupillary_filter(keypoints, crop_w, crop_h):
-                continue
-            if self._filter_by_angle and not self._passes_angle_filter(keypoints):
+            if not self._passes_pupillary_filter(face):
                 continue
 
-            confidence = face.categories[0].score if face.categories else 0.0
-            pixel_keypoints = None
-            if keypoints:
-                pixel_keypoints = tuple(
-                    (kp.x * crop_w + offset_x, kp.y * crop_h + offset_y) for kp in keypoints
-                )
+            x, y, w, h = face[BOX_X], face[BOX_Y], face[BOX_W], face[BOX_H]
+            pixel_keypoints = (
+                (face[RIGHT_EYE_X] + offset_x, face[RIGHT_EYE_Y] + offset_y),
+                (face[LEFT_EYE_X] + offset_x, face[LEFT_EYE_Y] + offset_y),
+                (face[NOSE_X] + offset_x, face[NOSE_Y] + offset_y),
+                (face[MOUTH_R_X] + offset_x, face[MOUTH_R_Y] + offset_y),
+                (face[MOUTH_L_X] + offset_x, face[MOUTH_L_Y] + offset_y),
+            )
             raw_detections.append(
                 Detection(
                     label="cara",
-                    confidence=float(confidence),
-                    bbox=(box.origin_x + offset_x, box.origin_y + offset_y, box.width, box.height),
+                    confidence=float(face[SCORE]),
+                    bbox=(
+                        round(x) + offset_x,
+                        round(y) + offset_y,
+                        round(w),
+                        round(h),
+                    ),
                     keypoints=pixel_keypoints,
                 )
             )
@@ -168,148 +177,93 @@ class FaceDetectionAnalyzer(Analyzer):
         return AnalysisResult(detections=tuple(detections), metrics={"caras": len(detections)})
 
     @staticmethod
-    def _passes_geometry_filter(keypoints) -> bool:
-        """Punto de validacion geometrica: descarta detecciones espurias
-        (textura, patron, esquina o borde de una caja/objeto que por
-        casualidad dispara el modelo, no una cara real) chequeando que
-        los 6 puntos de referencia guarden la disposicion de una cara
-        real, no solo que existan:
-
-        1. Orden vertical ojos-nariz-boca (de arriba a abajo).
-        2. La linea entre los dos ojos es mas horizontal que vertical --
-           tolera cabeza inclinada hasta 45 grados; un par de "ojos" casi
-           en vertical es geometricamente imposible en una cara.
-        3. La nariz cae entre los dos ojos en X (con margen) -- una
-           deteccion espuria tipicamente tiene la nariz descentrada.
-        4. La boca queda a distancia comparable de cada ojo -- un
-           triangulo ojo-ojo-boca muy asimetrico no es una cara (ver
-           EYE_MOUTH_SYMMETRY_MIN; el umbral es laxo a proposito para no
-           rechazar caras de perfil, que ya tienen su propio filtro
-           opcional en `_passes_angle_filter`).
-        5. Las orejas caen por FUERA de los ojos en X y a la altura de la
-           cara en Y. Es el chequeo mas discriminante contra objetos
-           planos (cajas, carteles, texturas): que 4 puntos centrales
-           parezcan una cara ya es raro por azar, que ADEMAS los otros 2
-           caigan en el lugar anatomico correcto de las orejas es mucho
-           mas dificil de replicar por casualidad.
-
-        Cualquiera de los cinco que falle es una fuerte señal de que no
-        es una cara real. Se descarta aca, antes de que llegue al tracker
-        de histeresis o a la galeria."""
-        if len(keypoints) <= MOUTH_CENTER:
-            return True
-        right_eye, left_eye = keypoints[RIGHT_EYE], keypoints[LEFT_EYE]
-        nose, mouth = keypoints[NOSE_TIP], keypoints[MOUTH_CENTER]
-
-        eye_dx = abs(left_eye.x - right_eye.x)
-        eye_dy = abs(left_eye.y - right_eye.y)
-        if eye_dx < 1e-6 or eye_dy > eye_dx:
+    def _passes_box_shape_filter(face) -> bool:
+        """Descarta cajas con una proporcion ancho/alto imposible para una
+        cara real (una tira angosta o un rectangulo muy chato), tipico de
+        una deteccion espuria sobre un borde o patron repetitivo."""
+        w, h = face[BOX_W], face[BOX_H]
+        if h <= 0:
             return False
-
-        eyes_y = (right_eye.y + left_eye.y) / 2
-        if not (eyes_y < nose.y < mouth.y):
-            return False
-
-        eyes_x_min, eyes_x_max = sorted((right_eye.x, left_eye.x))
-        slack = eye_dx * 0.5
-        if not (eyes_x_min - slack) <= nose.x <= (eyes_x_max + slack):
-            return False
-
-        d_right_mouth = _distance(right_eye, mouth)
-        d_left_mouth = _distance(left_eye, mouth)
-        if d_right_mouth + d_left_mouth == 0:
-            return False
-        symmetry = min(d_right_mouth, d_left_mouth) / max(d_right_mouth, d_left_mouth)
-        if symmetry < EYE_MOUTH_SYMMETRY_MIN:
-            return False
-
-        if len(keypoints) > max(RIGHT_EAR, LEFT_EAR):
-            right_ear, left_ear = keypoints[RIGHT_EAR], keypoints[LEFT_EAR]
-            eyes_center_x = (right_eye.x + left_eye.x) / 2
-            if abs(right_ear.x - eyes_center_x) < abs(right_eye.x - eyes_center_x):
-                return False
-            if abs(left_ear.x - eyes_center_x) < abs(left_eye.x - eyes_center_x):
-                return False
-
-            face_height = max(mouth.y - eyes_y, eye_dx * 0.3)
-            ear_y_min, ear_y_max = eyes_y - face_height, mouth.y + face_height
-            if not (ear_y_min <= right_ear.y <= ear_y_max):
-                return False
-            if not (ear_y_min <= left_ear.y <= ear_y_max):
-                return False
-
-        return True
-
-    @staticmethod
-    def _passes_box_shape_filter(box) -> bool:
-        """Ultima red de seguridad, independiente de los puntos de
-        referencia: descarta cajas con una proporcion ancho/alto
-        imposible para una cara real (una tira angosta o un rectangulo
-        muy chato), tipico de una deteccion espuria sobre un borde o
-        patron repetitivo de la escena."""
-        if box.height <= 0:
-            return False
-        ratio = box.width / box.height
+        ratio = w / h
         return BOX_ASPECT_RATIO_RANGE[0] <= ratio <= BOX_ASPECT_RATIO_RANGE[1]
 
     @staticmethod
-    def _passes_head_alignment_filter(keypoints, box, crop_w: int, crop_h: int) -> bool:
-        """Cruza los puntos de referencia contra la CABEZA (la caja que el
-        modelo calculo alrededor de la deteccion), no solo entre si: los
-        ojos tienen que caer cerca de la mitad superior de la caja, la
-        boca cerca de la mitad inferior, la nariz cerca del centro
-        horizontal. `_passes_geometry_filter` ya garantiza que los puntos
-        son autoconsistentes (forman "una cara"); esto ademas exige que
-        esa cara este DONDE la caja dice que esta la cabeza -- un objeto
-        que dispara keypoints autoconsistentes pero desalineados de su
-        propia caja (ej. amontonados en una esquina) queda descartado
-        aca."""
-        if len(keypoints) <= MOUTH_CENTER or box.width <= 0 or box.height <= 0:
+    def _passes_geometry_filter(face) -> bool:
+        """Los 5 puntos tienen que guardar la disposicion de una cara real
+        ENTRE SI -- umbrales laxos a proposito (ver comentario de las
+        constantes): esto es una red de seguridad barata contra
+        detecciones degeneradas, no un segundo clasificador compitiendo
+        con el score del modelo.
+
+        1. Orden vertical ojos-nariz-boca.
+        2. La linea entre los dos ojos no es mucho mas vertical que
+           horizontal (tolera inclinacion real de camara + cabeza).
+        3. La nariz cae cerca de los dos ojos en X, y cerca de las dos
+           comisuras de boca en X (no asume cual comisura es "derecha"/
+           "izquierda", solo que la nariz no queda lejos de ambas).
+        4. El ancho de boca es proporcional a la distancia entre ojos --
+           una boca muchisimo mas angosta/ancha que los ojos no es una
+           cara."""
+        right_eye = (face[RIGHT_EYE_X], face[RIGHT_EYE_Y])
+        left_eye = (face[LEFT_EYE_X], face[LEFT_EYE_Y])
+        nose = (face[NOSE_X], face[NOSE_Y])
+        mouth_r = (face[MOUTH_R_X], face[MOUTH_R_Y])
+        mouth_l = (face[MOUTH_L_X], face[MOUTH_L_Y])
+
+        eye_dx = abs(left_eye[0] - right_eye[0])
+        eye_dy = abs(left_eye[1] - right_eye[1])
+        if eye_dx < 1e-6 or eye_dy > eye_dx * EYE_TILT_MAX_RATIO:
+            return False
+
+        eyes_y = (right_eye[1] + left_eye[1]) / 2
+        mouth_y = (mouth_r[1] + mouth_l[1]) / 2
+        if not (eyes_y < nose[1] < mouth_y):
+            return False
+
+        slack = eye_dx * NOSE_SLACK_RATIO
+        eyes_x_min, eyes_x_max = sorted((right_eye[0], left_eye[0]))
+        if not (eyes_x_min - slack) <= nose[0] <= (eyes_x_max + slack):
+            return False
+
+        mouth_x_min, mouth_x_max = sorted((mouth_r[0], mouth_l[0]))
+        if not (mouth_x_min - slack) <= nose[0] <= (mouth_x_max + slack):
+            return False
+
+        mouth_dx = mouth_x_max - mouth_x_min
+        ratio = mouth_dx / eye_dx
+        return MOUTH_WIDTH_RATIO_RANGE[0] <= ratio <= MOUTH_WIDTH_RATIO_RANGE[1]
+
+    @staticmethod
+    def _passes_head_alignment_filter(face) -> bool:
+        """Cruza los puntos contra la CABEZA (la caja): ojos cerca de la
+        mitad superior, boca cerca de la inferior, nariz cerca del centro
+        horizontal. Puntos autoconsistentes entre si (ver
+        `_passes_geometry_filter`) pero amontonados en una esquina de una
+        caja mucho mas grande no describen una cabeza real."""
+        box_x, box_y, box_w, box_h = face[BOX_X], face[BOX_Y], face[BOX_W], face[BOX_H]
+        if box_w <= 0 or box_h <= 0:
             return True
-        right_eye, left_eye = keypoints[RIGHT_EYE], keypoints[LEFT_EYE]
-        nose, mouth = keypoints[NOSE_TIP], keypoints[MOUTH_CENTER]
 
-        box_x = box.origin_x / crop_w
-        box_y = box.origin_y / crop_h
-        box_w = box.width / crop_w
-        box_h = box.height / crop_h
-
-        eyes_y = (right_eye.y + left_eye.y) / 2
+        eyes_y = (face[RIGHT_EYE_Y] + face[LEFT_EYE_Y]) / 2
         eyes_rel_y = (eyes_y - box_y) / box_h
         if not (HEAD_EYES_Y_RANGE[0] <= eyes_rel_y <= HEAD_EYES_Y_RANGE[1]):
             return False
 
-        mouth_rel_y = (mouth.y - box_y) / box_h
+        mouth_y = (face[MOUTH_R_Y] + face[MOUTH_L_Y]) / 2
+        mouth_rel_y = (mouth_y - box_y) / box_h
         if not (HEAD_MOUTH_Y_RANGE[0] <= mouth_rel_y <= HEAD_MOUTH_Y_RANGE[1]):
             return False
 
-        nose_rel_x = (nose.x - box_x) / box_w
+        nose_rel_x = (face[NOSE_X] - box_x) / box_w
         return HEAD_NOSE_X_RANGE[0] <= nose_rel_x <= HEAD_NOSE_X_RANGE[1]
 
-    def _passes_pupillary_filter(self, keypoints, crop_w: int, crop_h: int) -> bool:
-        """Descarta caras demasiado chicas/lejanas: la distancia entre ojos
-        (en pixeles del cuadro) tiene que superar el minimo configurado."""
-        if self._min_pupillary_distance_px <= 0 or len(keypoints) <= LEFT_EYE:
+    def _passes_pupillary_filter(self, face) -> bool:
+        """Descarta caras demasiado chicas/lejanas: la distancia entre
+        ojos (en pixeles del cuadro, YuNet ya devuelve todo en pixeles)
+        tiene que superar el minimo configurado."""
+        if self._min_pupillary_distance_px <= 0:
             return True
-        right_eye, left_eye = keypoints[RIGHT_EYE], keypoints[LEFT_EYE]
-        dx = (right_eye.x - left_eye.x) * crop_w
-        dy = (right_eye.y - left_eye.y) * crop_h
+        dx = face[RIGHT_EYE_X] - face[LEFT_EYE_X]
+        dy = face[RIGHT_EYE_Y] - face[LEFT_EYE_Y]
         distance = (dx * dx + dy * dy) ** 0.5
         return distance >= self._min_pupillary_distance_px
-
-    @staticmethod
-    def _passes_angle_filter(keypoints) -> bool:
-        """Heuristica de frontalidad (no es una pose 3D real): compara la
-        distancia horizontal nariz-oreja de cada lado. De frente son
-        parecidas; girando la cabeza, un lado se achica mucho respecto al
-        otro -- eso se usa para descartar perfiles marcados."""
-        if len(keypoints) <= max(RIGHT_EAR, LEFT_EAR):
-            return True
-        nose = keypoints[NOSE_TIP]
-        right_ear, left_ear = keypoints[RIGHT_EAR], keypoints[LEFT_EAR]
-        d_right = abs(nose.x - right_ear.x)
-        d_left = abs(nose.x - left_ear.x)
-        if d_right + d_left == 0:
-            return True
-        symmetry = min(d_right, d_left) / max(d_right, d_left)
-        return symmetry >= ANGLE_SYMMETRY_MIN

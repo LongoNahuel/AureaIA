@@ -2,7 +2,7 @@
 """Spec de PyInstaller para el build de Windows (onedir).
 
 onedir y NO onefile a proposito: el bundle ronda el GB descomprimido
-(mediapipe + PySide6 + opencv); onefile se autoextrae a %TEMP% en CADA
+(onnxruntime + PySide6 + opencv); onefile se autoextrae a %TEMP% en CADA
 arranque (30-60s de espera, re-escaneo del antivirus, y muchas maquinas
 corporativas bloquean ejecucion desde TEMP). onedir arranca rapido y se
 distribuye como zip.
@@ -21,9 +21,10 @@ datas = [
     # Assets de la UI: icons.py resuelve Path(__file__).parent/"assets",
     # que bajo el bundle equivale a _internal/aurea_vms/ui/assets.
     ("aurea_vms/ui/assets", "aurea_vms/ui/assets"),
-    # Modelos .tflite: model_assets.ensure_model() los copia del bundle
-    # al data-dir del usuario en el primer arranque (la maquina de demo
-    # puede no tener internet -- el download es solo ultimo recurso).
+    # Modelos (.onnx de YuNet/YOLOX): model_assets.ensure_model() los
+    # copia del bundle al data-dir del usuario en el primer arranque (la
+    # maquina de demo puede no tener internet -- el download es solo
+    # ultimo recurso).
     ("data/models", "models"),
 ]
 
@@ -37,9 +38,10 @@ if _wsdl_dir.exists():
 binaries = []
 hiddenimports = collect_submodules("onvif") + ["zeep"]
 
-# MediaPipe: sus .so/.dll/.pyd + datas internos cargan en runtime; sin
-# collect_all la Tasks API muere recien al crear el primer detector.
-for package in ("mediapipe", "qfluentwidgets"):
+# onnxruntime: sus .dll/.pyd + datas internos cargan en runtime; sin
+# collect_all la sesion de inferencia muere recien al crear el primer
+# detector (misma leccion que dejo MediaPipe antes de sacarlo).
+for package in ("onnxruntime", "qfluentwidgets"):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)
     datas += pkg_datas
     binaries += pkg_binaries

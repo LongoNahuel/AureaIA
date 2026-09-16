@@ -10,10 +10,11 @@ dependencies = [
     "numpy>=1.26",
     "onvif-zeep>=0.2.12",
     "wsdiscovery>=2.0",
-    # >=1.0 elimino por completo la API legacy `mediapipe.solutions`; en Windows
-    # ni siquiera 0.10.x la incluye (solo trae la Tasks API), asi que fijamos
-    # la version usada durante el desarrollo/pruebas para reproducibilidad.
-    "mediapipe==0.10.35",
+    # Runtime CPU-only para los modelos .onnx (YuNet, YOLOX-Tiny) -- ver
+    # docs/ARQUITECTURA.md. Reemplaza a mediapipe (sacado del proyecto:
+    # mas liviano, sin los problemas recurrentes de carga de DLL nativas
+    # en Windows/Linux que traia MediaPipe Tasks API).
+    "onnxruntime>=1.20",
     "psutil>=5.9",
     "PySide6-Fluent-Widgets[full]>=1.11",
 ]

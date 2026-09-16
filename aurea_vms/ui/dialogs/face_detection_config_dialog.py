@@ -88,10 +88,6 @@ class FaceDetectionConfigDialog(AnalyticsConfigDialogBase):
         self.min_pupillary_spin.setToolTip("Descarta caras muy chicas/lejanas. 0 px = sin mínimo.")
         form.addRow("Distancia pupilar mínima:", self.min_pupillary_spin)
 
-        self.filter_angle_check = CheckBox("Filtrar por ángulo (descartar perfiles marcados)")
-        self.filter_angle_check.setChecked(bool(params.get("filter_by_angle", False)))
-        form.addRow(self.filter_angle_check)
-
         self.confirmation_spin = SpinBox()
         self.confirmation_spin.setRange(*CONFIRMATION_RANGE)
         self.confirmation_spin.setMaximumWidth(FIELD_WIDTH)
@@ -165,7 +161,6 @@ class FaceDetectionConfigDialog(AnalyticsConfigDialogBase):
     def build_params(self) -> dict:
         return {
             "min_pupillary_distance_px": self.min_pupillary_spin.value(),
-            "filter_by_angle": self.filter_angle_check.isChecked(),
             "confirmation_frames": self.confirmation_spin.value(),
             "counting_enabled": self.counting_check.isChecked(),
             "counting_reset_time": self.reset_time_edit.time().toString("HH:mm"),

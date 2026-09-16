@@ -1,4 +1,5 @@
-"""Resolucion de los modelos .tflite que usan los analizadores.
+"""Resolucion de los modelos (.tflite de MediaPipe, .onnx de YuNet) que
+usan los analizadores.
 
 Orden de resolucion (la demo puede correr SIN internet, asi que el
 download es el ultimo recurso, no el camino normal):
@@ -36,5 +37,5 @@ def ensure_model(filename: str, url: str) -> str:
         return str(model_path)
 
     logger.warning("Modelo %s ausente: descargando de %s", filename, url)
-    urllib.request.urlretrieve(url, model_path)  # noqa: S310 - URL fija de mediapipe
+    urllib.request.urlretrieve(url, model_path)  # noqa: S310 - URL fija, pasada por el caller
     return str(model_path)

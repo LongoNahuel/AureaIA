@@ -57,11 +57,10 @@ def test_analizador_desconocido_falla():
 
 @pytest.mark.integration
 def test_crea_los_cuatro_analizadores_reales():
-    """Carga los modelos .tflite reales (los pesa el repo) -- marcado como
-    integracion porque tarda y necesita mediapipe funcional. Los detectores
-    se cierran explicitamente: los destructores nativos de MediaPipe
-    corriendo al cierre del interprete pueden segfaultear en runners
-    headless aunque el test haya pasado."""
+    """Carga los modelos .onnx reales (los pesa el repo o se descargan al
+    vuelo) -- marcado como integracion porque tarda y necesita
+    onnxruntime/opencv funcionales. close() sigue siendo parte del
+    contrato de Analyzer aunque ninguno de los cuatro lo necesite ya."""
     analyzers = [
         create_analyzer(_config("motion_detection")),
         create_analyzer(_config("people_counting")),
