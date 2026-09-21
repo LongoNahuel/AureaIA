@@ -38,3 +38,4 @@ tools/demo/mediamtx.exe
 auto.crt
 auto.key
 
+*.zip
