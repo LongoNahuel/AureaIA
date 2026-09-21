@@ -34,6 +34,7 @@ from aurea_vms.ui.modules.alarm_module import AlarmModule
 from aurea_vms.ui.modules.alert_config import AlertConfigModule
 from aurea_vms.ui.modules.analytics_config import AnalyticsConfigModule
 from aurea_vms.ui.modules.device_management import DeviceManagementModule
+from aurea_vms.ui.modules.event_dashboard import EventDashboardModule
 from aurea_vms.ui.modules.live_view import LiveViewModule
 from aurea_vms.ui.modules.sites_zones_module import SitesZonesModule
 from aurea_vms.ui.modules.system_module import SystemModule
@@ -55,10 +56,11 @@ MODULES = [
     ("Sistema", icons.icon_system, SystemModule),
     ("Usuarios", icons.icon_users, UserManagementModule),
     ("Sitios y Zonas", icons.icon_sites, SitesZonesModule),
+    ("Dashboard de Eventos", icons.icon_alarms, EventDashboardModule),
 ]
 
 CATEGORIES = {
-    "Operación": ["Vista en Vivo", "Alarmas"],
+    "Operación": ["Vista en Vivo", "Alarmas", "Dashboard de Eventos"],
     "Configuración": [
         "Dispositivos",
         "Analizadores",
@@ -82,6 +84,7 @@ MODULE_PERMISSIONS = {
     "Sistema": Perm.GLOBAL_CONFIG,
     "Usuarios": Perm.USER_ADMIN,
     "Sitios y Zonas": Perm.DEVICE_ADMIN,
+    "Dashboard de Eventos": Perm.RECORDINGS,
 }
 
 HOME_INDEX = 0

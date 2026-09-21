@@ -120,6 +120,14 @@ def _apply_adhoc_migrations() -> None:
                 if name not in existing:
                     conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
         _backfill_zones_from_legacy_site_id(conn)
+        conn.exec_driver_sql(
+            "UPDATE analytics_configs SET analyzer_name = 'door_state' "
+            "WHERE analyzer_name = 'motion_detection'"
+        )
+        conn.exec_driver_sql(
+            "UPDATE alarm_rules SET analyzer_name = 'door_state' "
+            "WHERE analyzer_name = 'motion_detection'"
+        )
         conn.commit()
 
 

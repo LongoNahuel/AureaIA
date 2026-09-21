@@ -113,7 +113,10 @@ class DeviceTreeWidget(QWidget):
 
             site_item.setExpanded(True)
 
-        if self._site_filter is None and unassigned:
+        # Las cámaras sin zona todavía no pertenecen a ningún sitio. Se
+        # mantienen visibles incluso con un filtro de sitio para que una
+        # instalación nueva no parezca vacía y pueda organizarse desde la UI.
+        if unassigned:
             root = QTreeWidgetItem([f"Sin asignar ({len(unassigned)})"])
             root.setFlags(root.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
             self.tree.addTopLevelItem(root)

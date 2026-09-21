@@ -213,7 +213,14 @@ class DeviceManagementModule(QWidget):
         self._reload_managed()
 
     def _reload_managed(self) -> None:
-        self._devices = repository.list_devices(site_id=app_state.current_site_id)
+        self._devices = repository.list_devices()
+        if app_state.current_site_id is not None:
+            site_zone_ids = {zone.id for zone in repository.list_zones(app_state.current_site_id)}
+            self._devices = [
+                device
+                for device in self._devices
+                if device.zone_id is None or device.zone_id in site_zone_ids
+            ]
         # Prefetch de etiquetas de zona: hacer get_zone() + list_sites() POR
         # FILA era el mismo N+1 que 43d29c3 ya habia pagado en Alarmas
         # (~400 queries por recarga con 200 camaras).

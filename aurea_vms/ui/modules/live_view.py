@@ -48,9 +48,9 @@ from aurea_vms.core.event_bus import event_bus
 from aurea_vms.models import repository
 from aurea_vms.ui import icons
 from aurea_vms.ui.widgets.device_tree import DeviceTreeWidget
+from aurea_vms.ui.widgets.door_state_panel import DoorStatePanel
 from aurea_vms.ui.widgets.face_gallery import FaceGallery
 from aurea_vms.ui.widgets.line_crossing_panel import LineCrossingPanel
-from aurea_vms.ui.widgets.motion_panel import MotionPanel
 from aurea_vms.ui.widgets.people_count_panel import PeopleCountPanel
 from aurea_vms.ui.widgets.video_tile import VideoTile
 
@@ -83,13 +83,16 @@ class LiveViewModule(QWidget):
         # Metodo bound (no lambda): Qt corta la conexion al destruirse el
         # modulo y el bus no queda apuntando a un widget muerto.
         event_bus.site_filter_changed.connect(self._on_site_filter_changed)
+        event_bus.analytics_config_changed.connect(
+            self._on_analytics_config_changed, Qt.ConnectionType.QueuedConnection
+        )
 
         self.grid_container = QWidget(self)
         self.grid_layout = QGridLayout(self.grid_container)
         self.grid_layout.setSpacing(3)
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.motion_panel = MotionPanel(self)
+        self.door_state_panel = DoorStatePanel(self)
         self.people_count_panel = PeopleCountPanel(self)
         self.line_crossing_panel = LineCrossingPanel(self)
         self.face_gallery = FaceGallery(self)
@@ -133,7 +136,7 @@ class LiveViewModule(QWidget):
         # Orden fijo de submenu: mismo orden en el que aparecen las pestañas del
         # pivot sea cual sea el orden en que la DB devuelva las configs.
         self._analyzer_panels: dict[str, tuple[str, QWidget]] = {
-            "motion_detection": ("Movimiento", self.motion_panel),
+            "door_state": ("Puerta", self.door_state_panel),
             "people_counting": ("Conteo de Personas", self.people_count_panel),
             "line_crossing": ("Cruce de Línea", self.line_crossing_panel),
             "face_detection": ("Detección Facial", self.face_gallery),
@@ -214,6 +217,10 @@ class LiveViewModule(QWidget):
     def _set_mode(self, mode: int) -> None:
         self._mode = mode
         self.side_panel.setVisible(mode == MODE_SMART)
+        for tile in self.tiles:
+            tile.set_intelligent_mode(mode == MODE_SMART)
+            if mode == MODE_NORMAL and tile is not self._expanded_tile:
+                tile.set_stream_kind("sub")
 
     def _build_toolbar(self) -> QHBoxLayout:
         toolbar = QHBoxLayout()
@@ -243,6 +250,11 @@ class LiveViewModule(QWidget):
 
     def _on_site_filter_changed(self, site_id: object) -> None:
         self.device_tree.set_site_filter(site_id)
+
+    def _on_analytics_config_changed(self, device_id: int) -> None:
+        for tile in self.tiles:
+            if tile.device_id == device_id:
+                tile.refresh_analytics_configs()
 
     def focus_camera(self, device_id: int) -> None:
         """API publica para otros modulos (ej. boton "Vista rapida" de
@@ -303,7 +315,7 @@ class LiveViewModule(QWidget):
         if not tile.has_device():
             return
 
-        if self._expanded_tile is not None:
+        if self._expanded_tile is not None and self._mode == MODE_NORMAL:
             self._expanded_tile.set_stream_kind("sub")
 
         self._expanded_tile = tile
@@ -314,7 +326,8 @@ class LiveViewModule(QWidget):
     def _collapse_tile(self) -> None:
         if self._expanded_tile is None:
             return
-        self._expanded_tile.set_stream_kind("sub")
+        if self._mode == MODE_NORMAL:
+            self._expanded_tile.set_stream_kind("sub")
         self._expanded_tile = None
         self._set_layout_buttons_enabled(True)
 

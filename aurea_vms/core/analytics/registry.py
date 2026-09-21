@@ -4,6 +4,7 @@ persistido en la base."""
 from __future__ import annotations
 
 from aurea_vms.core.analytics.base import Analyzer
+from aurea_vms.core.analytics.door_state_analyzer import DoorStateAnalyzer
 from aurea_vms.core.analytics.face_detection_analyzer import FaceDetectionAnalyzer
 from aurea_vms.core.analytics.line_crossing_analyzer import LineCrossingAnalyzer
 from aurea_vms.core.analytics.motion_detection_analyzer import MotionDetectionAnalyzer
@@ -11,7 +12,7 @@ from aurea_vms.core.analytics.people_counting_analyzer import PeopleCountingAnal
 from aurea_vms.models.analytics_config import AnalyticsConfig
 
 ANALYZER_DISPLAY_NAMES: dict[str, str] = {
-    "motion_detection": "Detección de Movimiento",
+    "door_state": "Puerta Abierta/Cerrada",
     "people_counting": "Conteo de Personas",
     "line_crossing": "Cruce de Línea",
     "face_detection": "Detección Facial",
@@ -29,12 +30,23 @@ def _roi_from_config(config: AnalyticsConfig) -> tuple[int, int, int, int] | Non
 def create_analyzer(config: AnalyticsConfig) -> Analyzer:
     params = config.params or {}
 
+    # Compatibilidad de API para configuraciones antiguas. Las nuevas
+    # configuraciones se registran como door_state y la UI ya no expone
+    # movimiento, pero integraciones/tests que aún construyen el nombre
+    # legado siguen pudiendo crear su analizador explícitamente.
     if config.analyzer_name == "motion_detection":
         return MotionDetectionAnalyzer(
             sensitivity=params.get("sensitivity", 50),
             min_area_percent=params.get("min_area_percent", 0.5),
             roi=_roi_from_config(config),
             confirmation_frames=params.get("confirmation_frames", 2),
+        )
+
+    if config.analyzer_name == "door_state":
+        return DoorStateAnalyzer(
+            change_threshold=params.get("change_threshold", 0.10),
+            confirmation_frames=params.get("confirmation_frames", 3),
+            roi=_roi_from_config(config),
         )
 
     if config.analyzer_name == "people_counting":

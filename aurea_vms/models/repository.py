@@ -18,6 +18,10 @@ from aurea_vms.models.user import User
 from aurea_vms.models.zone import Zone
 
 
+def _normalize_analyzer_name(name: str) -> str:
+    return "door_state" if name == "motion_detection" else name
+
+
 def add_site(**fields: object) -> Site:
     with get_session() as session:
         site = Site(**fields)
@@ -171,6 +175,7 @@ def get_analytics_config(config_id: int) -> AnalyticsConfig | None:
 
 
 def get_analytics_config_for(device_id: int, analyzer_name: str) -> AnalyticsConfig | None:
+    analyzer_name = _normalize_analyzer_name(analyzer_name)
     with get_session() as session:
         return (
             session.query(AnalyticsConfig)
@@ -185,6 +190,7 @@ def get_analytics_config_for(device_id: int, analyzer_name: str) -> AnalyticsCon
 def upsert_analytics_config(
     device_id: int, analyzer_name: str, **fields: object
 ) -> AnalyticsConfig:
+    analyzer_name = _normalize_analyzer_name(analyzer_name)
     with get_session() as session:
         config = (
             session.query(AnalyticsConfig)
@@ -213,6 +219,8 @@ def set_analytics_config_enabled(config_id: int, enabled: bool) -> None:
 
 
 def add_alarm_rule(**fields: object) -> AlarmRule:
+    if "analyzer_name" in fields:
+        fields["analyzer_name"] = _normalize_analyzer_name(str(fields["analyzer_name"]))
     with get_session() as session:
         rule = AlarmRule(**fields)
         session.add(rule)
@@ -232,6 +240,7 @@ def list_alarm_rules(device_id: int | None = None) -> list[AlarmRule]:
 def list_alarm_rules_for(device_id: int, analyzer_name: str) -> list[AlarmRule]:
     """Reglas habilitadas que aplican a este device_id: las especificas de
     esa camara + las que aplican a "todas las camaras" (device_id NULL)."""
+    analyzer_name = _normalize_analyzer_name(analyzer_name)
     with get_session() as session:
         return list(
             session.query(AlarmRule)

@@ -32,6 +32,7 @@ MODULE_COLORS = {
     "Alertas": "#f59e0b",
     "Sistema": "#64748b",
     "Usuarios": "#3b82f6",
+    "Dashboard de Eventos": "#22c55e",
 }
 
 MODULE_DESCRIPTIONS = {
@@ -42,6 +43,7 @@ MODULE_DESCRIPTIONS = {
     "Alertas": "Reglas que disparan las alarmas",
     "Sistema": "Configuración, recursos y logs",
     "Usuarios": "Cuentas locales y roles (Administrador/Operador)",
+    "Dashboard de Eventos": "Monitoreo en tiempo real y respuesta operativa",
 }
 
 BADGE_SIZE = 60

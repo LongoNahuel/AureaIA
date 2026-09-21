@@ -24,7 +24,7 @@ from aurea_vms.ui.labels import display_class
 from aurea_vms.ui.notify import warn
 
 ANALYZER_CLASSES: dict[str, list[str]] = {
-    "motion_detection": ["movimiento"],
+    "door_state": ["puerta_abierta", "puerta_cerrada"],
     "people_counting": ["person"],
     "line_crossing": ["person", "car", "motorcycle", "bicycle", "bus", "truck"],
     "face_detection": ["cara"],

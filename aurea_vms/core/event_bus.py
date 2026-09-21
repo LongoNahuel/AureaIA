@@ -31,6 +31,10 @@ class EventBus(QObject):
     # UI-only: pedido de "Ajustes avanzados" desde Dispositivos -> abrir/
     # enfocar Analizadores con esta camara seleccionada.
     open_analytics_config_requested = Signal(int)
+    # UI-only: una configuracion de analitica fue guardada o cambio de
+    # estado. La Vista en Vivo refresca las marcas inteligentes de esa
+    # camara sin reconstruir la grilla.
+    analytics_config_changed = Signal(int)
     # UI-only: cambio del filtro global de sitio (selector de la topbar).
     # Payload: site_id (int) o None = "todos los sitios". Emitido via
     # core.app_state.set_site_filter; los modulos que listan por camara

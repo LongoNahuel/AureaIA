@@ -25,6 +25,8 @@ from PySide6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 from qfluentwidgets import Action, FluentIcon, RoundMenu
 
 from aurea_vms.config.settings import settings
+from aurea_vms.core import app_prefs
+from aurea_vms.core.analytics.registry import ANALYZER_DISPLAY_NAMES
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import Detection, DetectionEvent
 from aurea_vms.core.stream_manager import stream_manager
@@ -38,17 +40,20 @@ from aurea_vms.ui.widgets.device_tree import DEVICE_ID_MIME
 BORDER_IDLE = "#2a3441"
 BORDER_SELECTED = "#3b82f6"
 
-# Marca inteligente: siempre verde, pero con dos tratamientos distintos --
-# movimiento dibuja la silueta real (contorno simplificado) porque un
-# rectangulo es poco preciso para una forma irregular; el resto de los
-# analizadores (personas/rostros/cruce de linea) dibuja una caja con
-# esquinas redondeadas + chip de etiqueta, mas prolijo que texto suelto.
+# Marca inteligente: verde con tratamientos distintos según el resultado.
 MOTION_STROKE = QColor("#22c55e")
 MOTION_FILL = QColor(34, 197, 94, 55)
 DETECTION_STROKE = QColor("#22c55e")
 DETECTION_FILL = QColor(34, 197, 94, 40)
 LABEL_CHIP_BG = QColor(12, 20, 15, 220)
 LABEL_CHIP_TEXT = QColor("#eafff2")
+ANALYTIC_COLORS = {
+    "door_state": QColor("#f59e0b"),
+    "people_counting": QColor("#22c55e"),
+    "line_crossing": QColor("#38bdf8"),
+    "face_detection": QColor("#c084fc"),
+    "motion_detection": QColor("#22c55e"),
+}
 
 
 class _VideoDisplay(QLabel):
@@ -79,7 +84,8 @@ class VideoTile(QWidget):
         super().__init__(parent)
         self._index = index
         self._device: Device | None = None
-        self._latest_detections: tuple[Detection, ...] = ()
+        self._latest_events: dict[str, DetectionEvent] = {}
+        self._analytics_configs = []
         self._selected = False
         # True mientras el pixmap actual es el estado "sin señal": evita
         # redibujar las rayas en cada tick del timer de display.
@@ -88,6 +94,7 @@ class VideoTile(QWidget):
         # miniaturas); el tile de Vista Inteligente (index < 0) y cualquier
         # tile expandido con doble click usan el flujo principal.
         self._stream_kind = "main" if index < 0 else "sub"
+        self._intelligent_mode = False
 
         self.setAcceptDrops(True)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -116,7 +123,8 @@ class VideoTile(QWidget):
 
     def assign_device(self, device_id: int | None) -> None:
         self.release()
-        self._latest_detections = ()
+        self._latest_events = {}
+        self._analytics_configs = []
 
         device = repository.get_device(device_id) if device_id is not None else None
         if device is None:
@@ -125,6 +133,7 @@ class VideoTile(QWidget):
             return
 
         self._device = device
+        self.refresh_analytics_configs()
         stream_manager.acquire(device, self._stream_kind)
         self.device_assigned.emit(device.id)
 
@@ -155,6 +164,26 @@ class VideoTile(QWidget):
     def set_selected(self, selected: bool) -> None:
         self._selected = selected
         self._apply_border()
+
+    def set_intelligent_mode(self, enabled: bool) -> None:
+        self._intelligent_mode = enabled
+        if enabled:
+            # Las coordenadas de ROI/linea y las detecciones de las
+            # analiticas pertenecen siempre al main-stream.
+            self.set_stream_kind("main")
+            self.refresh_analytics_configs()
+        self.update()
+
+    def refresh_analytics_configs(self) -> None:
+        if self._device is None:
+            self._analytics_configs = []
+            return
+        self._analytics_configs = [
+            config
+            for config in repository.list_analytics_configs(self._device.id)
+            if config.enabled
+        ]
+        self.update()
 
     def _apply_border(self) -> None:
         color = BORDER_SELECTED if self._selected else BORDER_IDLE
@@ -206,7 +235,7 @@ class VideoTile(QWidget):
 
     def _on_detection(self, event: DetectionEvent) -> None:
         if self._device is not None and event.device_id == self._device.id:
-            self._latest_detections = event.detections
+            self._latest_events[event.analyzer_name] = event
 
     def _render_empty_state(self) -> None:
         size = self.video_label.size()
@@ -292,41 +321,147 @@ class VideoTile(QWidget):
             Qt.TransformationMode.SmoothTransformation,
         )
 
-        pixmap = self._draw_overlay(pixmap, width, height, self._latest_detections)
+        pixmap = self._draw_overlay(pixmap, width, height)
         self.video_label.setPixmap(pixmap)
 
-    def _draw_overlay(
-        self, pixmap: QPixmap, frame_w: int, frame_h: int, detections: tuple[Detection, ...]
-    ) -> QPixmap:
+    def _draw_overlay(self, pixmap: QPixmap, frame_w: int, frame_h: int) -> QPixmap:
         result = QPixmap(pixmap)
         painter = QPainter(result)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
+        if app_prefs.intelligent_branding_enabled():
+            self._draw_branding(painter)
         self._draw_osd_text(
             painter,
             result.width(),
-            8,
+            40 if app_prefs.intelligent_branding_enabled() else 8,
             Qt.AlignmentFlag.AlignLeft,
             self._device.name if self._device else "",
         )
         timestamp = dt.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         self._draw_osd_text(painter, result.width(), 8, Qt.AlignmentFlag.AlignRight, timestamp)
+        scale_x = result.width() / frame_w
+        scale_y = result.height() / frame_h
+        if self._intelligent_mode:
+            self._draw_analytics_guides(painter, scale_x, scale_y)
+            self._draw_analytics_status(painter, result.width())
 
-        if detections:
-            scale_x = result.width() / frame_w
-            scale_y = result.height() / frame_h
-            for det in detections:
+        for analyzer_name, event in self._latest_events.items():
+            color = ANALYTIC_COLORS.get(analyzer_name, DETECTION_STROKE)
+            for det in event.detections:
                 if det.polygon:
-                    self._draw_motion_mark(painter, det.polygon, scale_x, scale_y)
+                    self._draw_motion_mark(painter, det.polygon, scale_x, scale_y, color)
                 else:
-                    self._draw_detection_box(painter, det, scale_x, scale_y)
+                    self._draw_detection_box(painter, det, scale_x, scale_y, color, analyzer_name)
 
         painter.end()
         return result
 
+    def _draw_analytics_guides(self, painter: QPainter, scale_x: float, scale_y: float) -> None:
+        for config in self._analytics_configs:
+            color = ANALYTIC_COLORS.get(config.analyzer_name, QColor("#93c5fd"))
+            roi = self._roi_for_config(config)
+            if roi is not None:
+                x, y, width, height = roi
+                pen = QPen(color)
+                pen.setWidthF(1.4)
+                pen.setStyle(Qt.PenStyle.DashLine)
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(QRectF(x * scale_x, y * scale_y, width * scale_x, height * scale_y))
+
+            line = (config.params or {}).get("line")
+            if config.analyzer_name == "line_crossing" and line and len(line) == 2:
+                (x1, y1), (x2, y2) = line
+                pen = QPen(color)
+                pen.setWidthF(2.2)
+                painter.setPen(pen)
+                painter.drawLine(
+                    QPointF(float(x1) * scale_x, float(y1) * scale_y),
+                    QPointF(float(x2) * scale_x, float(y2) * scale_y),
+                )
+                self._draw_guide_label(
+                    painter,
+                    QPointF(float(x1) * scale_x, float(y1) * scale_y),
+                    ANALYZER_DISPLAY_NAMES.get(config.analyzer_name, config.analyzer_name),
+                    color,
+                )
+
+    def _draw_analytics_status(self, painter: QPainter, width: int) -> None:
+        if not self._analytics_configs:
+            return
+        labels = []
+        for config in self._analytics_configs:
+            name = ANALYZER_DISPLAY_NAMES.get(config.analyzer_name, config.analyzer_name)
+            event = self._latest_events.get(config.analyzer_name)
+            count = len(event.detections) if event else 0
+            labels.append(f"{name}: {count}")
+        text = "  ·  ".join(labels)
+        metrics = painter.fontMetrics()
+        chip_width = min(width - 16, metrics.horizontalAdvance(text) + 20)
+        rect = QRectF(width - chip_width - 8, 32, chip_width, 22)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(15, 23, 42, 225))
+        painter.drawRoundedRect(rect, 6, 6)
+        painter.setPen(QColor("#dbeafe"))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+
+    @staticmethod
+    def _roi_for_config(config) -> tuple[int, int, int, int] | None:
+        values = (config.roi_x, config.roi_y, config.roi_w, config.roi_h)
+        if None in values:
+            return None
+        return values
+
+    @staticmethod
+    def _draw_guide_label(
+        painter: QPainter, point: QPointF, text: str, color: QColor
+    ) -> None:
+        metrics = painter.fontMetrics()
+        rect = QRectF(point.x() + 5, point.y() + 5, metrics.horizontalAdvance(text) + 10, 18)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(8, 15, 24, 220))
+        painter.drawRoundedRect(rect, 4, 4)
+        painter.setPen(color)
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+
+    def _draw_branding(self, painter: QPainter) -> None:
+        text = app_prefs.get_brand_name()
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(max(7, font.pointSize()))
+        painter.setFont(font)
+        metrics = painter.fontMetrics()
+        icon_size = 18
+        width = metrics.horizontalAdvance(text) + icon_size + 22
+        rect = QRectF(8, 8, width, 26)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(8, 15, 24, 220))
+        painter.drawRoundedRect(rect, 7, 7)
+        painter.setBrush(QColor("#22c55e"))
+        painter.drawEllipse(QRectF(15, 15, 6, 6))
+        painter.setPen(QColor("#eafff2"))
+        painter.drawText(QRectF(28, 8, width - 34, 26), Qt.AlignmentFlag.AlignVCenter, text)
+
+    @staticmethod
+    def _draw_status_chip(painter: QPainter, width: int, analyzer: str, count: int) -> None:
+        text = f"{analyzer}  ·  {count} detección{'es' if count != 1 else ''}"
+        metrics = painter.fontMetrics()
+        chip_width = metrics.horizontalAdvance(text) + 20
+        rect = QRectF(width - chip_width - 8, 32, chip_width, 22)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(15, 23, 42, 225))
+        painter.drawRoundedRect(rect, 6, 6)
+        painter.setPen(QColor("#93c5fd"))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+
     @staticmethod
     def _draw_motion_mark(
-        painter: QPainter, polygon: tuple[tuple[int, int], ...], scale_x: float, scale_y: float
+        painter: QPainter,
+        polygon: tuple[tuple[int, int], ...],
+        scale_x: float,
+        scale_y: float,
+        color: QColor,
     ) -> None:
         if len(polygon) < 3:
             return
@@ -338,37 +473,68 @@ class VideoTile(QWidget):
         path.closeSubpath()
 
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(MOTION_FILL)
+        painter.setBrush(QColor(color.red(), color.green(), color.blue(), 55))
         painter.drawPath(path)
 
-        pen = QPen(MOTION_STROKE)
+        pen = QPen(color)
         pen.setWidthF(1.6)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(pen)
         painter.drawPath(path)
 
     def _draw_detection_box(
-        self, painter: QPainter, det: Detection, scale_x: float, scale_y: float
+        self,
+        painter: QPainter,
+        det: Detection,
+        scale_x: float,
+        scale_y: float,
+        color: QColor,
+        analyzer_name: str,
     ) -> None:
         x, y, w, h = det.bbox
         rect = QRectF(x * scale_x, y * scale_y, w * scale_x, h * scale_y)
 
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(DETECTION_FILL)
+        painter.setBrush(QColor(color.red(), color.green(), color.blue(), 40))
         painter.drawRoundedRect(rect, 4, 4)
 
-        pen = QPen(DETECTION_STROKE)
+        pen = QPen(color)
         pen.setWidthF(1.8)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(pen)
         painter.drawRoundedRect(rect, 4, 4)
 
         self._draw_label_chip(
-            painter, rect.topLeft(), f"{display_class(det.label)} {det.confidence:.0%}"
+            painter,
+            rect.topLeft(),
+            f"{ANALYZER_DISPLAY_NAMES.get(analyzer_name, analyzer_name)} · "
+            f"{display_class(det.label)} {det.confidence:.0%}",
+            color,
+        )
+        self._draw_confidence_bar(painter, rect, det.confidence)
+
+    @staticmethod
+    def _draw_confidence_bar(painter: QPainter, rect: QRectF, confidence: float) -> None:
+        bar_rect = QRectF(rect.left(), rect.bottom() + 5, min(rect.width(), 100), 3)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(255, 255, 255, 55))
+        painter.drawRoundedRect(bar_rect, 1.5, 1.5)
+        painter.setBrush(DETECTION_STROKE)
+        painter.drawRoundedRect(
+            QRectF(
+                bar_rect.left(),
+                bar_rect.top(),
+                bar_rect.width() * max(0.0, min(1.0, confidence)),
+                bar_rect.height(),
+            ),
+            1.5,
+            1.5,
         )
 
     @staticmethod
-    def _draw_label_chip(painter: QPainter, top_left: QPointF, text: str) -> None:
+    def _draw_label_chip(
+        painter: QPainter, top_left: QPointF, text: str, color: QColor = LABEL_CHIP_TEXT
+    ) -> None:
         metrics = painter.fontMetrics()
         chip_w = metrics.horizontalAdvance(text) + 10
         chip_h = metrics.height() + 4
@@ -378,7 +544,7 @@ class VideoTile(QWidget):
         painter.setBrush(LABEL_CHIP_BG)
         painter.drawRoundedRect(chip_rect, 3, 3)
 
-        painter.setPen(LABEL_CHIP_TEXT)
+        painter.setPen(color)
         painter.drawText(chip_rect, Qt.AlignmentFlag.AlignCenter, text)
 
     @staticmethod

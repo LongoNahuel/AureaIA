@@ -23,14 +23,14 @@ from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import DetectionEvent
 from aurea_vms.models import repository
+from aurea_vms.ui.dialogs.door_state_config_dialog import DoorStateConfigDialog
 from aurea_vms.ui.dialogs.face_detection_config_dialog import FaceDetectionConfigDialog
 from aurea_vms.ui.dialogs.line_crossing_config_dialog import LineCrossingConfigDialog
-from aurea_vms.ui.dialogs.motion_detection_config_dialog import MotionDetectionConfigDialog
 from aurea_vms.ui.dialogs.people_counting_config_dialog import PeopleCountingConfigDialog
 from aurea_vms.ui.notify import warn
 
 DIALOG_BY_ANALYZER = {
-    "motion_detection": MotionDetectionConfigDialog,
+    "door_state": DoorStateConfigDialog,
     "people_counting": PeopleCountingConfigDialog,
     "line_crossing": LineCrossingConfigDialog,
     "face_detection": FaceDetectionConfigDialog,
@@ -199,6 +199,7 @@ class AnalyticsConfigModule(QWidget):
                     )
         else:
             analytics_engine.stop(config.id)
+        event_bus.analytics_config_changed.emit(device_id)
         self._refresh_table()
 
     def _configure(self, analyzer_name: str) -> None:
@@ -217,6 +218,7 @@ class AnalyticsConfigModule(QWidget):
                 analytics_engine.start(config, device)
             else:
                 analytics_engine.stop(config.id)
+            event_bus.analytics_config_changed.emit(device_id)
             self._refresh_table()
 
     def _on_detection(self, event: DetectionEvent) -> None:

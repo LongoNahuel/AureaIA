@@ -73,6 +73,17 @@ class TestAgrupacionPorSitioYZona:
         widget.set_site_filter(None)
         assert _sitios(widget) == {"Sala Principal (1)": 1, "Anexo VIP (1)": 1}
 
+    def test_set_site_filter_mantiene_visibles_camaras_sin_asignar(self, arbol):
+        sala = repository.add_site(name="Sala Principal")
+        zona_sala = repository.add_zone(name="Bóveda", site_id=sala.id)
+        _cam("C1", zona_sala.id)
+        _cam("C2")
+
+        widget = arbol()
+        widget.set_site_filter(sala.id)
+
+        assert _sitios(widget) == {"Sala Principal (1)": 1, "Sin asignar (1)": 1}
+
 
 class TestBuscador:
     def test_filtra_y_oculta_ramas_sin_coincidencias(self, arbol):

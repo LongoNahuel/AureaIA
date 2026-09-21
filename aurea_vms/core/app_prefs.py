@@ -10,7 +10,13 @@ import json
 from aurea_vms.config.settings import settings
 
 _PREFS_PATH = settings.data_dir / "preferences.json"
-_DEFAULTS = {"theme": "dark", "retention_days": 7, "retention_max_gb": 5.0}
+_DEFAULTS = {
+    "theme": "dark",
+    "retention_days": 7,
+    "retention_max_gb": 5.0,
+    "intelligent_branding": True,
+    "brand_name": "AureaIA Intelligence",
+}
 
 
 def _read() -> dict:
@@ -59,3 +65,17 @@ def set_retention_max_gb(max_gb: float) -> None:
     data = _read()
     data["retention_max_gb"] = float(max_gb)
     _write(data)
+
+
+def intelligent_branding_enabled() -> bool:
+    return bool(_read().get("intelligent_branding", True))
+
+
+def set_intelligent_branding_enabled(enabled: bool) -> None:
+    data = _read()
+    data["intelligent_branding"] = bool(enabled)
+    _write(data)
+
+
+def get_brand_name() -> str:
+    return str(_read().get("brand_name", "AureaIA Intelligence")).strip() or "AureaIA Intelligence"

@@ -48,16 +48,31 @@ class AnalyticsWorker(threading.Thread):
         self._interval_s = 1.0 / self._fps
         self._stop_event = threading.Event()
         self._overrun_warned = False
+        self._last_frame_ts = 0.0
 
     def run(self) -> None:
-        stream_manager.acquire(self._device)
+        # Las coordenadas de ROI/linea se configuran sobre la captura del
+        # flujo principal; la analitica nunca debe consumir el sub-stream.
+        stream_manager.acquire(self._device, "main")
         try:
             while not self._stop_event.is_set():
                 start = time.monotonic()
 
-                worker = stream_manager.get_worker(self._device.id)
-                frame = worker.get_latest_frame() if worker else None
+                worker = stream_manager.get_worker(self._device.id, "main")
+                if worker is None:
+                    frame, frame_ts = None, 0.0
+                elif hasattr(worker, "get_latest_frame_with_timestamp"):
+                    frame, frame_ts = worker.get_latest_frame_with_timestamp()
+                else:
+                    # Compatibilidad con workers mínimos usados por
+                    # integraciones/tests antiguos que solo exponen
+                    # get_latest_frame().
+                    frame, frame_ts = worker.get_latest_frame(), time.monotonic()
+                if frame is not None and frame_ts == self._last_frame_ts:
+                    self._stop_event.wait(MIN_YIELD_S)
+                    continue
                 if frame is not None:
+                    self._last_frame_ts = frame_ts
                     result = self._analyzer.process_frame(frame, time.time())
                     event_bus.detection.emit(
                         DetectionEvent(
@@ -84,7 +99,7 @@ class AnalyticsWorker(threading.Thread):
                     )
                 self._stop_event.wait(pacing_wait_s(self._interval_s, elapsed))
         finally:
-            stream_manager.release(self._device.id)
+            stream_manager.release(self._device.id, "main")
             try:
                 self._analyzer.close()
             except Exception:  # liberar recursos nunca debe matar el shutdown

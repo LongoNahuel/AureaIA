@@ -25,7 +25,7 @@ class TestCategoriasVisibles:
     def test_admin_ve_todo(self):
         _login_como(ROLE_ADMIN)
         visible = compute_visible_categories()
-        assert visible["Operación"] == ["Vista en Vivo", "Alarmas"]
+        assert visible["Operación"] == ["Vista en Vivo", "Alarmas", "Dashboard de Eventos"]
         assert set(visible["Configuración"]) == {
             "Dispositivos",
             "Analizadores",
@@ -38,16 +38,18 @@ class TestCategoriasVisibles:
     def test_supervisor_configura_analiticas_pero_no_administra(self):
         _login_como(ROLE_SUPERVISOR)
         visible = compute_visible_categories()
-        assert visible["Operación"] == ["Vista en Vivo", "Alarmas"]
+        assert visible["Operación"] == ["Vista en Vivo", "Alarmas", "Dashboard de Eventos"]
         assert set(visible["Configuración"]) == {"Analizadores", "Alertas"}
 
     def test_operador_solo_operacion(self):
         _login_como(ROLE_OPERATOR)
-        assert compute_visible_categories() == {"Operación": ["Vista en Vivo", "Alarmas"]}
+        assert compute_visible_categories() == {
+            "Operación": ["Vista en Vivo", "Alarmas", "Dashboard de Eventos"]
+        }
 
     def test_auditor_solo_alarmas(self):
         _login_como(ROLE_AUDITOR)
-        assert compute_visible_categories() == {"Operación": ["Alarmas"]}
+        assert compute_visible_categories() == {"Operación": ["Alarmas", "Dashboard de Eventos"]}
 
     def test_sin_sesion_nada(self):
         auth.current_user = None

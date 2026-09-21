@@ -144,6 +144,16 @@ class StreamWorker(threading.Thread):
         with self._lock:
             return None if self._latest_frame is None else self._latest_frame.copy()
 
+    def get_latest_frame_with_timestamp(self) -> tuple[np.ndarray | None, float]:
+        """Devuelve el último frame y su timestamp de captura.
+
+        Las analíticas usan esta variante para no inferir varias veces sobre
+        la misma imagen cuando el CPU tarda más que el FPS solicitado.
+        """
+        with self._lock:
+            frame = None if self._latest_frame is None else self._latest_frame.copy()
+            return frame, self._latest_frame_ts
+
     def get_recent_history(self) -> list[tuple[float, bytes]]:
         """Frames JPEG de los ultimos settings.clip_pre_seconds, mas viejo primero."""
         with self._lock:

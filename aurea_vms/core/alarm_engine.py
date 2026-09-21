@@ -46,6 +46,8 @@ class AlarmEngine:
     def _on_detection(self, event: DetectionEvent) -> None:
         if not event.detections:
             return
+        if event.analyzer_name == "door_state" and not event.metrics.get("transicion"):
+            return
 
         for rule in repository.list_alarm_rules_for(event.device_id, event.analyzer_name):
             if not self._within_schedule(rule):

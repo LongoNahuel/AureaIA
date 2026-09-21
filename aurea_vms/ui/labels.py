@@ -12,7 +12,8 @@ CLASS_LABELS_ES: dict[str, str] = {
     "bicycle": "Bicicleta",
     "bus": "Colectivo",
     "truck": "Camión",
-    "movimiento": "Movimiento",
+    "puerta_abierta": "Puerta abierta",
+    "puerta_cerrada": "Puerta cerrada",
     "cara": "Cara",
 }
 
