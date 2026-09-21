@@ -1,0 +1,12 @@
+# Dependencias de runtime para AureaIA VMS.
+# Python recomendado: 3.12.x en Linux/Windows 64-bit.
+PySide6>=6.7
+opencv-python>=4.10
+SQLAlchemy>=2.0
+numpy>=1.26
+onvif-zeep>=0.2.12
+wsdiscovery>=2.0
+onnxruntime>=1.20
+psutil>=5.9
+PySide6-Fluent-Widgets[full]>=1.11
+
