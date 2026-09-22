@@ -8,6 +8,10 @@ dist/
 
 data/*.sqlite3
 data/*.sqlite3.bak*
+# Archivos hermanos del modo WAL (models/db.py): viven junto a la base
+# y no los cubre el patron de arriba.
+data/*.sqlite3-wal
+data/*.sqlite3-shm
 data/clips/*
 data/snapshots/*
 data/media/*

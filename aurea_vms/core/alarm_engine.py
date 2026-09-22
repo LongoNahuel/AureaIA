@@ -7,6 +7,8 @@ No es un QObject: se conecta directamente a la signal `detection` del
 EventBus, asi que corre en el mismo thread que emite ese evento (el
 AnalyticsWorker correspondiente) -- el trabajo que hace (un insert en la
 DB + re-emitir un evento) es liviano, no hace falta marshalear a otro hilo.
+Como contrapartida, `_on_detection` es la frontera del hilo: nada puede
+escaparse de ahi sin capturar, o se cae el AnalyticsWorker que lo llamo.
 """
 
 from __future__ import annotations
@@ -49,7 +51,22 @@ class AlarmEngine:
         if event.analyzer_name == "door_state" and not event.metrics.get("transicion"):
             return
 
-        for rule in repository.list_alarm_rules_for(event.device_id, event.analyzer_name):
+        # Este metodo es un slot conectado a una signal que emiten los
+        # AnalyticsWorker: corre en SU hilo. Una excepcion que se escape de
+        # aca sube cruda por el slot de Qt y se lleva puesto el hilo de la
+        # analitica. Todo acceso a la DB va protegido y logueado -- el mismo
+        # patron que stream_manager._report_status y retention.
+        try:
+            rules = repository.list_alarm_rules_for(event.device_id, event.analyzer_name)
+        except Exception:
+            logger.exception(
+                "No se pudieron leer las reglas de alarma de la cámara %s (%s)",
+                event.device_id,
+                event.analyzer_name,
+            )
+            return
+
+        for rule in rules:
             if not self._within_schedule(rule):
                 continue
 
@@ -61,8 +78,22 @@ class AlarmEngine:
             if match is None:
                 continue
 
+            try:
+                self._trigger(rule, event, match)
+            except Exception:
+                # Una regla que falla no puede cortar la evaluacion de las
+                # demas, ni matar el hilo de la analitica.
+                logger.exception(
+                    "No se pudo disparar la alarma de la regla %s (cámara %s)",
+                    rule.id,
+                    event.device_id,
+                )
+                continue
+
+            # El cooldown se consume DESPUES de disparar bien: si el insert
+            # fallo por un lock transitorio, el proximo frame reintenta en
+            # vez de quedarse mudo hasta que venza el cooldown.
             self._last_triggered[rule.id] = now
-            self._trigger(rule, event, match)
 
     @staticmethod
     def _within_schedule(rule: AlarmRule) -> bool:

@@ -18,14 +18,55 @@ _engine = None
 _SessionLocal: sessionmaker[Session] | None = None
 
 
-def _enable_sqlite_foreign_keys(dbapi_connection, _record) -> None:
-    """SQLite ignora las FKs (y por lo tanto los ondelete=CASCADE/SET NULL
-    declarados en los modelos) salvo que cada conexion active el pragma.
-    Es un listener especifico del dialecto sqlite: si el dia de mañana la
-    DB cambia a otro motor, este hook simplemente no se registra y el
-    esquema declarativo sigue valiendo igual."""
+# Milisegundos que una conexion reintenta antes de rendirse con "database
+# is locked". Coincide a proposito con el default del driver sqlite3 de
+# Python (timeout=5.0): se explicita, no se cambia. Ver _apply_sqlite_pragmas.
+SQLITE_BUSY_TIMEOUT_MS = 5000
+
+
+def _apply_sqlite_pragmas(dbapi_connection, _record) -> None:
+    """Pragmas por conexion. Listener especifico del dialecto sqlite: si el
+    dia de mañana la DB cambia a otro motor, este hook simplemente no se
+    registra y el esquema declarativo sigue valiendo igual.
+
+    - foreign_keys: SQLite ignora las FKs (y por lo tanto los
+      ondelete=CASCADE/SET NULL declarados en los modelos) salvo que cada
+      conexion active el pragma.
+
+    - journal_mode=WAL: cuatro tipos de hilo escriben esta base a la vez
+      (StreamWorker el estado de cada camara, AlarmEngine los eventos desde
+      el hilo de analitica, ClipWriter y RetentionWorker la media) mientras
+      la UI lee. En el modo por defecto (rollback journal) el que escribe
+      bloquea a los que leen y viceversa; con WAL las escrituras van a un
+      archivo aparte y dejan de pelearse con las lecturas. Sigue habiendo un
+      solo escritor a la vez: eso es de SQLite, no lo cambia el modo.
+
+      OJO: a diferencia del resto, este pragma es PERSISTENTE -- queda
+      grabado en el archivo de la base, no se re-aplica por conexion (se
+      setea igual en cada una: es idempotente y barato). Deja dos archivos
+      hermanos, "<base>-wal" y "<base>-shm", que hay que copiar junto con la
+      base si se hace un backup a mano. Y NO funciona sobre unidades de red
+      (NFS/SMB): si algun dia el data-dir vive en un disco compartido, esto
+      hay que revisarlo.
+
+    - busy_timeout: cuanto espera una conexion que encuentra la base ocupada
+      antes de rendirse con "database is locked". MEDIDO: el driver sqlite3
+      de Python ya pasa timeout=5.0 a connect(), asi que el default efectivo
+      ya era 5000 -- este PRAGMA no cambia el comportamiento, lo vuelve
+      explicito y auditable (y deja de depender de un default del driver que
+      nadie en el equipo tiene por que conocer). El valor: una escritura de
+      las nuestras tarda milisegundos, asi que 5s absorbe un pico, no tapa
+      una query lenta.
+
+    - synchronous=NORMAL: la combinacion recomendada junto con WAL. Menos
+      fsync por commit; ante un corte de luz se pueden perder las ultimas
+      transacciones, pero la base no se corrompe.
+    """
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+    cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.close()
 
 
@@ -48,7 +89,7 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
         connect_args={"check_same_thread": False},
     )
     if _engine.dialect.name == "sqlite":
-        event.listen(_engine, "connect", _enable_sqlite_foreign_keys)
+        event.listen(_engine, "connect", _apply_sqlite_pragmas)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
     # Importar los modelos para que queden registrados en Base.metadata

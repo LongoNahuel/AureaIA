@@ -9,15 +9,6 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
 
 ## Robustez (bloqueantes de demo)
 
-- 🟠 **SQLite sin WAL ni `busy_timeout`** (`models/db.py:21-29,46-52`).
-  Escriben concurrentemente cuatro tipos de hilo: `StreamWorker`
-  (`stream_manager.py:138`), `AlarmEngine` desde el hilo de analítica
-  (`alarm_engine.py:97`), `ClipWriter` (`media_store.py:52`) y
-  `RetentionWorker` (`retention.py:82`). Sin WAL y sin `busy_timeout`,
-  una escritura concurrente falla con `database is locked`.
-- 🟠 **`alarm_engine._trigger` sin `try/except`** (`alarm_engine.py:97-104,127`):
-  es el único escritor de DB sin protección defensiva del proyecto. Si lo
-  anterior se manifiesta, se pierde la alarma.
 - 🟠 **`QSystemTrayIcon` creado desde un hilo de analítica.** `AlarmEngine`
   no es `QObject`, así que su slot corre en el hilo del `AnalyticsWorker`
   (`alarm_engine.py:38,126-132` → `desktop_notify.py:16-32`). Además
@@ -162,6 +153,16 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
 
 ## Hecho
 
+- ~~SQLite sin WAL ni `busy_timeout`~~ — `models/db.py:27-70` aplica
+  `journal_mode=WAL`, `busy_timeout=5000` y `synchronous=NORMAL` por
+  conexión, junto al `foreign_keys=ON` que ya estaba.
+  `tests/test_db_pragmas.py` fija los pragmas y cubre el modo de falla real
+  (un lector con la transacción abierta contra un escritor de fondo).
+- ~~`alarm_engine._trigger` sin `try/except`~~ — `alarm_engine.py:54-92`
+  protege por separado la lectura de reglas y cada disparo, y **consume el
+  cooldown recién después de un disparo exitoso**, para que un lock
+  transitorio no deje la regla muda hasta que venza.
+  `tests/test_alarm_engine.py::TestResilienciaDeHilo`.
 - ~~`settings.py` → `%LOCALAPPDATA%/AureaVMS` cuando corre frozen~~ —
   resuelto en `config/settings.py:24-33`, con override `AUREA_DATA_DIR` y
   test en `tests/test_packaging_paths.py`.

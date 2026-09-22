@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import datetime as real_dt
+import logging
 from types import SimpleNamespace
 
 import pytest  # type: ignore[import-not-found]
+from sqlalchemy.exc import OperationalError
 
 import aurea_vms.core.alarm_engine as alarm_engine_mod
 from aurea_vms.core.alarm_engine import AlarmEngine
@@ -16,6 +18,18 @@ def _freeze_now(monkeypatch, when: real_dt.datetime) -> None:
     monkeypatch.setattr(
         alarm_engine_mod, "dt", SimpleNamespace(datetime=SimpleNamespace(now=lambda: when))
     )
+
+
+def _fake_clock(monkeypatch, *valores: float) -> None:
+    """Congela `time.time()` SOLO dentro del modulo alarm_engine.
+
+    Importa que sea el modulo y no el atributo: `logging` tambien llama a
+    `time.time()` al armar cada LogRecord, asi que parchear el atributo del
+    modulo `time` compartido hace que un simple `logger.exception` consuma
+    valores del reloj falso.
+    """
+    reloj = iter(valores)
+    monkeypatch.setattr(alarm_engine_mod, "time", SimpleNamespace(time=lambda: next(reloj)))
 
 
 def _rule(**fields) -> AlarmRule:
@@ -139,8 +153,7 @@ class TestCooldown:
         triggered: list[tuple] = []
         monkeypatch.setattr(engine, "_trigger", lambda *args: triggered.append(args))
 
-        fake_clock = iter([1000.0, 1040.0])
-        monkeypatch.setattr(alarm_engine_mod.time, "time", lambda: next(fake_clock))
+        _fake_clock(monkeypatch, 1000.0, 1040.0)
 
         engine._on_detection(self._event(1000.0))
         engine._on_detection(self._event(1040.0))
@@ -197,3 +210,106 @@ class TestCooldown:
         )
 
         assert len(triggered) == 1
+
+
+class TestResilienciaDeHilo:
+    """`_on_detection` es un slot conectado a una signal que emiten los
+    AnalyticsWorker, y AlarmEngine no es un QObject: no hay marshaleo, corre
+    en el hilo de la analitica. Una excepcion que se escape de ahi sube cruda
+    por el slot de Qt y se lleva puesto ese hilo -- la camara deja de analizar
+    hasta que alguien reinicie la app. Estos tests fijan que ninguna falla de
+    DB (el caso realista: un lock transitorio de SQLite) llegue tan lejos.
+    """
+
+    def _event(self, ts: float = 1000.0) -> DetectionEvent:
+        return DetectionEvent(
+            device_id=1,
+            analyzer_name="face_detection",
+            timestamp=ts,
+            detections=(_detection(),),
+        )
+
+    def test_leer_las_reglas_puede_fallar_sin_matar_el_hilo(self, monkeypatch, caplog):
+        engine = AlarmEngine()
+
+        def explota(*_):
+            raise OperationalError("SELECT", {}, Exception("database is locked"))
+
+        monkeypatch.setattr(alarm_engine_mod.repository, "list_alarm_rules_for", explota)
+
+        with caplog.at_level(logging.ERROR, logger=alarm_engine_mod.__name__):
+            engine._on_detection(self._event())
+
+        assert "reglas de alarma" in caplog.text
+        assert "database is locked" in caplog.text
+
+    def test_una_regla_que_falla_no_frena_a_las_demas(self, monkeypatch, caplog):
+        """Las reglas de una camara son independientes: que el insert de la
+        primera choque contra un lock no puede dejar sin evaluar a la
+        segunda, que quiza es la critica."""
+        engine = AlarmEngine()
+        rota, sana = _rule(cooldown_seconds=0), _rule(cooldown_seconds=0)
+        rota.id, sana.id = 1, 2
+
+        monkeypatch.setattr(
+            alarm_engine_mod.repository, "list_alarm_rules_for", lambda *_: [rota, sana]
+        )
+        disparadas: list[int] = []
+
+        def trigger(rule, *_):
+            if rule.id == rota.id:
+                raise OperationalError("INSERT", {}, Exception("database is locked"))
+            disparadas.append(rule.id)
+
+        monkeypatch.setattr(engine, "_trigger", trigger)
+
+        with caplog.at_level(logging.ERROR, logger=alarm_engine_mod.__name__):
+            engine._on_detection(self._event())
+
+        assert disparadas == [sana.id]
+        assert "regla 1" in caplog.text
+
+    def test_un_disparo_fallido_no_consume_el_cooldown(self, monkeypatch):
+        """El punto fino del fix: si el cooldown se marcara antes de disparar,
+        un lock transitorio dejaria la regla MUDA hasta que venza (30s por
+        defecto). Marcandolo despues, el proximo frame reintenta."""
+        engine = AlarmEngine()
+        rule = _rule(cooldown_seconds=30)
+        rule.id = 7
+
+        monkeypatch.setattr(alarm_engine_mod.repository, "list_alarm_rules_for", lambda *_: [rule])
+        intentos: list[float] = []
+
+        def trigger(_rule, event, _detection):
+            intentos.append(event.timestamp)
+            if len(intentos) == 1:
+                raise OperationalError("INSERT", {}, Exception("database is locked"))
+
+        monkeypatch.setattr(engine, "_trigger", trigger)
+
+        # Dos frames consecutivos, MUY dentro del cooldown de 30s.
+        _fake_clock(monkeypatch, 1000.0, 1000.2)
+
+        engine._on_detection(self._event(1000.0))
+        engine._on_detection(self._event(1000.2))
+
+        assert intentos == [1000.0, 1000.2], "el fallo consumio el cooldown y silencio la regla"
+        assert engine._last_triggered[rule.id] == 1000.2
+
+    def test_un_disparo_exitoso_si_consume_el_cooldown(self, monkeypatch):
+        """La contracara del test anterior: el reintento no puede volverse
+        spam una vez que la alarma entro bien."""
+        engine = AlarmEngine()
+        rule = _rule(cooldown_seconds=30)
+        rule.id = 7
+
+        monkeypatch.setattr(alarm_engine_mod.repository, "list_alarm_rules_for", lambda *_: [rule])
+        intentos: list[float] = []
+        monkeypatch.setattr(engine, "_trigger", lambda _r, e, _d: intentos.append(e.timestamp))
+
+        _fake_clock(monkeypatch, 1000.0, 1000.2)
+
+        engine._on_detection(self._event(1000.0))
+        engine._on_detection(self._event(1000.2))
+
+        assert intentos == [1000.0]
