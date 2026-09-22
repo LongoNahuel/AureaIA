@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import threading
+import time
+
+import numpy as np
 import pytest
 
 import aurea_vms.core.stream_manager as sm_module
@@ -134,8 +138,6 @@ class TestConcurrencia:
         """Regresion de la carrera real: UI y analiticas llaman acquire()
         del mismo device desde hilos distintos; sin lock aparecian dos
         workers para la misma clave y el ref-counting quedaba roto."""
-        import threading
-
         device = _device(1)
         errors: list[Exception] = []
 
@@ -165,8 +167,6 @@ class TestIsStale:
         assert worker.is_stale()
 
     def test_frame_reciente_no_es_stale(self):
-        import time
-
         worker = sm_module.StreamWorker(_device(1))
         worker._latest_frame_ts = time.monotonic()
         assert not worker.is_stale()
@@ -217,3 +217,242 @@ class TestReportStatus:
         )
         worker._report_status(True, "Conectado")
         assert calls == [(7, "online")]
+
+
+# --- Dobles para ejercitar StreamWorker.run(), que hasta la Fase 5 no tenia
+# --- una sola linea de cobertura (no habia fake de cv2.VideoCapture).
+
+
+def _frame(value: int) -> np.ndarray:
+    return np.full((64, 64, 3), value, dtype=np.uint8)
+
+
+class FakeCapture:
+    """Doble scripteable de cv2.VideoCapture: no abre ningun socket."""
+
+    def __init__(self, frames: list | None = None, opened: bool = True) -> None:
+        self._frames = list(frames or [])
+        self._opened = opened
+        self.released = False
+
+    def isOpened(self) -> bool:  # noqa: N802 - API de cv2
+        return self._opened
+
+    def read(self):
+        if not self._frames:
+            return False, None
+        return True, self._frames.pop(0)
+
+    def release(self) -> None:
+        self.released = True
+
+
+class FakeStopEvent:
+    """threading.Event de mentira que corta el loop despues de N esperas y
+    deja registrado cuanto se pidio esperar en cada una."""
+
+    def __init__(self, stop_after_waits: int) -> None:
+        self.waits: list[float] = []
+        self._stop_after = stop_after_waits
+        self._set = False
+
+    def is_set(self) -> bool:
+        return self._set
+
+    def set(self) -> None:
+        self._set = True
+
+    def wait(self, timeout: float | None = None) -> bool:
+        self.waits.append(timeout)
+        if len(self.waits) >= self._stop_after:
+            self._set = True
+        return self._set
+
+
+@pytest.fixture()
+def worker_aislado(monkeypatch):
+    """StreamWorker real con la DB y el jitter fuera del camino."""
+    monkeypatch.setattr(sm_module.repository, "update_device_status", lambda *_a: None)
+    monkeypatch.setattr(sm_module, "RECONNECT_JITTER", 0.0)
+    return sm_module.StreamWorker(_device(5))
+
+
+def _capturas(monkeypatch, caps: list[FakeCapture]) -> list[FakeCapture]:
+    """Encola un FakeCapture por intento de conexion."""
+    cola = list(caps)
+    entregadas: list[FakeCapture] = []
+
+    def factory(*_args):
+        cap = cola.pop(0) if cola else FakeCapture(opened=False)
+        entregadas.append(cap)
+        return cap
+
+    monkeypatch.setattr(sm_module.cv2, "VideoCapture", factory)
+    return entregadas
+
+
+class TestBackoff:
+    """B5: RECONNECT_DELAY_S era 3.0 fijo y para siempre. Contra una camara
+    apagada de verdad eso son cientos de aperturas de socket por hora y por
+    camara, todas condenadas a fallar."""
+
+    def test_la_curva_duplica_hasta_el_tope(self):
+        curva = [sm_module._reconnect_delay(i, jitter=False) for i in range(1, 7)]
+        assert curva == [3.0, 6.0, 12.0, 24.0, 30.0, 30.0]
+
+    def test_nunca_pasa_del_tope(self):
+        assert sm_module._reconnect_delay(50, jitter=False) == sm_module.RECONNECT_MAX_DELAY_S
+
+    def test_el_jitter_queda_dentro_del_rango_declarado(self):
+        """Hasta +25% sobre la base, nunca por debajo: N camaras que se caen
+        juntas (un switch que se reinicia) no deben reintentar en fase."""
+        base = sm_module._reconnect_delay(2, jitter=False)
+        muestras = [sm_module._reconnect_delay(2) for _ in range(200)]
+
+        assert all(base <= d <= base * (1 + sm_module.RECONNECT_JITTER) for d in muestras)
+        assert len(set(muestras)) > 1  # de verdad hay jitter
+
+
+class TestReconexion:
+    def test_fallar_al_abrir_escala_el_backoff(self, worker_aislado, monkeypatch):
+        _capturas(monkeypatch, [FakeCapture(opened=False) for _ in range(3)])
+        worker_aislado._stop_event = FakeStopEvent(stop_after_waits=3)
+
+        worker_aislado.run()
+
+        assert worker_aislado._stop_event.waits == [3.0, 6.0, 12.0]
+
+    def test_una_conexion_con_frames_resetea_el_backoff(self, worker_aislado, monkeypatch):
+        _capturas(
+            monkeypatch,
+            [
+                FakeCapture(opened=False),
+                FakeCapture(frames=[_frame(10), _frame(200)]),  # conecta y entrega
+                FakeCapture(opened=False),
+            ],
+        )
+        worker_aislado._stop_event = FakeStopEvent(stop_after_waits=3)
+
+        worker_aislado.run()
+
+        # 3s, se recupera -> vuelve a 3s, y recien despues escala.
+        assert worker_aislado._stop_event.waits == [3.0, 3.0, 6.0]
+
+    def test_abrir_sin_entregar_frames_no_resetea_el_backoff(self, worker_aislado, monkeypatch):
+        """Una camara que abre el socket y se muere al instante (firmware
+        colgado, NVR saturado) no puede quedarse para siempre en el delay
+        minimo."""
+        _capturas(
+            monkeypatch,
+            [
+                FakeCapture(opened=False),
+                FakeCapture(frames=[]),  # abre pero read() falla de entrada
+                FakeCapture(opened=False),
+            ],
+        )
+        worker_aislado._stop_event = FakeStopEvent(stop_after_waits=3)
+
+        worker_aislado.run()
+
+        assert worker_aislado._stop_event.waits == [3.0, 6.0, 12.0]
+
+    def test_cada_intento_libera_su_capture(self, worker_aislado, monkeypatch):
+        caps = _capturas(monkeypatch, [FakeCapture(opened=False), FakeCapture(frames=[_frame(1)])])
+        worker_aislado._stop_event = FakeStopEvent(stop_after_waits=2)
+
+        worker_aislado.run()
+
+        assert all(cap.released for cap in caps)
+
+
+class TestWatchdogDeCongelado:
+    """B5: un decoder colgado devuelve ok=True con el MISMO frame, asi que el
+    corte por read() fallido no llega nunca y la camara queda mostrando una
+    foto vieja que parece en vivo."""
+
+    def test_la_firma_distingue_frames(self):
+        assert sm_module._frame_signature(_frame(10)) == sm_module._frame_signature(_frame(10))
+        assert sm_module._frame_signature(_frame(10)) != sm_module._frame_signature(_frame(200))
+
+    def test_el_mismo_frame_repetido_corta_el_stream(self, worker_aislado, monkeypatch):
+        monkeypatch.setattr(sm_module, "FROZEN_STREAM_S", 0.0)
+        congelado = _frame(70)
+        cap = FakeCapture(frames=[congelado] * 6)
+
+        entrego, frozen = worker_aislado._capture_loop(cap)
+
+        assert (entrego, frozen) == (True, True)
+        # Corto antes de agotar los 6 frames: no espero al EOF.
+        assert cap._frames
+
+    def test_frames_que_cambian_no_disparan_el_watchdog(self, worker_aislado, monkeypatch):
+        monkeypatch.setattr(sm_module, "FROZEN_STREAM_S", 0.0)
+        cap = FakeCapture(frames=[_frame(i * 30) for i in range(1, 7)])
+
+        entrego, frozen = worker_aislado._capture_loop(cap)
+
+        assert (entrego, frozen) == (True, False)
+        assert not cap._frames  # leyo hasta el EOF
+
+    def test_un_frame_repetido_por_debajo_del_umbral_se_tolera(self, worker_aislado, monkeypatch):
+        """Una escena estatica corta (o un mp4 en loop del rig de demo) no
+        puede cortar un stream sano: hace falta el umbral de tiempo."""
+        monkeypatch.setattr(sm_module, "FROZEN_STREAM_S", 60.0)
+        cap = FakeCapture(frames=[_frame(70)] * 6)
+
+        assert worker_aislado._capture_loop(cap) == (True, False)
+
+    def test_el_congelado_reconecta_y_lo_dice(self, worker_aislado, monkeypatch):
+        monkeypatch.setattr(sm_module, "FROZEN_STREAM_S", 0.0)
+        estados: list[tuple[bool, str]] = []
+        monkeypatch.setattr(
+            worker_aislado,
+            "_report_status",
+            lambda online, detail: estados.append((online, detail)),
+        )
+        _capturas(monkeypatch, [FakeCapture(frames=[_frame(70)] * 5)])
+        worker_aislado._stop_event = FakeStopEvent(stop_after_waits=1)
+
+        worker_aislado.run()
+
+        assert estados[0] == (True, "Conectado")
+        assert "congelado" in estados[1][1]
+        # Entrego frames: el backoff arranca de cero, no castiga un glitch.
+        assert worker_aislado._stop_event.waits == [3.0]
+
+
+class TestParadaOrdenada:
+    def test_stop_durante_un_backoff_largo_no_espera_el_tope(self, monkeypatch):
+        """El apagado de main.py hace stop_all() + join(timeout=2.0): con un
+        backoff de hasta 30s, el hilo tiene que salir en el acto igual."""
+        monkeypatch.setattr(sm_module.repository, "update_device_status", lambda *_a: None)
+        monkeypatch.setattr(sm_module, "RECONNECT_DELAY_S", 30.0)
+        monkeypatch.setattr(sm_module, "RECONNECT_MAX_DELAY_S", 30.0)
+        intentos = _capturas(monkeypatch, [])  # todo falla al abrir
+
+        worker = sm_module.StreamWorker(_device(9))
+        worker.start()
+        try:
+            deadline = time.monotonic() + 2.0
+            while not intentos and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert intentos, "el worker nunca intentó conectar"
+
+            arranque = time.monotonic()
+            worker.stop()
+            worker.join(timeout=2.0)
+        finally:
+            worker.stop()
+
+        assert not worker.is_alive()
+        assert time.monotonic() - arranque < 2.0
+
+
+class TestFirmaDeFrame:
+    def test_es_barata_sobre_un_frame_grande(self):
+        """Corre por cada frame de cada camara: no puede costar nada."""
+        frame = np.random.default_rng(0).integers(0, 255, (1080, 1920, 3), dtype=np.uint8)
+        arranque = time.perf_counter()
+        for _ in range(100):
+            sm_module._frame_signature(frame)
+        assert (time.perf_counter() - arranque) / 100 < 0.002

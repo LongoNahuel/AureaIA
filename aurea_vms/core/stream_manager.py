@@ -20,6 +20,7 @@ abrir una segunda conexion redundante.
 from __future__ import annotations
 
 import logging
+import random
 import threading
 import time
 from collections import deque
@@ -37,9 +38,12 @@ from aurea_vms.models.device import Device
 logger = logging.getLogger(__name__)
 
 RECONNECT_DELAY_S = 3.0
+RECONNECT_MAX_DELAY_S = 30.0
+RECONNECT_JITTER = 0.25
 HISTORY_FPS = 5.0
 JPEG_QUALITY = 80
 FPS_WINDOW_SIZE = 60
+FRAME_SIGNATURE_STEP = 32
 
 # Sin estos timeouts, un cap.read() contra una camara que se cae "sucio"
 # (sin cerrar el TCP: cable cortado, switch reiniciado) puede bloquear el
@@ -48,6 +52,42 @@ FPS_WINDOW_SIZE = 60
 OPEN_TIMEOUT_MS = 10_000
 READ_TIMEOUT_MS = 10_000
 STALE_FRAME_S = 15.0
+
+# Cuanto tiempo seguido tiene que repetirse EXACTAMENTE el mismo frame para
+# dar el stream por congelado. Mismo valor que STALE_FRAME_S pero otra cosa:
+# aquel mide "la imagen que tiene la UI esta vieja", este mide "el decoder
+# nos devuelve siempre la misma foto".
+FROZEN_STREAM_S = STALE_FRAME_S
+
+
+def _reconnect_delay(attempt: int, *, jitter: bool = True) -> float:
+    """Espera antes del intento numero `attempt` (1 = el primero tras caerse).
+
+    Backoff exponencial desde RECONNECT_DELAY_S hasta RECONNECT_MAX_DELAY_S.
+    Antes era un 3.0 fijo para siempre: contra una camara apagada de verdad,
+    y sabiendo que cv2.VideoCapture bloquea hasta OPEN_TIMEOUT_MS, eso son
+    ~275 aperturas de socket por hora y por camara, todas condenadas a
+    fallar, hasta que alguien la vuelva a enchufar.
+
+    El jitter (hasta +RECONNECT_JITTER) evita que N camaras que se caen
+    juntas -- un switch que se reinicia es el caso tipico -- se queden
+    reintentando en fase para siempre.
+    """
+    base = min(RECONNECT_DELAY_S * 2 ** max(0, attempt - 1), RECONNECT_MAX_DELAY_S)
+    if not jitter:
+        return base
+    return base * (1.0 + random.random() * RECONNECT_JITTER)  # noqa: S311 - no es cripto
+
+
+def _frame_signature(frame: np.ndarray) -> bytes:
+    """Firma barata para detectar el frame repetido EXACTO.
+
+    Submuestrea 1 de cada FRAME_SIGNATURE_STEP pixeles por eje: ~200 valores
+    en 1080p, microsegundos por frame. No mide "parecido" ni pretende
+    hacerlo: lo unico que busca es la foto identica que devuelve un decoder
+    colgado.
+    """
+    return frame[::FRAME_SIGNATURE_STEP, ::FRAME_SIGNATURE_STEP].tobytes()
 
 
 class StreamWorker(threading.Thread):
@@ -73,6 +113,7 @@ class StreamWorker(threading.Thread):
         self._frame_times: deque[float] = deque(maxlen=FPS_WINDOW_SIZE)
 
     def run(self) -> None:
+        attempt = 0
         while not self._stop_event.is_set():
             cap = cv2.VideoCapture(
                 self._url,
@@ -86,35 +127,91 @@ class StreamWorker(threading.Thread):
             )
             if not cap.isOpened():
                 cap.release()
-                logger.warning(
-                    "Camara %s (%s): no se pudo abrir el stream", self.device_id, self.kind
-                )
-                self._report_status(False, "No se pudo abrir el stream")
-                if self._stop_event.wait(RECONNECT_DELAY_S):
+                attempt += 1
+                if self._wait_before_retry(attempt, "No se pudo abrir el stream"):
                     break
                 continue
 
             logger.info("Camara %s (%s): conectada", self.device_id, self.kind)
             self._report_status(True, "Conectado")
-            while not self._stop_event.is_set():
-                ok, frame = cap.read()
-                if not ok or frame is None:
-                    break
-                now = time.time()
-                with self._lock:
-                    self._latest_frame = frame
-                    self._latest_frame_ts = time.monotonic()
-                    self._frame_times.append(now)
-                    if now - self._last_history_ts >= self._history_interval:
-                        self._last_history_ts = now
-                        self._append_history(frame, now)
+            delivered_frames, frozen = self._capture_loop(cap)
             cap.release()
 
             if self._stop_event.is_set():
                 break
-            logger.warning("Camara %s: se perdió la conexión, reintentando...", self.device_id)
-            self._report_status(False, "Se perdió la conexión, reintentando...")
-            self._stop_event.wait(RECONNECT_DELAY_S)
+
+            # El backoff se resetea solo si la conexion ENTREGO frames. Con
+            # resetear ante isOpened() alcanzaria para el caso feliz, pero
+            # una camara que abre el socket y se muere al instante (firmware
+            # colgado, NVR saturado) nunca saldria del delay minimo y
+            # seguiriamos con los 3s fijos de antes.
+            attempt = 1 if delivered_frames else attempt + 1
+            reason = "El stream quedó congelado" if frozen else "Se perdió la conexión"
+            if self._wait_before_retry(attempt, reason):
+                break
+
+    def _wait_before_retry(self, attempt: int, reason: str) -> bool:
+        """Reporta el estado y espera el backoff. True si hay que cortar el
+        hilo (alguien llamo a stop() mientras esperaba)."""
+        delay = _reconnect_delay(attempt)
+        logger.warning(
+            "Camara %s (%s): %s (intento %d, reintenta en %.0fs)",
+            self.device_id,
+            self.kind,
+            reason,
+            attempt,
+            delay,
+        )
+        self._report_status(False, f"{reason}, reintentando en {delay:.0f}s")
+        return self._stop_event.wait(delay)
+
+    def _capture_loop(self, cap) -> tuple[bool, bool]:
+        """Lee frames hasta que el stream se corta, se congela o paran el
+        worker. Devuelve (entregó frames, quedó congelado)."""
+        delivered_frames = False
+        last_signature: bytes | None = None
+        identical_since = 0.0
+
+        while not self._stop_event.is_set():
+            ok, frame = cap.read()
+            if not ok or frame is None:
+                return delivered_frames, False
+
+            now = time.time()
+            captured_at = time.monotonic()
+
+            # Watchdog de congelado. Un decoder colgado sigue devolviendo
+            # ok=True con el MISMO frame ya decodificado, asi que el corte
+            # por read() fallido no llega nunca y la camara se queda
+            # mostrando una foto vieja que parece en vivo -- justo lo que
+            # is_stale() detectaba para la UI sin que nadie reconectara.
+            # Se corta solo si la firma es identica por mas de
+            # FROZEN_STREAM_S SEGUIDOS: con ruido de sensor real eso no pasa
+            # nunca, y el doble requisito evita cortar un mp4 en loop con un
+            # tramo estatico (el rig de demo de tools/demo).
+            signature = _frame_signature(frame)
+            if signature != last_signature:
+                last_signature = signature
+                identical_since = captured_at
+            elif captured_at - identical_since > FROZEN_STREAM_S:
+                logger.warning(
+                    "Camara %s (%s): el mismo frame hace %.0fs, se da por congelado",
+                    self.device_id,
+                    self.kind,
+                    captured_at - identical_since,
+                )
+                return True, True
+
+            with self._lock:
+                self._latest_frame = frame
+                self._latest_frame_ts = captured_at
+                self._frame_times.append(now)
+                if now - self._last_history_ts >= self._history_interval:
+                    self._last_history_ts = now
+                    self._append_history(frame, now)
+            delivered_frames = True
+
+        return delivered_frames, False
 
     def _append_history(self, frame: np.ndarray, now: float) -> None:
         ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])

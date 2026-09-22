@@ -9,9 +9,6 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
 
 ## Robustez (bloqueantes de demo)
 
-- **Reconexión RTSP sin backoff** (`stream_manager.py:39,93,117`): 3 s fijos
-  para siempre. Y `is_stale()` solo lo consume la UI, así que un stream que
-  devuelve `ok=True` repitiendo el último frame no se reconecta nunca.
 - Los hilos daemon de `device_manager.test_rtsp_connection`/`grab_snapshot`
   (`device_manager.py:86-104,126-150`) no tienen techo: contra un host
   inalcanzable, cada reintento del usuario deja uno colgado.
@@ -145,6 +142,22 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
   Sitios → Zonas → Cámaras).
 
 ## Hecho
+
+- ~~Reconexión RTSP sin backoff, y ningún watchdog de stream congelado~~ —
+  `_reconnect_delay()` (`stream_manager.py:64-82`) hace backoff exponencial de
+  3 s a 30 s con jitter de +25%, para que N cámaras que se caen juntas (un
+  switch que se reinicia) no reintenten en fase. El contador se resetea solo
+  cuando la conexión **entregó frames**, no con `isOpened()`: una cámara que
+  abre el socket y se muere al instante no puede quedarse en el delay mínimo
+  (`stream_manager.py:136-147`). Y `_capture_loop` corta el stream si la firma
+  submuestreada del frame es idéntica por más de `FROZEN_STREAM_S`
+  (`stream_manager.py:85-95,165-215`): un decoder colgado devuelve `ok=True`
+  con la misma foto y el corte por `read()` fallido no llegaba nunca. Medido
+  contra un puerto cerrado con cv2 real: 4 s → 7 s → 13 s, y `stop()` corta el
+  hilo en 0,00 s aunque esté en medio del backoff.
+  `tests/test_stream_manager.py::TestBackoff`, `::TestReconexion`,
+  `::TestWatchdogDeCongelado`, `::TestParadaOrdenada` — con el primer doble de
+  `cv2.VideoCapture` del repo, que llevó `StreamWorker.run()` de 0% a cubierto.
 
 - ~~Un clip que no se pudo escribir se registra igual como evidencia~~ —
   `save_snapshot` mira el retorno de `cv2.imwrite` y `_write_mp4` chequea
