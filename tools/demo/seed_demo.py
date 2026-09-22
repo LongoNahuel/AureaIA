@@ -27,6 +27,12 @@ from aurea_vms.models.user import (  # noqa: E402
 
 DEMO_PASSWORD = "Aurea123!x"
 
+# Las camaras cuelgan de una ZONA, no de un sitio: la jerarquia real es
+# Sitio -> Zona -> Camara desde el commit 3977978. Se usa el mismo nombre
+# "General" que el backfill de models/db.py para las DBs pre-zonas, asi
+# las dos rutas convergen en la misma zona en vez de crear dos.
+DEFAULT_ZONE_NAME = "General"
+
 SITES = [
     ("Sala Principal", "Planta baja: mesas, cajas y accesos"),
     ("Anexo VIP", "Salas privadas y bóveda"),
@@ -67,18 +73,34 @@ def seed(rtsp_host: str) -> None:
             site_ids[name] = repository.add_site(name=name, description=description).id
             print(f"+ sitio: {name}")
 
+    zone_ids: dict[str, int] = {}
+    for site_name, site_id in site_ids.items():
+        existing_zones = {zone.name: zone.id for zone in repository.list_zones(site_id=site_id)}
+        if DEFAULT_ZONE_NAME in existing_zones:
+            zone_ids[site_name] = existing_zones[DEFAULT_ZONE_NAME]
+        else:
+            zone_ids[site_name] = repository.add_zone(site_id=site_id, name=DEFAULT_ZONE_NAME).id
+            print(f"+ zona: {site_name} / {DEFAULT_ZONE_NAME}")
+
     existing_devices = {device.name: device for device in repository.list_devices()}
     for name, site_name, path, analyzer, params, classes in CAMERAS:
         device = existing_devices.get(name)
         if device is None:
             device = repository.add_device(
                 name=name,
-                site_id=site_ids[site_name],
+                zone_id=zone_ids[site_name],
                 ip="127.0.0.1",
                 port=8554,
                 rtsp_main_url=f"rtsp://{rtsp_host}/{path}",
             )
             print(f"+ cámara: {name} -> rtsp://{rtsp_host}/{path}")
+        elif device.zone_id is None:
+            # Camara sembrada por una version anterior del seed, o que quedo
+            # sin zona al migrar: sin esto es invisible para el filtro global
+            # de sitio y la demo arranca con la grilla vacia. Solo se toca si
+            # NO tiene zona, para no pisar una asignacion hecha a mano.
+            repository.update_device(device.id, zone_id=zone_ids[site_name])
+            print(f"~ cámara sin zona reasignada: {name} -> {site_name}/{DEFAULT_ZONE_NAME}")
 
         repository.upsert_analytics_config(
             device.id,
