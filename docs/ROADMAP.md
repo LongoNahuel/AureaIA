@@ -9,10 +9,6 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
 
 ## Robustez (bloqueantes de demo)
 
-- 🟠 **`QSystemTrayIcon` creado desde un hilo de analítica.** `AlarmEngine`
-  no es `QObject`, así que su slot corre en el hilo del `AnalyticsWorker`
-  (`alarm_engine.py:38,126-132` → `desktop_notify.py:16-32`). Además
-  `_tray_icon` es un global con doble-check sin lock.
 - 🟠 **Un clip que no se pudo escribir se registra igual como evidencia**
   (`clip_recorder.py:133-151`): `_write_mp4` no chequea `writer.isOpened()`
   y `save_snapshot` no mira el retorno de `cv2.imwrite`. Un códec ausente o
@@ -76,7 +72,7 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
   lo ejercita.
 - Módulos sin cobertura real: `object_detector_backend` 40%,
   `device_manager` 44% (toda su I/O sin test), `ptz_control` 29%,
-  `desktop_notify` 29%, `logging_setup` 37%.
+  `logging_setup` 37%.
 - `device_manager.refresh_device_status` (`device_manager.py:153-169`) no
   tiene ningún caller en el repo: código muerto.
 - El gate de cobertura mide `core`/`models`/`config`; sumar `aurea_vms/ui`
@@ -98,6 +94,9 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
   la demo puede correr sin conexión.
 - `console=True` en el spec mientras el build madura; flip a `False` para la
   entrega final.
+- `main()` nunca llama a `app.setWindowIcon()` (`main.py:157-160`), así que el
+  globo de la bandeja sale con icono nulo (`desktop_notify.py:70`). Cosmético,
+  pero toca los assets de marca: va con el lane de Nahuel.
 - El CI sigue instalando `libgles2` (`.github/workflows/ci.yml`), que entro por
   MediaPipe. Ya nada declara `NEEDED` contra `libGLESv2.so.2` — ni onnxruntime,
   ni cv2, ni PySide6 — pero Qt puede cargarla por `dlopen`. Sacarla y confirmar
@@ -152,6 +151,19 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
   Sitios → Zonas → Cámaras).
 
 ## Hecho
+
+- ~~`QSystemTrayIcon` creado desde un hilo de analítica~~ — la acción
+  `notify_desktop` de una regla viaja ahora como flag del `AlarmEvent`
+  (`events.py:54-58`) y la ejecuta `MainWindow._on_global_alarm`
+  (`main_window.py:214-228`, `QueuedConnection`), el mismo camino que ya usaba
+  `play_sound`. De paso se saca del hilo de analítica el `repository.get_device`
+  que alimentaba el texto, porque el slot de UI ya resolvía el nombre de cámara.
+  `desktop_notify.notify()` quedó con guard de hilo explícito: una llamada desde
+  fuera de la GUI se loguea y no construye nada
+  (`desktop_notify.py:39-50,74-83`). Los dos casos que antes eran no-op mudo
+  (sin `QApplication`, sin bandeja) ahora dejan línea en el log, y el icono se
+  crea con la app como padre. `tests/test_desktop_notify.py`,
+  `tests/test_alarm_trigger.py::TestTrigger`.
 
 - ~~SQLite sin WAL ni `busy_timeout`~~ — `models/db.py:27-70` aplica
   `journal_mode=WAL`, `busy_timeout=5000` y `synchronous=NORMAL` por

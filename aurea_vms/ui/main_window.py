@@ -17,7 +17,7 @@ from qfluentwidgets import (
     TabWidget,
 )
 
-from aurea_vms.core import app_state, auth
+from aurea_vms.core import app_state, auth, desktop_notify
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import AlarmEvent
 from aurea_vms.core.permissions import Perm, can
@@ -212,11 +212,20 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
 
     def _on_global_alarm(self, event: AlarmEvent) -> None:
+        """Slot con QueuedConnection: corre en el hilo principal aunque el
+        AlarmEvent lo emita un AnalyticsWorker. Es el unico lugar donde se
+        ejecutan las acciones de escritorio de una regla -- los engines solo
+        marcan la intencion en el DTO."""
         device = repository.get_device(event.device_id)
         device_name = device.name if device is not None else f"Cámara {event.device_id}"
         self.alert_layer.show_alarm(event, device_name)
         if event.play_sound:
             sound.play_alarm()
+        if event.notify_desktop:
+            desktop_notify.notify(
+                f"Alarma ({event.severity}) — {device_name}",
+                f"{event.object_class} detectado con {event.confidence:.0%} de confianza.",
+            )
 
     def _open_command_palette(self) -> None:
         dialog = CommandPaletteDialog(MODULES, self)

@@ -51,6 +51,11 @@ class AlarmEvent:
     # Accion "play_sound" de la regla: la UI (hilo principal) reproduce el
     # beep -- los engines no tocan audio.
     play_sound: bool = False
+    # Accion "notify_desktop" de la regla: la UI dispara el globo de la
+    # bandeja del sistema -- los engines no tocan widgets. QSystemTrayIcon
+    # es un widget de Qt y construirlo desde el hilo de una analitica es
+    # comportamiento indefinido (ver core/desktop_notify.py).
+    notify_desktop: bool = False
 
 
 @dataclass(frozen=True)

@@ -8,7 +8,10 @@ EventBus, asi que corre en el mismo thread que emite ese evento (el
 AnalyticsWorker correspondiente) -- el trabajo que hace (un insert en la
 DB + re-emitir un evento) es liviano, no hace falta marshalear a otro hilo.
 Como contrapartida, `_on_detection` es la frontera del hilo: nada puede
-escaparse de ahi sin capturar, o se cae el AnalyticsWorker que lo llamo.
+escaparse de ahi sin capturar, o se cae el AnalyticsWorker que lo llamo. Y
+por el mismo motivo este modulo no construye ni toca un solo widget: las
+acciones de una regla que llegan al escritorio (`play_sound`,
+`notify_desktop`) viajan como flags del AlarmEvent y las ejecuta la UI.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ import datetime as dt
 import logging
 import time
 
-from aurea_vms.core import clip_recorder, desktop_notify, media_store
+from aurea_vms.core import clip_recorder, media_store
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import AlarmEvent as AlarmEventDTO
 from aurea_vms.core.events import Detection, DetectionEvent
@@ -154,14 +157,6 @@ class AlarmEngine:
         if (rule.actions or {}).get("save_clip"):
             clip_recorder.record_clip_async(event.device_id, row.id)
 
-        if (rule.actions or {}).get("notify_desktop"):
-            device = repository.get_device(event.device_id)
-            device_name = device.name if device else f"Cámara {event.device_id}"
-            desktop_notify.notify(
-                f"Alarma ({rule.severity}) — {device_name}",
-                f"{detection.label} detectado con {detection.confidence:.0%} de confianza.",
-            )
-
         event_bus.alarm.emit(
             AlarmEventDTO(
                 alarm_event_id=row.id,
@@ -172,7 +167,12 @@ class AlarmEngine:
                 confidence=detection.confidence,
                 severity=rule.severity,
                 snapshot_path=snapshot_path,
+                # Las dos acciones que tocan el escritorio (beep y globo de
+                # bandeja) viajan como flags: las ejecuta la UI en su hilo.
+                # Este metodo corre en el hilo del AnalyticsWorker, donde
+                # construir un widget de Qt es comportamiento indefinido.
                 play_sound=bool((rule.actions or {}).get("play_sound")),
+                notify_desktop=bool((rule.actions or {}).get("notify_desktop")),
             )
         )
 

@@ -37,23 +37,18 @@ def _setup(temp_db_unused, monkeypatch, actions: dict):
     monkeypatch.setattr(
         ae_module.clip_recorder, "record_clip_async", lambda d, e: clips.append((d, e))
     )
-    notifications: list[tuple] = []
-    monkeypatch.setattr(
-        ae_module.desktop_notify, "notify", lambda *args: notifications.append(args)
-    )
-
     event = DetectionEvent(
         device_id=device.id,
         analyzer_name="face_detection",
         timestamp=100.0,
         detections=(Detection(label="cara", confidence=0.8, bbox=(0, 0, 5, 5)),),
     )
-    return device, rule, event, snapshots, clips, notifications
+    return device, rule, event, snapshots, clips
 
 
 class TestTrigger:
     def test_persiste_evento_snapshot_y_emite_dto(self, temp_db, monkeypatch):
-        device, rule, event, snapshots, clips, _notif = _setup(
+        device, rule, event, snapshots, clips = _setup(
             temp_db, monkeypatch, actions={"notify_ui": True, "play_sound": True}
         )
         emitted: list = []
@@ -76,7 +71,7 @@ class TestTrigger:
         assert dto.snapshot_path and dto.snapshot_path.endswith(".jpg")
 
     def test_save_clip_lanza_la_grabacion(self, temp_db, monkeypatch):
-        device, rule, event, _snaps, clips, _notif = _setup(
+        device, rule, event, _snaps, clips = _setup(
             temp_db, monkeypatch, actions={"save_clip": True}
         )
         AlarmEngine._trigger(rule, event, event.detections[0])
@@ -84,15 +79,41 @@ class TestTrigger:
         rows = repository.list_alarm_events()
         assert clips == [(device.id, rows[0].id)]
 
-    def test_notify_desktop(self, temp_db, monkeypatch):
-        _device, rule, event, _snaps, _clips, notifications = _setup(
+    def test_notify_desktop_viaja_como_flag_del_dto(self, temp_db, monkeypatch):
+        """B3: el engine corre en el hilo del AnalyticsWorker, asi que NO
+        puede construir el QSystemTrayIcon el mismo -- marca la accion y la
+        ejecuta MainWindow._on_global_alarm en el hilo de la GUI."""
+        _device, rule, event, _snaps, _clips = _setup(
             temp_db, monkeypatch, actions={"notify_desktop": True}
         )
-        AlarmEngine._trigger(rule, event, event.detections[0])
-        assert len(notifications) == 1
+        emitted: list = []
+        event_bus.alarm.connect(emitted.append)
+        try:
+            AlarmEngine._trigger(rule, event, event.detections[0])
+        finally:
+            event_bus.alarm.disconnect(emitted.append)
+
+        assert len(emitted) == 1
+        assert emitted[0].notify_desktop is True
+
+    def test_sin_la_accion_el_flag_queda_apagado(self, temp_db, monkeypatch):
+        _device, rule, event, _snaps, _clips = _setup(temp_db, monkeypatch, actions={})
+        emitted: list = []
+        event_bus.alarm.connect(emitted.append)
+        try:
+            AlarmEngine._trigger(rule, event, event.detections[0])
+        finally:
+            event_bus.alarm.disconnect(emitted.append)
+
+        assert emitted[0].notify_desktop is False
+
+    def test_el_engine_no_conoce_el_modulo_de_notificaciones(self):
+        """Guarda de regresion de B3: si alguien vuelve a importar
+        desktop_notify aca, la llamada vuelve al hilo de la analitica."""
+        assert not hasattr(ae_module, "desktop_notify")
 
     def test_sin_frame_no_hay_snapshot(self, temp_db, monkeypatch):
-        _device, rule, event, snapshots, _clips, _notif = _setup(temp_db, monkeypatch, actions={})
+        _device, rule, event, snapshots, _clips = _setup(temp_db, monkeypatch, actions={})
         monkeypatch.setattr(ae_module.stream_manager, "get_worker", lambda _id: None)
 
         emitted: list = []
