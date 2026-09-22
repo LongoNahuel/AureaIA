@@ -4,8 +4,8 @@ PyInstaller expone la raiz del bundle en sys._MEIPASS (en onedir apunta
 al directorio _internal junto al .exe). Los datas del spec (modelos
 .onnx, WSDL de ONVIF, assets) se resuelven contra esa raiz; en
 desarrollo, contra la raiz del repo -- ojo que en dev los modelos del
-repo NO estan en PROJECT_ROOT/models sino en PROJECT_ROOT/data/models,
-asi que bundled_path("models/...") no los encuentra (ver model_assets).
+repo NO estan en PROJECT_ROOT/models sino en PROJECT_ROOT/data/models, y
+por eso `model_assets.ensure_model` prueba los dos lugares.
 """
 
 from __future__ import annotations

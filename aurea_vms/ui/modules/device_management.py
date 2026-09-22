@@ -141,7 +141,7 @@ class _DiscoverySettingsDialog(QDialog):
 
 
 class DeviceManagementModule(QWidget):
-    """Alta/edicion de dispositivos, prueba de conexion y descubrimiento ONVIF."""
+    """Alta/edicion de dispositivos, reinicio y descubrimiento ONVIF."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

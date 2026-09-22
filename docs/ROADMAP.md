@@ -9,9 +9,8 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
 
 ## Robustez (bloqueantes de demo)
 
-- Los hilos daemon de `device_manager.test_rtsp_connection`/`grab_snapshot`
-  (`device_manager.py:86-104,126-150`) no tienen techo: contra un host
-  inalcanzable, cada reintento del usuario deja uno colgado.
+Sin ítems abiertos: los cinco bloqueantes del informe del 2026-09-21 (B1 a B5)
+se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
 
 ## Seguridad
 
@@ -56,16 +55,9 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
 
 ## Tests
 
-- **El único test de integración no corre inferencia** (`tests/test_registry.py:57-73`):
-  construye los 4 analizadores y llama `close()`, nunca `process_frame`. Una
-  regresión en el letterbox, la decodificación de cabezas, el NMS o YuNet no
-  la detecta nadie — los unitarios mockean el modelo y el de integración no
-  lo ejercita.
-- Módulos sin cobertura real: `object_detector_backend` 40%,
-  `device_manager` 44% (toda su I/O sin test), `ptz_control` 29%,
-  `logging_setup` 37%.
-- `device_manager.refresh_device_status` (`device_manager.py:153-169`) no
-  tiene ningún caller en el repo: código muerto.
+- Módulos sin cobertura real: `ptz_control` 29%, `logging_setup` 37%, y la
+  I/O de ONVIF de `device_manager` (`discover_onvif`, `fetch_onvif_profiles`,
+  `reboot_device`), que no tiene ningún doble.
 - El gate de cobertura mide `core`/`models`/`config`; sumar `aurea_vms/ui`
   (~54% del código) a medida que avance el backfill con pytest-qt.
 - `build-windows.yml` corre solo por tag o a mano: una regresión de
@@ -77,12 +69,6 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
   (`aurea_vms.spec:30-33`, `if _wsdl_dir.exists()`) y sin fail-fast: si el
   layout del paquete `onvif` cambia, compila igual y falla recién al usar
   ONVIF desde el `.exe`.
-- `resources.bundled_path("models/x")` resuelve a `PROJECT_ROOT/models/` en
-  desarrollo (`config/resources.py:24-26`), pero los modelos viven en
-  `PROJECT_ROOT/data/models/`. El paso "copiar del bundle" de `ensure_model`
-  nunca acierta en dev: con `AUREA_DATA_DIR` redirigido se cae a descargar
-  de internet, contra la promesa explícita de `model_assets.py:4-5` de que
-  la demo puede correr sin conexión.
 - `console=True` en el spec mientras el build madura; flip a `False` para la
   entrega final.
 - `main()` nunca llama a `app.setWindowIcon()` (`main.py:157-160`), así que el
@@ -136,12 +122,46 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
 
 ## Producto (ideas de NOVA a evaluar)
 
+- **"Probar conexión" de una cámara, sin abrirla.** Al borrar la cadena muerta
+  `refresh_device_status` (Fase 6) quedó explícito que el estado de una cámara
+  solo lo persiste `stream_manager`, y solo mientras alguien la está mirando:
+  una cámara que nadie abre se queda en "Sin probar" para siempre y el tile del
+  dashboard la cuenta ahí. El botón existía en el docstring del módulo de
+  Dispositivos pero no estaba cableado a nada.
+
 - "Legajo de evidencia" en PDF (QPrinter) con el spec del prototipo.
 - Zonas poligonales con roles (hoy: ROI rectangular + línea).
 - Jerarquía completa Organización → Sitios → Zonas → Cámaras (hoy:
   Sitios → Zonas → Cámaras).
 
 ## Hecho
+
+- ~~El único test de integración no corre inferencia~~ — `tests/test_registry.py`
+  ejercita ahora `process_frame` sobre los 5 analizadores con sus modelos reales
+  (10 tests parametrizados, 4 s), con aserciones estructurales: cajas dentro del
+  frame, confianzas en rango, y determinismo entre dos instancias limpias. El
+  grueso del trabajo quedó en `tests/test_yolox_pipeline.py`, que cubre sin
+  modelo el letterbox, la decodificación de las 3 cabezas por stride, el NMS
+  class-agnostic y el camino completo de `detect()` con la sesión reemplazada
+  por un doble. `object_detector_backend` pasó de **40% a 95%**.
+
+- ~~`device_manager.refresh_device_status` es código muerto~~ — se fueron
+  también `test_rtsp_connection` y `_open_and_read`, que solo usaba él. Efecto
+  estructural: `device_manager` dejó de importar `repository` y `event_bus`, o
+  sea quedó siendo I/O de red pura, y hay un test que lo fija.
+
+- ~~Los hilos daemon de `grab_snapshot` no tienen techo~~ —
+  `MAX_CONCURRENT_PROBES = 4` con un `BoundedSemaphore` que libera el propio
+  thread de sondeo, no el caller: el thread sobrevive al timeout de
+  `grab_snapshot` (el backend FFmpeg tarda ~30 s contra un host inalcanzable
+  pese a los timeouts configurados). Con las ranuras tomadas no se abre una
+  conexión más y se avisa al usuario (`device_manager.py:26-37,126-160`).
+
+- ~~`resources.bundled_path("models/x")` no encuentra los modelos en dev~~ —
+  `ensure_model` prueba dos candidatos, el del bundle y el del repo
+  (`model_assets.py:32-50`). Verificado: el smoke con `AUREA_DATA_DIR`
+  redirigido ahora loguea "copiado desde .../data/models" en vez de bajar 20 MB.
+  Lo pagaba cada corrida de `build-windows.yml`, que usa un data-dir vacío.
 
 - ~~Reconexión RTSP sin backoff, y ningún watchdog de stream congelado~~ —
   `_reconnect_delay()` (`stream_manager.py:64-82`) hace backoff exponencial de
