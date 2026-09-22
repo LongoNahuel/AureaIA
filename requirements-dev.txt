@@ -1,0 +1,10 @@
+# Dependencias de desarrollo: lint, tests y cobertura.
+# Espejo del extra [dev] de pyproject.toml, para instalar sin `pip install -e .`
+# (CI, maquinas de demo, o un checkout donde no se quiere instalar el paquete).
+#
+# El camino normal sigue siendo:  pip install -e ".[dev]"
+-r requirements.txt
+pytest>=8.0
+pytest-cov>=5.0
+pytest-qt>=4.4
+ruff>=0.6

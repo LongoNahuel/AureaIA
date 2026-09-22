@@ -38,10 +38,15 @@ SQLAlchemy 2 + SQLite (portable a otro motor; ver ARQUITECTURA).
 ## Desarrollo
 
 ```bash
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
+python -m venv venv && source venv/bin/activate     # Windows: venv\Scripts\activate
+pip install -e ".[dev]"                             # runtime + lint/tests
 python -m aurea_vms.main          # primera vez: wizard de Super Administrador
 ```
+
+`pip install -e ".[dev]"` es el camino normal y la fuente de verdad de las
+dependencias es `pyproject.toml`. Para un entorno donde no se quiere instalar el
+paquete (CI ajeno, maquina de demo), estan los espejos `requirements.txt`
+(runtime) y `requirements-dev.txt` (suma lint y tests).
 
 Sin cámaras físicas: usar el rig de cámaras RTSP falsas + seed —
 ver [`tools/demo/README.md`](tools/demo/README.md).
@@ -68,10 +73,15 @@ se respeta.
 
 ```bash
 ruff check aurea_vms tests && ruff format --check aurea_vms tests
-pytest                    # unit (rápidos)
-pytest -m integration     # cargan los modelos de IA reales
-pytest --cov              # gate de cobertura (falla bajo el mínimo)
+pytest -m "not integration"   # unit (rápidos)
+pytest -m integration         # cargan los modelos de IA reales
+pytest --cov                  # gate de cobertura (falla bajo el mínimo)
 ```
+
+Los cuatro tienen que estar en verde antes de cada commit — `ruff format --check`
+incluido, que es el que mas se olvida y el que deja el CI de `main` rojo.
+El gate de cobertura mide `core`/`models`/`config`; `aurea_vms/ui` todavia queda
+fuera (ver `pyproject.toml`).
 
 El CI de GitHub Actions corre lint + tests + cobertura en cada push/PR
 a `main`. En Linux headless los tests usan `QT_QPA_PLATFORM=offscreen`;

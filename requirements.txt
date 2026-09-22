@@ -1,5 +1,9 @@
 # Dependencias de runtime para AureaIA VMS.
 # Python recomendado: 3.12.x en Linux/Windows 64-bit.
+#
+# La fuente de verdad del runtime es pyproject.toml ([project].dependencies);
+# este archivo es su espejo para instalar sin `pip install -e .`. Si se toca
+# una version aca, tocarla tambien alla. Para desarrollo: requirements-dev.txt.
 PySide6>=6.7
 opencv-python>=4.10
 SQLAlchemy>=2.0
