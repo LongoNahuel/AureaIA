@@ -368,7 +368,9 @@ class VideoTile(QWidget):
                 pen.setStyle(Qt.PenStyle.DashLine)
                 painter.setPen(pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
-                painter.drawRect(QRectF(x * scale_x, y * scale_y, width * scale_x, height * scale_y))
+                painter.drawRect(
+                    QRectF(x * scale_x, y * scale_y, width * scale_x, height * scale_y)
+                )
 
             line = (config.params or {}).get("line")
             if config.analyzer_name == "line_crossing" and line and len(line) == 2:
@@ -414,9 +416,7 @@ class VideoTile(QWidget):
         return values
 
     @staticmethod
-    def _draw_guide_label(
-        painter: QPainter, point: QPointF, text: str, color: QColor
-    ) -> None:
+    def _draw_guide_label(painter: QPainter, point: QPointF, text: str, color: QColor) -> None:
         metrics = painter.fontMetrics()
         rect = QRectF(point.x() + 5, point.y() + 5, metrics.horizontalAdvance(text) + 10, 18)
         painter.setPen(Qt.PenStyle.NoPen)

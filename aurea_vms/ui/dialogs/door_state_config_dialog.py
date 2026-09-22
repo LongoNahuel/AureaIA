@@ -22,7 +22,7 @@ class DoorStateConfigDialog(AnalyticsConfigDialogBase):
         self.threshold_spin.setDecimals(2)
         self.threshold_spin.setValue(params.get("change_threshold", 0.10))
         self.threshold_spin.setMaximumWidth(130)
-        form.addRow(        "Área mínima de cambio:", self.threshold_spin)
+        form.addRow("Área mínima de cambio:", self.threshold_spin)
         hint = CaptionLabel(
             "Dibujá el ROI sobre la puerta. El valor indica qué porcentaje del ROI debe "
             "cambiar para considerar que la puerta está abierta."

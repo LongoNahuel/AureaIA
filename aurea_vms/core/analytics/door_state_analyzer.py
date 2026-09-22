@@ -59,11 +59,14 @@ class DoorStateAnalyzer(Analyzer):
             # Se ignoran componentes diminutos; la puerta debe formar una
             # region conectada significativa dentro del ROI.
             min_component_area = mask.size * 0.002
-            changed_area = sum(
-                cv2.contourArea(contour)
-                for contour in contours
-                if cv2.contourArea(contour) >= min_component_area
-            ) / mask.size
+            changed_area = (
+                sum(
+                    cv2.contourArea(contour)
+                    for contour in contours
+                    if cv2.contourArea(contour) >= min_component_area
+                )
+                / mask.size
+            )
         score = float(min(1.0, changed_area))
         candidate = "abierta" if score >= self._threshold else "cerrada"
         if candidate == self._candidate:

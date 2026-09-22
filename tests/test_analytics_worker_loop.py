@@ -38,8 +38,8 @@ def test_worker_publica_detecciones_y_libera_todo(monkeypatch):
     released: list[int] = []
     fake_stream = SimpleNamespace(
         acquire=lambda device, kind="main": None,
-        get_worker=lambda _id: SimpleNamespace(get_latest_frame=lambda: frame),
-        release=lambda device_id: released.append(device_id),
+        get_worker=lambda _id, kind="main": SimpleNamespace(get_latest_frame=lambda: frame),
+        release=lambda device_id, kind="main": released.append(device_id),
     )
     monkeypatch.setattr(ae_module, "stream_manager", fake_stream)
 

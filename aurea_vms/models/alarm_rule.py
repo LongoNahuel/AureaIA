@@ -20,9 +20,7 @@ class AlarmRule(Base):
 
     # None = aplica a todos los dispositivos. Borrar la camara borra solo
     # las reglas especificas de esa camara (las globales no tienen FK).
-    device_id: Any = Column(
-        ForeignKey("devices.id", ondelete="CASCADE"), nullable=True, index=True
-    )
+    device_id: Any = Column(ForeignKey("devices.id", ondelete="CASCADE"), nullable=True, index=True)
     analyzer_name: Any = Column(String(60))
     object_classes: Any = Column(JSON, default=list)
     min_confidence: Any = Column(Float, default=0.5)
