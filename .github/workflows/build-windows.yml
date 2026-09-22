@@ -1,12 +1,25 @@
 # Compila el .exe de Windows (onedir) y lo sube como artifact.
-# Se dispara a mano (workflow_dispatch) o al taggear vX.Y.Z -- no en cada
-# push: el build tarda y el CI normal ya valida el codigo.
+# Se dispara a mano (workflow_dispatch), al taggear vX.Y.Z, y en los PR que
+# tocan el empaquetado -- no en cada push: el build tarda ~45 min y el CI
+# normal ya valida el codigo.
+#
+# El filtro de paths existe porque una regresion de bundle no la ve ningun
+# otro workflow: el spec resuelve DLLs nativas (collect_all de onnxruntime)
+# y el WSDL de onvif-zeep en runtime, asi que solo el smoke del .exe la
+# detecta. Sin este trigger, vivia en main hasta el proximo release.
 name: Build Windows
 
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+  pull_request:
+    branches: [main]
+    paths:
+      - "aurea_vms.spec"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - ".github/workflows/build-windows.yml"
 
 jobs:
   build:

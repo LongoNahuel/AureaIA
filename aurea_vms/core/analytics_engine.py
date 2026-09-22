@@ -128,9 +128,9 @@ class AnalyticsEngine:
             worker.stop()
             # Join acotado: espera a que termine la inferencia en vuelo y
             # corra el close() del analizador. Sin esto, al cerrar la app
-            # un detect() de MediaPipe todavia en curso muere contra el
-            # teardown del interprete ("cannot schedule new futures after
-            # shutdown"), visto en pruebas E2E.
+            # una inferencia todavia en curso muere contra el teardown del
+            # interprete ("cannot schedule new futures after shutdown"),
+            # visto en pruebas E2E.
             worker.join(timeout=2.0)
 
     def is_running(self, config_id: int) -> bool:

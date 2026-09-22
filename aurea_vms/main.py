@@ -112,9 +112,9 @@ def _stop_background_engines() -> None:
 def _smoke_test() -> int:
     """Verificacion minima de que el entorno (o el .exe empaquetado) esta
     completo: directorios, DB, Qt y -- clave -- los CUATRO analizadores con
-    sus modelos nativos reales. Las DLL de MediaPipe cargan recien al
-    crear el primer detector (leccion del CI: importar mediapipe no
-    alcanza), asi que el smoke crea los detectores y procesa un frame.
+    sus modelos nativos reales. Las DLL de onnxruntime cargan recien al
+    crear la primera sesion de inferencia (importar el modulo no alcanza),
+    asi que el smoke crea los detectores y procesa un frame.
 
     Uso: AureaVMS.exe --smoke  (idealmente con AUREA_DATA_DIR a un tmp)."""
     import numpy as np

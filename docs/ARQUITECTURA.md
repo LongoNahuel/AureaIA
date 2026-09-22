@@ -40,46 +40,72 @@ Puntos finos ya resueltos (no romper):
 - Apagado ordenado (`main._stop_background_engines`):
   `clip_recorder.wait_for_pending()` **antes** de cortar streams (el
   post-buffer necesita el stream vivo); `AnalyticsEngine.stop()` hace
-  join para que el `close()` de MediaPipe corra antes del teardown del
-  intérprete; `stop_all()` de streams hace join para no acumular
-  sockets zombies en logout→login.
+  join para que el `close()` del analizador libere su sesión de
+  onnxruntime antes del teardown del intérprete; `stop_all()` de streams
+  hace join para no acumular sockets zombies en logout→login.
 
 ## Analíticas
 
 Interfaz pluggable `core/analytics/base.py` (`Analyzer.process_frame` →
 `AnalysisResult`), registry/factory en `core/analytics/registry.py`.
 
-- Movimiento: MOG2 + morfología, área mínima en % del cuadro, contorno
-  simplificado para dibujar silueta.
-- Conteo de personas y cruce de línea: EfficientDet-Lite2 (COCO) vía
-  MediaPipe Tasks + `CentroidTracker` con histéresis (`min_hits`) y
+Las cuatro que expone el registry son `door_state`, `people_counting`,
+`line_crossing` y `face_detection`. `motion_detection` (MOG2) sigue
+construible desde el registry por compatibilidad con configuraciones
+viejas, pero la UI ya no lo ofrece: lo reemplazó `door_state`.
+
+- Estado de puerta: umbral morfológico sobre un ROI estático contra una
+  línea de base, con `confirmation_frames` de histéresis. Solo reporta
+  **transiciones** — el `AlarmEngine` descarta el evento si no las trae.
+- Conteo de personas y cruce de línea: **YOLOX-Tiny** (COCO, ONNX vía
+  onnxruntime CPU) + `CentroidTracker` con histéresis (`min_hits`) y
   tolerancia a oclusiones (`max_age_s`).
-- Rostros: BlazeFace full-range + filtros de distancia pupilar y ángulo.
-- Preprocesado común: recorte a ROI **antes** de `resize_for_inference`
-  (máx. 640 px de lado) y `rescale_bbox` para volver a coordenadas
-  nativas.
+- Rostros: **YuNet** (`cv2.FaceDetectorYN`, OpenCV Zoo 2023mar), con 5
+  landmarks y score propio del modelo, más tres filtros geométricos
+  baratos (forma de caja, disposición de los puntos entre sí, y cruce de
+  esos puntos contra la caja de la cabeza).
+- Preprocesado: el backend de objetos hace letterbox a 416×416 con
+  relleno gris 114 alineado arriba-izquierda y decodifica las 3 cabezas
+  por stride 8/16/32 con NMS class-agnostic — **replica exactamente el
+  demo oficial de ONNXRuntime de YOLOX**; un detalle mal portado ahí
+  decodifica cajas en cualquier lado sin ningún error que lo delate. Los
+  analizadores que no usan el modelo (puerta) recortan a ROI **antes** de
+  `resize_for_inference` (máx. 640 px de lado) y usan `rescale_bbox` para
+  volver a coordenadas nativas.
 - `Analyzer.close()` libera el modelo nativo (lo llama el worker al
-  detenerse). **MediaPipe se eligió sobre ultralytics/YOLO para evitar
-  la licencia AGPL-3.0** — no reintroducir ultralytics sin decisión
-  comercial explícita.
+  detenerse).
+
+**Licencias**: YOLOX (Megvii) y YuNet (OpenCV Zoo) son Apache 2.0.
+**No reintroducir `ultralytics`** (YOLOv5/v8) sin decisión comercial
+explícita: es AGPL-3.0, copyleft fuerte. Fue la razón por la que se lo
+sacó del proyecto, y sigue vigente aunque el stack haya vuelto a la
+familia YOLO.
 
 ## Base de datos
 
-SQLite vía SQLAlchemy 2.0 (`models/db.py`). **Reglas de portabilidad**
+SQLite vía SQLAlchemy 2.0 (`models/db.py`) — salvo `AlarmRule`, que
+todavía usa la API legacy `Column` (ver ROADMAP). **Reglas de portabilidad**
 (la DB puede cambiar de motor a futuro): tipos estándar, cero SQL crudo
 en la lógica, todo lo SQLite-específico vive en listeners/guards del
 engine (`PRAGMA foreign_keys=ON`, migración ad-hoc de `devices.site_id`).
 Alembic entra cuando el esquema se estabilice, antes de la primera
 instalación en campo.
 
-7 tablas: `sites`, `devices` (credenciales de cámara — **hoy en texto
-plano, ver ROADMAP**), `analytics_configs`, `alarm_rules`,
-`alarm_events`, `media_assets`, `users`.
+8 tablas: `sites`, `zones`, `devices` (credenciales de cámara — **hoy en
+texto plano, ver ROADMAP**), `analytics_configs`, `alarm_rules`,
+`alarm_events`, `media_assets`, `users`. La jerarquía es
+Sitio → Zona → Cámara.
 
 Cascadas: borrar cámara → CASCADE en configs/reglas propias/eventos/media;
 borrar regla → `alarm_events.rule_id=NULL` (el historial no se pierde;
-la severidad se copia al evento al disparar); borrar sitio → cámaras a
-"Sin sitio"; borrar usuario → media queda como sistema.
+la severidad se copia al evento al disparar); borrar sitio → CASCADE en
+sus zonas, y sus cámaras quedan "Sin zona" (`devices.zone_id` a NULL);
+borrar usuario → media queda como sistema.
+
+`repository.delete_site`/`delete_zone` además nulifican a mano lo que el
+`ondelete` ya declara: una DB migrada por `ALTER TABLE` puede tener el FK
+sin acción de borrado, y con `PRAGMA foreign_keys=ON` el CASCADE fallaría
+con `IntegrityError`.
 
 ## Storage de media
 

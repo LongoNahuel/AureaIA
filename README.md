@@ -13,9 +13,10 @@ analíticas en CPU sobre la misma máquina, sin nube.
 - **Vista en vivo**: grilla 1/4/9/16 tiles + vista inteligente, drag &
   drop desde el árbol de cámaras agrupado por sitio, sub-stream en
   grilla y main-stream al expandir.
-- **4 analíticas** (MediaPipe/OpenCV, CPU): detección de movimiento
-  (MOG2), conteo de personas, cruce de línea e intrusión, detección
-  facial. ROI por analítica, umbrales y parámetros configurables.
+- **4 analíticas** (ONNX Runtime/OpenCV, CPU): estado de puerta
+  abierta/cerrada (morfología sobre ROI), conteo de personas, cruce de
+  línea e intrusión, detección facial. ROI por analítica, umbrales y
+  parámetros configurables.
 - **Alarmas**: reglas por cámara o globales (clases, confianza mínima,
   horario — incluso rangos que cruzan medianoche—, cooldown, severidad),
   popups (críticos persisten hasta reconocer), notificación de
@@ -32,8 +33,9 @@ analíticas en CPU sobre la misma máquina, sin nube.
 ## Stack
 
 Python 3.11+ · PySide6 + QFluentWidgets · OpenCV (RTSP/FFmpeg) ·
-MediaPipe Tasks (modelos .tflite incluidos en `data/models/`) ·
-SQLAlchemy 2 + SQLite (portable a otro motor; ver ARQUITECTURA).
+ONNX Runtime CPU — YOLOX-Tiny (personas/objetos) y YuNet (rostros),
+modelos `.onnx` incluidos en `data/models/` · SQLAlchemy 2 + SQLite
+(portable a otro motor; ver ARQUITECTURA).
 
 ## Desarrollo
 
@@ -84,9 +86,10 @@ El gate de cobertura mide `core`/`models`/`config`; `aurea_vms/ui` todavia queda
 fuera (ver `pyproject.toml`).
 
 El CI de GitHub Actions corre lint + tests + cobertura en cada push/PR
-a `main`. En Linux headless los tests usan `QT_QPA_PLATFORM=offscreen`;
-MediaPipe necesita `libgles2` además de las libs de Qt (ver
-`.github/workflows/ci.yml`).
+a `main`. En Linux headless los tests usan `QT_QPA_PLATFORM=offscreen`
+(ver `.github/workflows/ci.yml`). El build de Windows vive en un workflow
+aparte, que corre a mano, al taggear, y en los PR que tocan el
+empaquetado.
 
 ## Documentación
 

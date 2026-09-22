@@ -35,7 +35,7 @@ class TestResolveDataDir:
 class TestBundledPath:
     def test_dev_resuelve_contra_el_repo(self, monkeypatch):
         monkeypatch.delattr(sys, "_MEIPASS", raising=False)
-        assert resources.bundled_path("models/x.tflite") == PROJECT_ROOT / "models/x.tflite"
+        assert resources.bundled_path("models/x.onnx") == PROJECT_ROOT / "models/x.onnx"
 
     def test_frozen_resuelve_contra_meipass(self, monkeypatch, tmp_path):
         monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
@@ -62,21 +62,21 @@ class TestOnvifKwargs:
 class TestEnsureModel:
     def test_existente_no_toca_nada(self, monkeypatch, tmp_path):
         monkeypatch.setattr(model_assets, "settings", SimpleNamespace(data_dir=tmp_path))
-        model = tmp_path / "models" / "m.tflite"
+        model = tmp_path / "models" / "m.onnx"
         model.parent.mkdir(parents=True)
         model.write_bytes(b"pesos")
 
-        assert model_assets.ensure_model("m.tflite", "http://no-se-usa") == str(model)
+        assert model_assets.ensure_model("m.onnx", "http://no-se-usa") == str(model)
 
     def test_copia_desde_el_bundle(self, monkeypatch, tmp_path):
         data_dir = tmp_path / "appdata"
         bundle = tmp_path / "bundle"
         (bundle / "models").mkdir(parents=True)
-        (bundle / "models" / "m.tflite").write_bytes(b"pesos-del-bundle")
+        (bundle / "models" / "m.onnx").write_bytes(b"pesos-del-bundle")
 
         monkeypatch.setattr(model_assets, "settings", SimpleNamespace(data_dir=data_dir))
         monkeypatch.setattr(model_assets.resources, "bundled_path", lambda rel: bundle / rel)
 
-        path = model_assets.ensure_model("m.tflite", "http://no-se-usa")
+        path = model_assets.ensure_model("m.onnx", "http://no-se-usa")
         assert Path(path).read_bytes() == b"pesos-del-bundle"
-        assert Path(path) == data_dir / "models" / "m.tflite"
+        assert Path(path) == data_dir / "models" / "m.onnx"
