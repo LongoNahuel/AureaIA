@@ -49,9 +49,10 @@ FRAME_SIGNATURE_STEP = 32
 # (sin cerrar el TCP: cable cortado, switch reiniciado) puede bloquear el
 # hilo indefinidamente. Con read-timeout, read() devuelve False y el loop
 # de reconexion existente actua de watchdog.
-OPEN_TIMEOUT_MS = 10_000
-READ_TIMEOUT_MS = 10_000
+OPEN_TIMEOUT_MS = 5_000
+READ_TIMEOUT_MS = 5_000
 STALE_FRAME_S = 15.0
+CAPTURE_BUFFER_SIZE = 1
 
 # Cuanto tiempo seguido tiene que repetirse EXACTAMENTE el mismo frame para
 # dar el stream por congelado. Mismo valor que STALE_FRAME_S pero otra cosa:
@@ -125,6 +126,10 @@ class StreamWorker(threading.Thread):
                     READ_TIMEOUT_MS,
                 ],
             )
+            # Algunos backends y dobles de prueba no exponen set(); la
+            # captura sigue funcionando sin este ajuste opcional.
+            if hasattr(cap, "set"):
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, CAPTURE_BUFFER_SIZE)
             if not cap.isOpened():
                 cap.release()
                 attempt += 1

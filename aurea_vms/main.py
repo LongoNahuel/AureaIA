@@ -9,7 +9,13 @@ from pathlib import Path
 # el transporte UDP por defecto produce artifacting (bloques grises, frames
 # rotos). Debe estar seteado antes de abrir cualquier VideoCapture; se usa
 # setdefault para que un despliegue pueda overridearlo sin tocar codigo.
-os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
+os.environ.setdefault(
+    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+    # Una cola minima permite que FFmpeg reordene paquetes TCP antes de
+    # entregarlos al decoder. max_delay=0/reorder_queue_size=0 reducia algo
+    # la latencia, pero producia NAL incompletos en varios NVR.
+    "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;500000|reorder_queue_size;1",
+)
 
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication, QDialog

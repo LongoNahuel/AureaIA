@@ -4,7 +4,16 @@ el resultado de OnvifDiscoveryDialog."""
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QDialog, QFormLayout, QHBoxLayout, QInputDialog, QVBoxLayout
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QInputDialog,
+    QListWidget,
+    QListWidgetItem,
+    QVBoxLayout,
+)
 from qfluentwidgets import (
     CheckBox,
     ComboBox,
@@ -16,6 +25,7 @@ from qfluentwidgets import (
     SpinBox,
 )
 
+from aurea_vms.core.device_manager import OnvifChannelInfo
 from aurea_vms.core.rtsp_templates import DEVICE_TYPE_LABELS, DEVICE_TYPES, build_rtsp_urls
 from aurea_vms.models import repository
 from aurea_vms.models.errors import DuplicateError
@@ -40,7 +50,8 @@ class DeviceDialog(QDialog):
         self.device_type_combo = ComboBox()
         for device_type in DEVICE_TYPES:
             self.device_type_combo.addItem(DEVICE_TYPE_LABELS[device_type], userData=device_type)
-        self.device_type_combo.currentIndexChanged.connect(self._apply_template)
+        self._detected_channels: tuple[OnvifChannelInfo, ...] = ()
+        self.device_type_combo.currentIndexChanged.connect(self._on_type_changed)
 
         self.name_edit = LineEdit()
 
@@ -78,6 +89,13 @@ class DeviceDialog(QDialog):
         self.onvif_port_spin.setValue(80)
         self.onvif_port_spin.setSpecialValueText("(sin ONVIF)")
         self.has_ptz_check = CheckBox("Tiene PTZ")
+        self.channel_list = QListWidget()
+        self.channel_list.setMaximumHeight(130)
+        self.channel_list.setVisible(False)
+        self.channel_label = LineEdit()
+        self.channel_label.setText("Canales detectados (marcá los que quieras agregar)")
+        self.channel_label.setReadOnly(True)
+        self.channel_label.setVisible(False)
 
         form = QFormLayout()
         form.addRow(self.onvif_discovery_button)
@@ -88,6 +106,7 @@ class DeviceDialog(QDialog):
         form.addRow("IP:", self.ip_edit)
         form.addRow("Puerto RTSP:", self.port_spin)
         form.addRow("Canal (NVR/XVR):", self.channel_spin)
+        form.addRow(self.channel_label, self.channel_list)
         form.addRow("Usuario:", self.username_edit)
         form.addRow("Contraseña:", self.password_edit)
         form.addRow("URL RTSP principal:", self.rtsp_main_edit)
@@ -114,6 +133,27 @@ class DeviceDialog(QDialog):
         self._rebuild_zone_combo()
         if initial:
             self._load(initial)
+
+    def set_detected_channels(self, channels: tuple[OnvifChannelInfo, ...]) -> None:
+        self.channel_list.clear()
+        for channel in channels:
+            item = QListWidgetItem(f"Canal {channel.channel} — {channel.name}")
+            item.setData(Qt.ItemDataRole.UserRole, channel)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            self.channel_list.addItem(item)
+        visible = bool(channels)
+        self.channel_label.setVisible(visible)
+        self.channel_list.setVisible(visible and self.device_type_combo.currentData() in {"nvr", "xvr"})
+        self._detected_channels = channels
+
+    def _on_type_changed(self, *_args) -> None:
+        self._apply_template()
+        has_channels = bool(getattr(self, "_detected_channels", ()))
+        self.channel_label.setVisible(has_channels)
+        self.channel_list.setVisible(
+            has_channels and self.device_type_combo.currentData() in {"nvr", "xvr"}
+        )
 
     def _reload_sites(self, select_id: int | None = None) -> None:
         current = select_id if select_id is not None else self.site_combo.currentData()
@@ -189,6 +229,10 @@ class DeviceDialog(QDialog):
                 zone_index = self.zone_combo.findData(zone_id)
                 if zone_index >= 0:
                     self.zone_combo.setCurrentIndex(zone_index)
+        elif data.get("site_id") is not None:
+            site_index = self.site_combo.findData(data["site_id"])
+            if site_index >= 0:
+                self.site_combo.setCurrentIndex(site_index)
 
     def _open_onvif_discovery(self) -> None:
         dialog = OnvifDiscoveryDialog(self)
@@ -201,6 +245,7 @@ class DeviceDialog(QDialog):
             self.rtsp_main_edit.setText(info.rtsp_main_url)
             self.rtsp_sub_edit.setText(info.rtsp_sub_url or "")
             self.has_ptz_check.setChecked(info.has_ptz)
+            self.set_detected_channels(info.channels)
             if not self.name_edit.text():
                 name_bits = " ".join(
                     part for part in (dialog.selected_manufacturer, dialog.selected_model) if part
@@ -217,11 +262,42 @@ class DeviceDialog(QDialog):
         if not self.rtsp_main_edit.text().strip():
             warn(self, "Datos incompletos", "La URL RTSP principal es obligatoria.")
             return
+        if self.device_type_combo.currentData() in {"nvr", "xvr"} and self._selected_channels():
+            self.channel_spin.setValue(self._selected_channels()[0].channel)
         self.accept()
+
+    def _selected_channels(self) -> list[OnvifChannelInfo]:
+        selected = []
+        for index in range(self.channel_list.count()):
+            item = self.channel_list.item(index)
+            if item.checkState() == Qt.CheckState.Checked:
+                selected.append(item.data(Qt.ItemDataRole.UserRole))
+        return selected
+
+    def values_list(self) -> list[dict]:
+        values = self.values()
+        channels = self._selected_channels()
+        if self.device_type_combo.currentData() not in {"nvr", "xvr"} or not channels:
+            return [values]
+        result = []
+        for channel in channels:
+            row = dict(values)
+            row.update(
+                channel=channel.channel,
+                rtsp_main_url=channel.rtsp_main_url,
+                rtsp_sub_url=channel.rtsp_sub_url,
+                has_ptz=channel.has_ptz,
+            )
+            result.append(row)
+        return result
+
+    def has_detected_channels(self) -> bool:
+        return bool(self._detected_channels)
 
     def values(self) -> dict:
         return {
             "name": self.name_edit.text().strip(),
+            "site_id": self.site_combo.currentData(),
             "zone_id": self.zone_combo.currentData(),
             "device_type": self.device_type_combo.currentData() or "ipc",
             "channel": self.channel_spin.value(),

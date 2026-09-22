@@ -26,6 +26,7 @@ from aurea_vms.ui.widgets.video_background import VideoBackground
 
 MODULE_COLORS = {
     "Vista en Vivo": "#3b82f6",
+    "Vista Inteligente": "#06b6d4",
     "Alarmas": "#ef4444",
     "Dispositivos": "#14b8a6",
     "Analizadores": "#8b5cf6",
@@ -37,6 +38,7 @@ MODULE_COLORS = {
 
 MODULE_DESCRIPTIONS = {
     "Vista en Vivo": "Video en vivo, grilla y Vista Inteligente",
+    "Vista Inteligente": "Analítica en vivo sobre las cámaras seleccionadas",
     "Alarmas": "Feed de alarmas, capturas y clips de evento",
     "Dispositivos": "Alta, edición y descubrimiento ONVIF",
     "Analizadores": "Movimiento, personas, cruce de línea, rostros",
@@ -55,12 +57,12 @@ CARD_SIZE = (200, 168)
 #  solo admin)
 HOME_SHORTCUTS = [
     ("Ver", "icon_live_view", "#3b82f6", 0, "", "", False),
-    ("Configuración de la Alarma", "icon_alerts", "#ef4444", 4, "", "", True),
-    ("Configuración del sistema", "icon_system", "#64748b", 5, "", "", True),
-    ("Recurso de secuencia", "icon_devices", "#3b82f6", 5, "Sistema", "Inicio", True),
-    ("Gestión de usuarios", "icon_users", "#3b82f6", 6, "", "", True),
-    ("Horario de grabación", "icon_play", "#f59e0b", 5, "Audio y Video", "Grabando", True),
-    ("Registro de operaciones", "icon_history", "#22c55e", 5, "Sistema", "Registro", True),
+    ("Configuración de la Alarma", "icon_alerts", "#ef4444", 5, "", "", True),
+    ("Configuración del sistema", "icon_system", "#64748b", 6, "", "", True),
+    ("Recurso de secuencia", "icon_devices", "#3b82f6", 6, "Sistema", "Inicio", True),
+    ("Gestión de usuarios", "icon_users", "#3b82f6", 7, "", "", True),
+    ("Horario de grabación", "icon_play", "#f59e0b", 6, "Audio y Video", "Grabando", True),
+    ("Registro de operaciones", "icon_history", "#22c55e", 6, "Sistema", "Registro", True),
 ]
 
 

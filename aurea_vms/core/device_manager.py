@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import queue
+import re
 import threading
 from dataclasses import dataclass
 from urllib.parse import quote, unquote, urlparse, urlsplit, urlunsplit
@@ -52,6 +53,16 @@ class OnvifProfileInfo:
     rtsp_main_url: str
     rtsp_sub_url: str | None
     has_ptz: bool
+    channels: tuple[OnvifChannelInfo, ...] = ()
+
+
+@dataclass(frozen=True)
+class OnvifChannelInfo:
+    channel: int
+    name: str
+    rtsp_main_url: str
+    rtsp_sub_url: str | None
+    has_ptz: bool = False
 
 
 def build_authenticated_url(rtsp_url: str, username: str, password: str) -> str:
@@ -220,11 +231,64 @@ def fetch_onvif_profiles(ip: str, port: int, username: str, password: str) -> On
         request.ProfileToken = profile.token
         return media.GetStreamUri(request).Uri
 
-    main_url = stream_uri(profiles[0])
-    sub_url = stream_uri(profiles[1]) if len(profiles) > 1 else None
-    has_ptz = getattr(profiles[0], "PTZConfiguration", None) is not None
+    grouped_profiles: dict[str, list] = {}
+    group_order: list[str] = []
+    for profile in profiles:
+        configuration = getattr(profile, "VideoSourceConfiguration", None)
+        parts = [
+            getattr(profile, "Name", None),
+            getattr(configuration, "Name", None),
+            getattr(configuration, "SourceToken", None),
+        ]
+        text = " ".join(str(part) for part in parts if part)
+        key = str(getattr(configuration, "SourceToken", None) or text or len(group_order))
+        if key not in grouped_profiles:
+            grouped_profiles[key] = []
+            group_order.append(key)
+        grouped_profiles[key].append(profile)
 
-    return OnvifProfileInfo(rtsp_main_url=main_url, rtsp_sub_url=sub_url, has_ptz=has_ptz)
+    profile_rows = []
+    used_channels: set[int] = set()
+    for index, key in enumerate(group_order, start=1):
+        channel_profiles = grouped_profiles[key]
+        profile = channel_profiles[0]
+        configuration = getattr(profile, "VideoSourceConfiguration", None)
+        text = " ".join(
+            str(part)
+            for part in (
+                getattr(profile, "Name", None),
+                getattr(configuration, "Name", None),
+                getattr(configuration, "SourceToken", None),
+            )
+            if part
+        )
+        match = re.search(
+            r"(?<!\d)(?:channel|ch|cam|camera|input|video)?[\s_-]*(\d{1,3})(?!\d)",
+            text,
+            re.I,
+        )
+        channel = int(match.group(1)) if match else index
+        while channel in used_channels:
+            channel += 1
+        used_channels.add(channel)
+        urls = [stream_uri(row) for row in channel_profiles[:2]]
+        profile_rows.append(
+            OnvifChannelInfo(
+                channel=channel,
+                name=str(getattr(profile, "Name", None) or f"Canal {channel}"),
+                rtsp_main_url=urls[0],
+                rtsp_sub_url=urls[1] if len(urls) > 1 else None,
+                has_ptz=getattr(profile, "PTZConfiguration", None) is not None,
+            )
+        )
+
+    first = profile_rows[0]
+    return OnvifProfileInfo(
+        rtsp_main_url=first.rtsp_main_url,
+        rtsp_sub_url=first.rtsp_sub_url,
+        has_ptz=first.has_ptz,
+        channels=tuple(profile_rows),
+    )
 
 
 def reboot_device(ip: str, port: int, username: str, password: str) -> None:

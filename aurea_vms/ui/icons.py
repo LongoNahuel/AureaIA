@@ -61,6 +61,10 @@ def icon_analyzers(color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -> QIco
     return load_icon("cpu", color, size)
 
 
+def icon_ai_brain(color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -> QIcon:
+    return load_icon("brain-circuit", color, size)
+
+
 def icon_alarms(color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -> QIcon:
     return load_icon("bell", color, size)
 
@@ -162,8 +166,8 @@ def background_pixmap() -> QPixmap:
 
 
 def algorithm_background_pixmap() -> QPixmap:
-    """Fondo de red neuronal para la Vista Inteligente."""
-    return _load_image("algorithm_bg.jpg")
+    """Fondo de analitica para la Vista Inteligente."""
+    return _load_image("algorithm_bg.png")
 
 
 def launcher_background_video_path() -> str:

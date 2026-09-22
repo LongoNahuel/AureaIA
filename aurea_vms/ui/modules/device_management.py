@@ -215,12 +215,7 @@ class DeviceManagementModule(QWidget):
     def _reload_managed(self) -> None:
         self._devices = repository.list_devices()
         if app_state.current_site_id is not None:
-            site_zone_ids = {zone.id for zone in repository.list_zones(app_state.current_site_id)}
-            self._devices = [
-                device
-                for device in self._devices
-                if device.zone_id is None or device.zone_id in site_zone_ids
-            ]
+            self._devices = repository.list_devices(site_id=app_state.current_site_id)
         # Prefetch de etiquetas de zona: hacer get_zone() + list_sites() POR
         # FILA era el mismo N+1 que 43d29c3 ya habia pagado en Alarmas
         # (~400 queries por recarga con 200 camaras).
@@ -334,6 +329,7 @@ class DeviceManagementModule(QWidget):
         initial = {
             "device_type": device.device_type,
             "name": device.name,
+            "site_id": device.site_id,
             "zone_id": device.zone_id,
             "channel": device.channel,
             "ip": device.ip,
@@ -344,6 +340,7 @@ class DeviceManagementModule(QWidget):
             "rtsp_sub_url": device.rtsp_sub_url,
             "onvif_port": device.onvif_port,
             "has_ptz": device.has_ptz,
+            "parent_device_id": device.parent_device_id,
         }
         dialog = DeviceDialog(self, initial=initial)
         if dialog.exec():
@@ -522,16 +519,41 @@ class DeviceManagementModule(QWidget):
             "has_ptz": info.has_ptz,
         }
         dialog = DeviceDialog(self, initial=initial)
+        dialog.set_detected_channels(info.channels)
         if not dialog.exec():
             return
-        values = dialog.values()
-        values.update(
+        values_list = dialog.values_list()
+        metadata = dict(
             manufacturer=result.manufacturer,
             model=result.model,
             firmware_version=result.firmware_version,
             serial_number=result.serial_number,
         )
-        repository.add_device(**values)
-        notify(self, "Dispositivo agregado", f'"{values["name"]}" se agregó correctamente.')
+        if dialog.has_detected_channels() and values_list[0]["device_type"] in {"nvr", "xvr"}:
+            parent_values = dict(values_list[0])
+            parent_values.update(
+                name=values_list[0]["name"],
+                channel=0,
+                parent_device_id=None,
+                **metadata,
+            )
+            parent = repository.add_device(**parent_values)
+            for values in values_list:
+                values.update(
+                    name=f'{parent.name} · Canal {values["channel"]}',
+                    parent_device_id=parent.id,
+                    **metadata,
+                )
+                repository.add_device(**values)
+        else:
+            for values in values_list:
+                values.update(parent_device_id=None, **metadata)
+                repository.add_device(**values)
+        notify(
+            self,
+            "Dispositivo agregado",
+            f'"{values_list[0]["name"]}" se agregó correctamente '
+            f'({len(values_list)} canal(es)).',
+        )
         self._reload_managed()
         self._reload_discovered_table()

@@ -49,6 +49,17 @@ class TestDevicesPorSitio:
         assert len(repository.list_devices(site_id=sala.id)) == 2
         assert len(repository.list_devices(site_id=anexo.id)) == 1
 
+    def test_filtro_por_sitio_incluye_dispositivo_sin_zona(self, temp_db):
+        sala = repository.add_site(name="Sala Principal")
+        anexo = repository.add_site(name="Anexo VIP")
+        _cam("C1")
+        repository.update_device(repository.list_devices()[0].id, site_id=sala.id)
+        _cam("C2")
+        repository.update_device(repository.list_devices()[1].id, site_id=anexo.id)
+
+        assert [d.name for d in repository.list_devices(site_id=sala.id)] == ["C1"]
+        assert [d.name for d in repository.list_devices(site_id=anexo.id)] == ["C2"]
+
     def test_borrar_sitio_deja_camaras_sin_zona(self, temp_db):
         sala = repository.add_site(name="Sala Principal")
         zona = repository.add_zone(name="Zona A", site_id=sala.id)

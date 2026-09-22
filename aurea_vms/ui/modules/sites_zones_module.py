@@ -204,18 +204,23 @@ class SitesZonesModule(QWidget):
         zones_by_site: dict[int, list[Zone]] = {}
         for zone in self._zones:
             zones_by_site.setdefault(zone.site_id, []).append(zone)
-        devices_by_zone: dict[int, int] = {}
+        devices_by_zone: dict[int, set[int]] = {}
+        devices_by_site: dict[int, set[int]] = {}
         for device in devices:
+            if device.site_id is not None:
+                devices_by_site.setdefault(device.site_id, set()).add(device.id)
             if device.zone_id is not None:
-                devices_by_zone[device.zone_id] = devices_by_zone.get(device.zone_id, 0) + 1
+                devices_by_zone.setdefault(device.zone_id, set()).add(device.id)
 
         self.sites_table.setRowCount(len(self._sites))
         for row, site in enumerate(self._sites):
             site_zones = zones_by_site.get(site.id, [])
-            camera_count = sum(devices_by_zone.get(z.id, 0) for z in site_zones)
+            device_ids = set(devices_by_site.get(site.id, set()))
+            for zone in site_zones:
+                device_ids.update(devices_by_zone.get(zone.id, set()))
             self.sites_table.setItem(row, 0, QTableWidgetItem(site.name))
             self.sites_table.setItem(row, 1, QTableWidgetItem(str(len(site_zones))))
-            self.sites_table.setItem(row, 2, QTableWidgetItem(str(camera_count)))
+            self.sites_table.setItem(row, 2, QTableWidgetItem(str(len(device_ids))))
             self.sites_table.setCellWidget(row, 3, self._site_operation_widget(site))
 
         site_names = {site.id: site.name for site in self._sites}
@@ -224,7 +229,7 @@ class SitesZonesModule(QWidget):
             self.zones_table.setItem(row, 0, QTableWidgetItem(zone.name))
             self.zones_table.setItem(row, 1, QTableWidgetItem(site_names.get(zone.site_id, "?")))
             self.zones_table.setItem(row, 2, QTableWidgetItem("Sí" if zone.critical else "No"))
-            self.zones_table.setItem(row, 3, QTableWidgetItem(str(devices_by_zone.get(zone.id, 0))))
+            self.zones_table.setItem(row, 3, QTableWidgetItem(str(len(devices_by_zone.get(zone.id, set())))))
             self.zones_table.setCellWidget(row, 4, self._zone_operation_widget(zone))
 
     def _site_operation_widget(self, site: Site) -> QWidget:

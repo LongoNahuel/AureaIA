@@ -72,20 +72,55 @@ class DeviceTreeWidget(QWidget):
             zones_by_site.setdefault(zone.site_id, []).append(zone)
 
         devices_by_zone: dict[int, list] = {}
+        devices_by_site: dict[int, list] = {}
+        devices_by_parent: dict[int, list] = {}
         unassigned = []
         for device in repository.list_devices():
+            if device.parent_device_id is not None:
+                devices_by_parent.setdefault(device.parent_device_id, []).append(device)
             if device.zone_id is not None:
                 devices_by_zone.setdefault(device.zone_id, []).append(device)
+            elif device.site_id is not None:
+                devices_by_site.setdefault(device.site_id, []).append(device)
             else:
                 unassigned.append(device)
 
         camera_icon = icons.icon_live_view("#9aa3af")
 
+        def add_device_item(parent_item: QTreeWidgetItem, device) -> None:
+            item = QTreeWidgetItem([f"{device.name}  ({device.ip})"])
+            item.setIcon(0, camera_icon)
+            item.setData(0, Qt.ItemDataRole.UserRole, device.id)
+            parent_item.addChild(item)
+
+        def add_device_group(parent_item: QTreeWidgetItem, device) -> None:
+            children = devices_by_parent.get(device.id, [])
+            if not children:
+                add_device_item(parent_item, device)
+                return
+            recorder_item = QTreeWidgetItem([f"{device.name}  ({device.ip})"])
+            recorder_item.setFlags(recorder_item.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
+            parent_item.addChild(recorder_item)
+            for child in sorted(children, key=lambda row: row.channel):
+                add_device_item(recorder_item, child)
+            recorder_item.setExpanded(True)
+
         for site in repository.list_sites():
             if self._site_filter is not None and site.id != self._site_filter:
                 continue
             site_zones = zones_by_site.get(site.id, [])
-            site_device_count = sum(len(devices_by_zone.get(z.id, [])) for z in site_zones)
+            site_devices_by_id = {
+                device.id: device for device in devices_by_site.get(site.id, [])
+            }
+            for zone in site_zones:
+                for device in devices_by_zone.get(zone.id, []):
+                    site_devices_by_id[device.id] = device
+            site_devices = list(site_devices_by_id.values())
+            site_device_count = sum(
+                len(devices_by_parent.get(device.id, [])) or 1
+                for device in site_devices
+                if device.parent_device_id is None
+            )
             if site_device_count == 0:
                 continue
 
@@ -95,21 +130,24 @@ class DeviceTreeWidget(QWidget):
 
             for zone in site_zones:
                 zone_devices = devices_by_zone.get(zone.id, [])
+                zone_devices = [device for device in zone_devices if device.parent_device_id is None]
                 if not zone_devices:
                     continue
-                zone_item = QTreeWidgetItem([f"{zone.name} ({len(zone_devices)})"])
+                zone_count = sum(len(devices_by_parent.get(device.id, [])) or 1 for device in zone_devices)
+                zone_item = QTreeWidgetItem([f"{zone.name} ({zone_count})"])
                 zone_item.setFlags(zone_item.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
                 if zone.critical:
                     zone_item.setForeground(0, CRITICAL_COLOR)
                 site_item.addChild(zone_item)
 
                 for device in zone_devices:
-                    item = QTreeWidgetItem([f"{device.name}  ({device.ip})"])
-                    item.setIcon(0, camera_icon)
-                    item.setData(0, Qt.ItemDataRole.UserRole, device.id)
-                    zone_item.addChild(item)
+                    add_device_group(zone_item, device)
 
                 zone_item.setExpanded(True)
+
+            for device in devices_by_site.get(site.id, []):
+                if device.parent_device_id is None:
+                    add_device_group(site_item, device)
 
             site_item.setExpanded(True)
 

@@ -35,6 +35,7 @@ from aurea_vms.ui.modules.alert_config import AlertConfigModule
 from aurea_vms.ui.modules.analytics_config import AnalyticsConfigModule
 from aurea_vms.ui.modules.device_management import DeviceManagementModule
 from aurea_vms.ui.modules.event_dashboard import EventDashboardModule
+from aurea_vms.ui.modules.intelligent_view import IntelligentViewModule
 from aurea_vms.ui.modules.live_view import LiveViewModule
 from aurea_vms.ui.modules.sites_zones_module import SitesZonesModule
 from aurea_vms.ui.modules.system_module import SystemModule
@@ -49,6 +50,7 @@ WINDOW_SIZE = (1320, 840)
 # misma cosa -- clase del modulo)
 MODULES = [
     ("Vista en Vivo", icons.icon_live_view, LiveViewModule),
+    ("Vista Inteligente", icons.icon_ai_brain, IntelligentViewModule),
     ("Dispositivos", icons.icon_devices, DeviceManagementModule),
     ("Analizadores", icons.icon_analyzers, AnalyticsConfigModule),
     ("Alarmas", icons.icon_alarms, AlarmModule),
@@ -60,7 +62,7 @@ MODULES = [
 ]
 
 CATEGORIES = {
-    "Operación": ["Vista en Vivo", "Alarmas", "Dashboard de Eventos"],
+    "Operación": ["Vista en Vivo", "Vista Inteligente", "Alarmas", "Dashboard de Eventos"],
     "Configuración": [
         "Dispositivos",
         "Analizadores",
@@ -77,6 +79,7 @@ CATEGORIES = {
 # tambien pasan por ahi).
 MODULE_PERMISSIONS = {
     "Vista en Vivo": Perm.LIVE_VIEW,
+    "Vista Inteligente": Perm.LIVE_VIEW,
     "Alarmas": Perm.RECORDINGS,
     "Dispositivos": Perm.DEVICE_ADMIN,
     "Analizadores": Perm.ANALYTICS_CONFIG,

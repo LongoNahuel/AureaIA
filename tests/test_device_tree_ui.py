@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from PySide6.QtCore import Qt
 
 from aurea_vms.models import repository
 from aurea_vms.ui.widgets.device_tree import DeviceTreeWidget
@@ -9,6 +10,18 @@ from aurea_vms.ui.widgets.device_tree import DeviceTreeWidget
 def _cam(name: str, zone_id: int | None = None):
     return repository.add_device(
         name=name, ip="10.0.0.1", rtsp_main_url="rtsp://c/x", zone_id=zone_id
+    )
+
+
+def _recorder(name: str, site_id: int, channel: int = 0, parent_device_id: int | None = None):
+    return repository.add_device(
+        name=name,
+        ip="10.0.0.10",
+        rtsp_main_url=f"rtsp://nvr/c{channel}",
+        site_id=site_id,
+        device_type="nvr",
+        channel=channel,
+        parent_device_id=parent_device_id,
     )
 
 
@@ -32,6 +45,20 @@ def _sitios(widget: DeviceTreeWidget) -> dict[str, int]:
 
 
 class TestAgrupacionPorSitioYZona:
+    def test_grabador_muestra_canales_anidados(self, arbol):
+        site = repository.add_site(name="Sala Principal")
+        parent = _recorder("NVR Principal", site.id)
+        _recorder("NVR Principal · Canal 1", site.id, 1, parent.id)
+        _recorder("NVR Principal · Canal 4", site.id, 4, parent.id)
+
+        widget = arbol()
+
+        site_item = widget.tree.topLevelItem(0)
+        recorder_item = site_item.child(0)
+        assert recorder_item.text(0).startswith("NVR Principal")
+        assert recorder_item.childCount() == 2
+        assert recorder_item.child(0).data(0, Qt.ItemDataRole.UserRole) is not None
+
     def test_sin_sitios_junta_todo_en_sin_asignar(self, arbol):
         _cam("C1")
         _cam("C2")

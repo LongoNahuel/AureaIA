@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
+
+from aurea_vms.core.device_manager import OnvifChannelInfo
 from aurea_vms.models import repository
 from aurea_vms.ui.dialogs.device_dialog import DeviceDialog
 
@@ -54,3 +57,20 @@ class TestSitioYZonaEnElDialogo:
         repository.add_site(name="Sala Principal")
         dialog = _dialog(qtbot, initial={"name": "Cam", "ip": "10.0.0.5", "zone_id": None})
         assert dialog.zone_combo.currentData() is None
+
+    def test_nvr_muestra_y_guarda_solo_canales_marcados(self, qtbot, temp_db):
+        dialog = _dialog(qtbot)
+        channels = (
+            OnvifChannelInfo(1, "Entrada", "rtsp://nvr/c1", "rtsp://nvr/c1/sub"),
+            OnvifChannelInfo(4, "Patio", "rtsp://nvr/c4", "rtsp://nvr/c4/sub"),
+        )
+        dialog.set_detected_channels(channels)
+        dialog.device_type_combo.setCurrentIndex(dialog.device_type_combo.findData("nvr"))
+        dialog.name_edit.setText("Grabador")
+        dialog.ip_edit.setText("10.0.0.10")
+
+        dialog.channel_list.item(1).setCheckState(Qt.CheckState.Unchecked)
+
+        values = dialog.values_list()
+        assert [value["channel"] for value in values] == [1]
+        assert values[0]["rtsp_main_url"] == "rtsp://nvr/c1"

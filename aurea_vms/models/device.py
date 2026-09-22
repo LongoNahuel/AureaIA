@@ -12,6 +12,17 @@ class Device(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
+    # Sitio al que pertenece el dispositivo. La zona es opcional, por lo
+    # que la asignacion al sitio debe conservarse aunque no haya zona.
+    site_id: Mapped[int | None] = mapped_column(
+        "assigned_site_id",
+        ForeignKey("sites.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    parent_device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     # Zona a la que pertenece la camara (None = sin asignar todavia).
     # SET NULL: borrar una zona no borra sus camaras, quedan "Sin zona"
     # hasta reasignarse.

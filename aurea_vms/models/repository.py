@@ -134,6 +134,9 @@ def delete_site(site_id: int) -> None:
             session.query(Device).filter(Device.zone_id.in_(zone_ids)).update(
                 {Device.zone_id: None}, synchronize_session=False
             )
+            session.query(Device).filter(Device.site_id == site_id).update(
+                {Device.site_id: None}, synchronize_session=False
+            )
             session.delete(site)
 
 
@@ -142,13 +145,12 @@ def add_device(**fields: object) -> Device:
 
 
 def _filtrar_por_ubicacion(query, zone_id: int | None, site_id: int | None):
-    """zone_id filtra por una zona puntual; site_id por todas las zonas de un
-    sitio (el filtro del selector global de la topbar). El sitio va por JOIN:
-    antes se traian todas las Zone del sitio a Python para armar un IN(...)."""
+    """Filtra por zona puntual o por asignacion directa/zona del sitio."""
     if zone_id is not None:
         query = query.filter(Device.zone_id == zone_id)
     if site_id is not None:
-        query = query.join(Zone, Device.zone_id == Zone.id).filter(Zone.site_id == site_id)
+        zone_ids = query.session.query(Zone.id).filter(Zone.site_id == site_id)
+        query = query.filter((Device.site_id == site_id) | Device.zone_id.in_(zone_ids))
     return query
 
 
@@ -342,15 +344,13 @@ def add_alarm_event(**fields: object) -> AlarmEventRow:
 
 
 def _filtrar_eventos(query, device_id: int | None, site_id: int | None):
-    """Los eventos cuelgan de una camara, y la camara de una zona: filtrar
-    por sitio es un JOIN de dos saltos."""
+    """Los eventos se filtran por la asignacion directa o zona de su camara."""
     if device_id is not None:
         query = query.filter(AlarmEventRow.device_id == device_id)
     if site_id is not None:
-        query = (
-            query.join(Device, AlarmEventRow.device_id == Device.id)
-            .join(Zone, Device.zone_id == Zone.id)
-            .filter(Zone.site_id == site_id)
+        zone_ids = query.session.query(Zone.id).filter(Zone.site_id == site_id)
+        query = query.join(Device, AlarmEventRow.device_id == Device.id).filter(
+            (Device.site_id == site_id) | Device.zone_id.in_(zone_ids)
         )
     return query
 

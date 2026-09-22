@@ -146,6 +146,69 @@ def _config_de_alembic(db_path: Path) -> Config:
     config.set_main_option("script_location", str(MIGRATIONS_DIR))
     config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
     return config
+# Columnas nuevas por tabla, agregadas a los modelos despues de que bases
+# de desarrollo pre-existentes ya tenian la tabla creada (create_all crea
+# tablas nuevas pero no altera las existentes). Cada entrada es
+# (columna, DDL sin "ADD COLUMN"); se aplican en orden y solo si faltan.
+# Cualquier cambio mas profundo (renombrar, borrar) se resuelve recreando
+# la DB. Alembic reemplaza esto cuando el esquema se estabilice, antes de
+# la primera instalacion en campo.
+_ADHOC_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "devices": [
+        ("assigned_site_id", "INTEGER REFERENCES sites(id) ON DELETE SET NULL"),
+        ("parent_device_id", "INTEGER REFERENCES devices(id) ON DELETE CASCADE"),
+        # El ON DELETE SET NULL replica el ondelete del modelo (Device.zone_id):
+        # sin él, con PRAGMA foreign_keys=ON, borrar una zona con cámaras
+        # asignadas falla con IntegrityError en las DBs migradas.
+        ("zone_id", "INTEGER REFERENCES zones(id) ON DELETE SET NULL"),
+        ("device_type", "VARCHAR(10) NOT NULL DEFAULT 'ipc'"),
+        ("channel", "INTEGER NOT NULL DEFAULT 1"),
+        ("manufacturer", "VARCHAR(80)"),
+        ("model", "VARCHAR(120)"),
+        ("firmware_version", "VARCHAR(120)"),
+        ("serial_number", "VARCHAR(120)"),
+    ],
+    "sites": [
+        ("description", "VARCHAR(300) NOT NULL DEFAULT ''"),
+    ],
+    "alarm_events": [
+        ("severity", "VARCHAR(20) NOT NULL DEFAULT 'medio'"),
+        ("status", "VARCHAR(20) NOT NULL DEFAULT 'nueva'"),
+        ("notes", "VARCHAR(4000) NOT NULL DEFAULT ''"),
+    ],
+    "alarm_rules": [
+        ("severity", "VARCHAR(20) NOT NULL DEFAULT 'medio'"),
+        ("schedule_days", "JSON NOT NULL DEFAULT '[]'"),
+        ("schedule_start", "VARCHAR(5)"),
+        ("schedule_end", "VARCHAR(5)"),
+    ],
+}
+
+
+def _apply_adhoc_migrations() -> None:
+    assert _engine is not None
+    if _engine.dialect.name != "sqlite":
+        return
+    with _engine.connect() as conn:
+        for table, columns in _ADHOC_COLUMNS.items():
+            existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            if not existing:
+                continue
+            for name, ddl in columns:
+                if name not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+        _backfill_zones_from_legacy_site_id(conn)
+        _group_legacy_recorder_channels(conn)
+        for table in ("analytics_configs", "alarm_rules"):
+            if not conn.exec_driver_sql(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            ).fetchone():
+                continue
+            conn.exec_driver_sql(
+                f"UPDATE {table} SET analyzer_name = 'door_state' "
+                "WHERE analyzer_name = 'motion_detection'"
+            )
+        conn.commit()
 
 
 def migrar(engine, db_path: Path) -> None:
@@ -174,20 +237,111 @@ def migrar(engine, db_path: Path) -> None:
         # El caso normal de todos los arranques a partir del segundo. Se
         # corta aca para no cargar env.py ni armar la maquinaria de upgrade
         # solo para descubrir que no hay nada que aplicar (73ms -> <1ms).
+        _apply_adhoc_migrations()
         return
-
     if revision is None and tablas - {"alembic_version"}:
+        # Las bases pre-Alembic necesitan primero las columnas que ya espera
+        # el metadata actual; de lo contrario adoptar() intenta crear sus
+        # indices antes de que existan parent_device_id/assigned_site_id.
+        _apply_adhoc_migrations()
         adoptar(engine, Base.metadata)
         logger.info("Base de datos sin versionar: adoptada en la revisión %s", BASELINE_REVISION)
         command.stamp(config, BASELINE_REVISION)
 
     command.upgrade(config, "head")
+    _apply_adhoc_migrations()
 
 
 def revision_actual(engine) -> str | None:
     """Revision en la que esta la base, o None si nunca se versiono."""
     with engine.connect() as connection:
         return MigrationContext.configure(connection).get_current_revision()
+
+
+def _backfill_zones_from_legacy_site_id(conn) -> None:
+    """Las DBs anteriores a la jerarquia Sitio->Zona asignaban camaras
+    directo al sitio (devices.site_id, columna que el modelo actual ya no
+    declara pero que esas DBs conservan). Sin backfill, toda camara
+    asignada aparecia "Sin zona" en silencio tras migrar. Se crea (o reusa)
+    una zona "General" por sitio, se copia la asignacion y se consume el
+    site_id legado -- consumirlo hace el paso de una sola vez: desasignar
+    una camara despues no la re-asigna en el proximo arranque."""
+    device_columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(devices)")}
+    if "site_id" not in device_columns or "zone_id" not in device_columns:
+        return
+    if not conn.exec_driver_sql(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='zones'"
+    ).fetchone():
+        return
+    # Las bases antiguas usaban devices.site_id para la asignacion directa.
+    # Se conserva tambien en la columna nueva para que un dispositivo sin
+    # zona siga perteneciendo al sitio despues de la migracion.
+    conn.exec_driver_sql(
+        "UPDATE devices SET assigned_site_id = site_id "
+        "WHERE site_id IS NOT NULL AND assigned_site_id IS NULL "
+        "AND EXISTS (SELECT 1 FROM sites WHERE sites.id = devices.site_id)"
+    )
+    legacy_site_ids = conn.exec_driver_sql(
+        "SELECT DISTINCT site_id FROM devices WHERE site_id IS NOT NULL AND zone_id IS NULL"
+    ).fetchall()
+    for (site_id,) in legacy_site_ids:
+        # El site_id legado no tenia FK confiable: si el sitio ya no existe,
+        # la camara queda "Sin zona" (no hay donde colgarla).
+        if conn.exec_driver_sql("SELECT 1 FROM sites WHERE id = ?", (site_id,)).fetchone() is None:
+            continue
+        zone_row = conn.exec_driver_sql(
+            "SELECT id FROM zones WHERE site_id = ? AND name = 'General'", (site_id,)
+        ).fetchone()
+        if zone_row is not None:
+            zone_id = zone_row[0]
+        else:
+            zone_id = conn.exec_driver_sql(
+                "INSERT INTO zones (site_id, name, critical) VALUES (?, 'General', 0)", (site_id,)
+            ).lastrowid
+        conn.exec_driver_sql(
+            "UPDATE devices SET zone_id = ? WHERE site_id = ? AND zone_id IS NULL",
+            (zone_id, site_id),
+        )
+    conn.exec_driver_sql("UPDATE devices SET site_id = NULL WHERE site_id IS NOT NULL")
+
+
+def _group_legacy_recorder_channels(conn) -> None:
+    """Agrupa los canales creados por versiones anteriores bajo un grabador.
+
+    Antes de existir parent_device_id, cada canal NVR/XVR se guardaba como
+    una fila independiente. Las filas con la misma conexion pertenecen al
+    mismo grabador; se conserva la de menor id como padre y las restantes
+    pasan a ser sus canales.
+    """
+    groups = conn.exec_driver_sql(
+        "SELECT ip, port, username, onvif_port, device_type "
+        "FROM devices "
+        "WHERE parent_device_id IS NULL AND device_type IN ('nvr', 'xvr') "
+        "GROUP BY ip, port, username, onvif_port, device_type "
+        "HAVING COUNT(*) > 1"
+    ).fetchall()
+    for ip, port, username, onvif_port, device_type in groups:
+        rows = conn.exec_driver_sql(
+            "SELECT id, name, channel FROM devices "
+            "WHERE parent_device_id IS NULL AND ip = ? AND port = ? "
+            "AND username = ? AND onvif_port IS ? AND device_type = ? "
+            "ORDER BY id",
+            (ip, port, username, onvif_port, device_type),
+        ).fetchall()
+        parent_id, parent_name, _ = rows[0]
+        clean_name = parent_name.split(" · Canal", 1)[0].strip()
+        conn.exec_driver_sql(
+            "UPDATE devices SET name = ?, channel = 0 WHERE id = ?",
+            (clean_name, parent_id),
+        )
+        for child_id, _child_name, _channel in rows[1:]:
+            conn.exec_driver_sql(
+                "UPDATE devices SET parent_device_id = ?, "
+                "name = CASE WHEN instr(name, ' · Canal') > 0 THEN name "
+                "ELSE name || ' · Canal ' || channel END "
+                "WHERE id = ?",
+                (parent_id, child_id),
+            )
 
 
 @contextmanager

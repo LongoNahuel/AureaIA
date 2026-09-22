@@ -90,6 +90,8 @@ class VideoTile(QWidget):
         # True mientras el pixmap actual es el estado "sin señal": evita
         # redibujar las rayas en cada tick del timer de display.
         self._offline_rendered = False
+        self._last_rendered_ts = 0.0
+        self._last_rendered_size = QSize()
         # Tiles de grilla (index >= 0) arrancan en sub-flujo (liviano, para
         # miniaturas); el tile de Vista Inteligente (index < 0) y cualquier
         # tile expandido con doble click usan el flujo principal.
@@ -125,6 +127,8 @@ class VideoTile(QWidget):
         self.release()
         self._latest_events = {}
         self._analytics_configs = []
+        self._last_rendered_ts = 0.0
+        self._last_rendered_size = QSize()
 
         device = repository.get_device(device_id) if device_id is not None else None
         if device is None:
@@ -220,6 +224,7 @@ class VideoTile(QWidget):
         if self._device is None:
             self._render_empty_state()
         self._offline_rendered = False  # el proximo tick redibuja al tamaño nuevo
+        self._last_rendered_size = QSize()
         super().resizeEvent(event)
 
     def _show_context_menu(self, pos) -> None:
@@ -302,7 +307,9 @@ class VideoTile(QWidget):
             return
 
         worker = stream_manager.get_worker(self._device.id, self._stream_kind)
-        frame = worker.get_latest_frame() if worker else None
+        frame, frame_ts = (
+            worker.get_latest_frame_with_timestamp() if worker else (None, 0.0)
+        )
         if frame is None or worker.is_stale():
             # Antes quedaba el ultimo frame congelado, que parece en vivo --
             # exactamente lo que is_stale() existia para evitar.
@@ -311,18 +318,23 @@ class VideoTile(QWidget):
                 self._render_offline_state()
             return
         self._offline_rendered = False
+        target_size = self.video_label.size()
+        if frame_ts == self._last_rendered_ts and target_size == self._last_rendered_size:
+            return
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         height, width, _ = rgb.shape
         image = QImage(rgb.data, width, height, 3 * width, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(image).scaled(
-            self.video_label.size(),
+            target_size,
             Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+            Qt.TransformationMode.FastTransformation,
         )
 
         pixmap = self._draw_overlay(pixmap, width, height)
         self.video_label.setPixmap(pixmap)
+        self._last_rendered_ts = frame_ts
+        self._last_rendered_size = target_size
 
     def _draw_overlay(self, pixmap: QPixmap, frame_w: int, frame_h: int) -> QPixmap:
         result = QPixmap(pixmap)
