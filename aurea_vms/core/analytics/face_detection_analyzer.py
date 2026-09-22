@@ -267,3 +267,16 @@ class FaceDetectionAnalyzer(Analyzer):
         dy = face[RIGHT_EYE_Y] - face[LEFT_EYE_Y]
         distance = (dx * dx + dy * dy) ** 0.5
         return distance >= self._min_pupillary_distance_px
+
+    def close(self) -> None:
+        """Suelta el detector de YuNet.
+
+        A diferencia de YOLOX, este NO se comparte entre analizadores: el
+        cv2.FaceDetectorYN guarda el tamaño de entrada adentro
+        (`setInputSize` en cada process_frame, ver arriba), asi que dos
+        camaras con recortes de distinto tamaño se lo pisarian entre si.
+        Y no vale la pena: el modelo pesa 228KB contra los 20MB de YOLOX.
+        Lo que si importa es soltarlo al detener la analitica, y no dejar
+        que el destructor nativo corra al cierre del interprete.
+        """
+        self._detector = None

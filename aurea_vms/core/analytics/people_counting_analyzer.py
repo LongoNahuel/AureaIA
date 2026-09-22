@@ -93,3 +93,11 @@ class PeopleCountingAnalyzer(Analyzer):
         ]
 
         return AnalysisResult(detections=tuple(confirmed), metrics={"occupancy": len(confirmed)})
+
+    def close(self) -> None:
+        """Suelta la sesion ONNX compartida. Sin esto el contrato de
+        Analyzer.close() era un hook vacio y el modelo quedaba vivo hasta
+        que lo juntara el GC -- con los destructores nativos corriendo
+        recien al cierre del interprete, que es el escenario que
+        core/analytics/base.py señala como riesgo de crash en headless."""
+        self._detector.close()
