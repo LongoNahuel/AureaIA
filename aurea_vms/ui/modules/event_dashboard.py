@@ -21,10 +21,14 @@ from aurea_vms.core import app_state
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import AlarmEvent as AlarmEventDTO
 from aurea_vms.models import repository
+from aurea_vms.models.alarm_rule import SEVERITY_CRITICAL
 from aurea_vms.ui.labels import display_class
 from aurea_vms.ui.theme import severity_soft_qcolor, severity_text_qcolor
 
 REFRESH_MS = 5000
+# Filas que se pintan en la tabla. Los contadores de las tarjetas ya NO
+# salen de esta pagina: son COUNT agregados sobre toda la tabla.
+ROW_LIMIT = 200
 SEVERITY_LABELS = {"critico": "Crítico", "alto": "Alto", "medio": "Medio", "info": "Info"}
 COLUMNS = ["Hora", "Cámara", "Evento", "Severidad", "Confianza", "Estado"]
 
@@ -121,20 +125,23 @@ class EventDashboardModule(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
-        events = repository.list_alarm_events(limit=200)
-        devices = repository.list_devices()
-        self._device_names = {device.id: device.name for device in devices}
-        if app_state.current_site_id is not None:
-            allowed = {
-                device.id for device in repository.list_devices(site_id=app_state.current_site_id)
-            }
-            events = [event for event in events if event.device_id in allowed]
+        site_id = app_state.current_site_id
+        # El filtro va en la consulta, no despues: filtrando en Python sobre
+        # la pagina de 200 globales, con un sitio seleccionado la tabla
+        # mostraba un subconjunto arbitrario en vez de los ultimos 200 de
+        # ese sitio.
+        events = repository.list_alarm_events(limit=ROW_LIMIT, site_id=site_id)
+        self._device_names = {
+            device.id: device.name for device in repository.list_devices(site_id=site_id)
+        }
 
-        critical = sum(1 for event in events if event.severity == "critico")
-        active = sum(1 for event in events if event.status != "resuelta")
-        self.total_card.set_value(str(len(events)))
-        self.active_card.set_value(str(active))
-        self.critical_card.set_value(str(critical))
+        # Contadores agregados en SQL: len(events) era el largo de la pagina,
+        # o sea que la tarjeta de totales se clavaba en 200.
+        self.total_card.set_value(str(repository.count_alarm_events(site_id=site_id)))
+        self.active_card.set_value(str(repository.count_pending_alarm_events(site_id=site_id)))
+        self.critical_card.set_value(
+            str(repository.count_alarm_events(site_id=site_id, severity=SEVERITY_CRITICAL))
+        )
         self.last_card.set_value(
             dt.datetime.fromtimestamp(events[0].timestamp).strftime("%H:%M:%S") if events else "—"
         )

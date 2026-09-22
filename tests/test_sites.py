@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import pytest
-import sqlalchemy.exc
 
 from aurea_vms.models import repository
+from aurea_vms.models.errors import DuplicateError
 
 
 def _cam(name: str, zone_id: int | None = None):
@@ -25,7 +25,7 @@ class TestSitesCrud:
 
     def test_nombre_unico(self, temp_db):
         repository.add_site(name="Sala Principal")
-        with pytest.raises(sqlalchemy.exc.IntegrityError):
+        with pytest.raises(DuplicateError):
             repository.add_site(name="Sala Principal")
 
     def test_orden_alfabetico(self, temp_db):

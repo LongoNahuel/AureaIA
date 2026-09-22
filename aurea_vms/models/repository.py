@@ -5,17 +5,69 @@ la sesion (sirven como DTOs de solo lectura fuera del `with`).
 
 from __future__ import annotations
 
-from sqlalchemy import func
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import TypeVar
 
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from aurea_vms.models.alarm_event import STATUS_RESOLVED
 from aurea_vms.models.alarm_event import AlarmEvent as AlarmEventRow
 from aurea_vms.models.alarm_rule import AlarmRule
 from aurea_vms.models.analytics_config import AnalyticsConfig
 from aurea_vms.models.db import get_session
 from aurea_vms.models.device import Device
+from aurea_vms.models.errors import DuplicateError, RepositoryError
 from aurea_vms.models.media_asset import MediaAsset
 from aurea_vms.models.site import Site
 from aurea_vms.models.user import User
 from aurea_vms.models.zone import Zone
+
+T = TypeVar("T")
+
+
+def _traducir(exc: IntegrityError) -> RepositoryError:
+    """Convierte una violacion de constraint en una excepcion de dominio.
+    Se miran las dos frases porque la de sqlite y la de postgres no son la
+    misma, y la capa esta pensada para poder cambiar de motor."""
+    detalle = str(getattr(exc, "orig", exc))
+    if "UNIQUE constraint failed" in detalle or "duplicate key" in detalle.lower():
+        return DuplicateError(detalle)
+    return RepositoryError(detalle)
+
+
+@contextmanager
+def _escritura() -> Iterator[Session]:
+    """get_session() con la frontera de excepciones: de repository nunca
+    sale una excepcion de SQLAlchemy, siempre una de dominio."""
+    try:
+        with get_session() as session:
+            yield session
+    except IntegrityError as exc:
+        raise _traducir(exc) from exc
+
+
+def _insert(model: type[T], fields: dict) -> T:
+    """Alta generica: los siete add_* hacian exactamente estas cinco lineas.
+    El refresh() deja el objeto legible fuera de la sesion (ver el docstring
+    del modulo)."""
+    with _escritura() as session:
+        row = model(**fields)
+        session.add(row)
+        session.flush()
+        session.refresh(row)
+        return row
+
+
+def _update(model: type, row_id: int, fields: dict) -> None:
+    """Un id inexistente es un no-op silencioso, igual que antes."""
+    with _escritura() as session:
+        row = session.get(model, row_id)
+        if row is not None:
+            for key, value in fields.items():
+                setattr(row, key, value)
 
 
 def _normalize_analyzer_name(name: str) -> str:
@@ -23,12 +75,7 @@ def _normalize_analyzer_name(name: str) -> str:
 
 
 def add_site(**fields: object) -> Site:
-    with get_session() as session:
-        site = Site(**fields)
-        session.add(site)
-        session.flush()
-        session.refresh(site)
-        return site
+    return _insert(Site, fields)
 
 
 def list_sites() -> list[Site]:
@@ -42,11 +89,7 @@ def get_site(site_id: int) -> Site | None:
 
 
 def update_site(site_id: int, **fields: object) -> None:
-    with get_session() as session:
-        site = session.get(Site, site_id)
-        if site is not None:
-            for key, value in fields.items():
-                setattr(site, key, value)
+    _update(Site, site_id, fields)
 
 
 def delete_site(site_id: int) -> None:
@@ -69,35 +112,39 @@ def delete_site(site_id: int) -> None:
 
 
 def add_device(**fields: object) -> Device:
-    with get_session() as session:
-        device = Device(**fields)
-        session.add(device)
-        session.flush()
-        session.refresh(device)
-        return device
+    return _insert(Device, fields)
+
+
+def _filtrar_por_ubicacion(query, zone_id: int | None, site_id: int | None):
+    """zone_id filtra por una zona puntual; site_id por todas las zonas de un
+    sitio (el filtro del selector global de la topbar). El sitio va por JOIN:
+    antes se traian todas las Zone del sitio a Python para armar un IN(...)."""
+    if zone_id is not None:
+        query = query.filter(Device.zone_id == zone_id)
+    if site_id is not None:
+        query = query.join(Zone, Device.zone_id == Zone.id).filter(Zone.site_id == site_id)
+    return query
 
 
 def list_devices(zone_id: int | None = None, site_id: int | None = None) -> list[Device]:
-    """zone_id filtra por una zona puntual; site_id filtra por todas las
-    zonas de un sitio (el filtro del selector global de la topbar).
-    None/None = todas las camaras."""
+    """None/None = todas las camaras."""
     with get_session() as session:
-        query = session.query(Device).order_by(Device.id)
-        if zone_id is not None:
-            query = query.filter(Device.zone_id == zone_id)
-        if site_id is not None:
-            zone_ids = [z.id for z in session.query(Zone).filter(Zone.site_id == site_id).all()]
-            query = query.filter(Device.zone_id.in_(zone_ids))
-        return list(query.all())
+        query = _filtrar_por_ubicacion(session.query(Device), zone_id, site_id)
+        return list(query.order_by(Device.id).all())
+
+
+def count_devices_by_status(site_id: int | None = None) -> dict[str, int]:
+    """{estado: cantidad} en UNA consulta agregada. El dashboard traia TODOS
+    los dispositivos cada 5s solo para contarlos por status en Python."""
+    with get_session() as session:
+        query = _filtrar_por_ubicacion(
+            session.query(Device.status, func.count(Device.id)), None, site_id
+        )
+        return dict(query.group_by(Device.status).all())
 
 
 def add_zone(**fields: object) -> Zone:
-    with get_session() as session:
-        zone = Zone(**fields)
-        session.add(zone)
-        session.flush()
-        session.refresh(zone)
-        return zone
+    return _insert(Zone, fields)
 
 
 def list_zones(site_id: int | None = None) -> list[Zone]:
@@ -114,11 +161,7 @@ def get_zone(zone_id: int) -> Zone | None:
 
 
 def update_zone(zone_id: int, **fields: object) -> None:
-    with get_session() as session:
-        zone = session.get(Zone, zone_id)
-        if zone is not None:
-            for key, value in fields.items():
-                setattr(zone, key, value)
+    _update(Zone, zone_id, fields)
 
 
 def delete_zone(zone_id: int) -> None:
@@ -147,11 +190,7 @@ def update_device_status(device_id: int, status: str) -> None:
 
 
 def update_device(device_id: int, **fields: object) -> None:
-    with get_session() as session:
-        device = session.get(Device, device_id)
-        if device is not None:
-            for key, value in fields.items():
-                setattr(device, key, value)
+    _update(Device, device_id, fields)
 
 
 def delete_device(device_id: int) -> None:
@@ -191,7 +230,7 @@ def upsert_analytics_config(
     device_id: int, analyzer_name: str, **fields: object
 ) -> AnalyticsConfig:
     analyzer_name = _normalize_analyzer_name(analyzer_name)
-    with get_session() as session:
+    with _escritura() as session:
         config = (
             session.query(AnalyticsConfig)
             .filter(
@@ -221,12 +260,7 @@ def set_analytics_config_enabled(config_id: int, enabled: bool) -> None:
 def add_alarm_rule(**fields: object) -> AlarmRule:
     if "analyzer_name" in fields:
         fields["analyzer_name"] = _normalize_analyzer_name(str(fields["analyzer_name"]))
-    with get_session() as session:
-        rule = AlarmRule(**fields)
-        session.add(rule)
-        session.flush()
-        session.refresh(rule)
-        return rule
+    return _insert(AlarmRule, fields)
 
 
 def list_alarm_rules(device_id: int | None = None) -> list[AlarmRule]:
@@ -259,11 +293,7 @@ def get_alarm_rule(rule_id: int) -> AlarmRule | None:
 
 
 def update_alarm_rule(rule_id: int, **fields: object) -> None:
-    with get_session() as session:
-        rule = session.get(AlarmRule, rule_id)
-        if rule is not None:
-            for key, value in fields.items():
-                setattr(rule, key, value)
+    _update(AlarmRule, rule_id, fields)
 
 
 def set_alarm_rule_enabled(rule_id: int, enabled: bool) -> None:
@@ -281,30 +311,61 @@ def delete_alarm_rule(rule_id: int) -> None:
 
 
 def add_alarm_event(**fields: object) -> AlarmEventRow:
-    with get_session() as session:
-        event = AlarmEventRow(**fields)
-        session.add(event)
-        session.flush()
-        session.refresh(event)
-        return event
+    return _insert(AlarmEventRow, fields)
 
 
-def list_alarm_events(limit: int = 200) -> list[AlarmEventRow]:
-    with get_session() as session:
-        return list(
-            session.query(AlarmEventRow).order_by(AlarmEventRow.id.desc()).limit(limit).all()
+def _filtrar_eventos(query, device_id: int | None, site_id: int | None):
+    """Los eventos cuelgan de una camara, y la camara de una zona: filtrar
+    por sitio es un JOIN de dos saltos."""
+    if device_id is not None:
+        query = query.filter(AlarmEventRow.device_id == device_id)
+    if site_id is not None:
+        query = (
+            query.join(Device, AlarmEventRow.device_id == Device.id)
+            .join(Zone, Device.zone_id == Zone.id)
+            .filter(Zone.site_id == site_id)
         )
+    return query
 
 
-def count_pending_alarm_events() -> int:
+def list_alarm_events(
+    limit: int = 200, *, device_id: int | None = None, site_id: int | None = None
+) -> list[AlarmEventRow]:
+    """Los mas recientes primero. Sin los filtros, el dashboard traia los
+    ultimos 200 GLOBALES y despues descartaba en Python los de otros sitios:
+    con el filtro de sitio activo mostraba un subconjunto arbitrario en vez
+    de los ultimos 200 de ese sitio."""
+    with get_session() as session:
+        query = _filtrar_eventos(session.query(AlarmEventRow), device_id, site_id)
+        return list(query.order_by(AlarmEventRow.id.desc()).limit(limit).all())
+
+
+def count_alarm_events(
+    *,
+    device_id: int | None = None,
+    site_id: int | None = None,
+    severity: str | None = None,
+    status: str | None = None,
+    status_not: str | None = None,
+) -> int:
+    """COUNT agregado sobre los indices. Los contadores del dashboard se
+    calculaban en Python sobre la pagina de 200, asi que la tarjeta de
+    totales se clavaba en 200 apenas habia mas eventos que eso."""
+    with get_session() as session:
+        query = _filtrar_eventos(session.query(func.count(AlarmEventRow.id)), device_id, site_id)
+        if severity is not None:
+            query = query.filter(AlarmEventRow.severity == severity)
+        if status is not None:
+            query = query.filter(AlarmEventRow.status == status)
+        if status_not is not None:
+            query = query.filter(AlarmEventRow.status != status_not)
+        return query.scalar() or 0
+
+
+def count_pending_alarm_events(site_id: int | None = None) -> int:
     """Alarmas sin resolver -- un COUNT sobre el indice, para el tile del
     dashboard (antes traia 500 filas completas cada 5s para contarlas)."""
-    with get_session() as session:
-        return (
-            session.query(func.count(AlarmEventRow.id))
-            .filter(AlarmEventRow.status != "resuelta")
-            .scalar()
-        )
+    return count_alarm_events(site_id=site_id, status_not=STATUS_RESOLVED)
 
 
 def get_alarm_event(alarm_event_id: int) -> AlarmEventRow | None:
@@ -313,11 +374,7 @@ def get_alarm_event(alarm_event_id: int) -> AlarmEventRow | None:
 
 
 def update_alarm_event(alarm_event_id: int, **fields: object) -> None:
-    with get_session() as session:
-        event = session.get(AlarmEventRow, alarm_event_id)
-        if event is not None:
-            for key, value in fields.items():
-                setattr(event, key, value)
+    _update(AlarmEventRow, alarm_event_id, fields)
 
 
 def set_alarm_event_status(alarm_event_id: int, status: str) -> None:
@@ -328,12 +385,7 @@ def set_alarm_event_status(alarm_event_id: int, status: str) -> None:
 
 
 def add_media_asset(**fields: object) -> MediaAsset:
-    with get_session() as session:
-        asset = MediaAsset(**fields)
-        session.add(asset)
-        session.flush()
-        session.refresh(asset)
-        return asset
+    return _insert(MediaAsset, fields)
 
 
 def get_media_asset(media_id: int) -> MediaAsset | None:
@@ -419,12 +471,7 @@ def count_users() -> int:
 
 
 def add_user(**fields: object) -> User:
-    with get_session() as session:
-        user = User(**fields)
-        session.add(user)
-        session.flush()
-        session.refresh(user)
-        return user
+    return _insert(User, fields)
 
 
 def get_user_by_username(username: str) -> User | None:
@@ -445,8 +492,4 @@ def delete_user(user_id: int) -> None:
 
 
 def update_user(user_id: int, **fields: object) -> None:
-    with get_session() as session:
-        user = session.get(User, user_id)
-        if user is not None:
-            for key, value in fields.items():
-                setattr(user, key, value)
+    _update(User, user_id, fields)

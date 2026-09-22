@@ -152,14 +152,17 @@ class DashboardPanel(SimpleCardWidget):
         super().hideEvent(event)
 
     def refresh(self) -> None:
-        devices = repository.list_devices()
-        online = sum(1 for d in devices if d.status == "online")
-        offline = sum(1 for d in devices if d.status == "offline")
-        unknown = len(devices) - online - offline
+        # Un GROUP BY en vez de traer todos los dispositivos cada 5s para
+        # contarlos por estado en Python.
+        por_estado = repository.count_devices_by_status()
+        online = por_estado.get("online", 0)
+        offline = por_estado.get("offline", 0)
+        total = sum(por_estado.values())
+        unknown = total - online - offline
 
         self.donut.set_data(
             [(online, COLOR_ONLINE), (offline, COLOR_OFFLINE), (unknown, COLOR_UNKNOWN)],
-            str(len(devices)),
+            str(total),
         )
         self.online_caption.setText(f"● En línea: {online}")
         self.offline_caption.setText(f"● Desconectadas: {offline}")

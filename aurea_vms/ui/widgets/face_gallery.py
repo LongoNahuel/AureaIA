@@ -3,28 +3,11 @@ recortados del frame en el momento de la deteccion. Es efimera (solo en
 memoria durante la sesion, no se persiste a disco) -- para eso ya existen
 los snapshots de alarma cuando hay una regla de Deteccion Facial activa.
 
-Un ID catalogado por rostro distinto, una sola captura por ID: cada
-deteccion se compara contra las ya capturadas con dos firmas combinadas
--- una chica en escala de grises (apariencia) y otra geometrica, a partir
-de las distancias entre los 5 puntos de referencia que ya da el detector
-(ojos/nariz/comisuras de boca), normalizadas por la distancia entre ojos
-para que no dependa de que tan cerca este la cara. Ninguna de las dos es
-reconocimiento real (no hay un embedding aprendido), pero combinar forma
-+ apariencia es bastante mas robusto a cambios de luz o gesto que
-comparar pixeles solos.
-
-Cada ID guarda hasta "Capturas por rostro" miniaturas (1 = una sola toma
-por persona, configurable hasta 5). Mientras no se llega al tope, una
-deteccion nueva que coincide con un ID ya catalogado suma una miniatura
-mas a esa identidad; al llegar al tope, la miniatura MAS CHICA de esa
-identidad se reemplaza por la nueva SOLO si el recorte entrante es mas
-grande -- asi con tope 1 la galeria termina mostrando la mejor toma de
-cada persona (nunca la primera que se vio, tipicamente chica y lejana), y
-con un tope mayor guarda varias buenas tomas en vez de una sola. El
-umbral de que tan distinto tiene que verse un rostro para catalogarlo
-como un ID nuevo es configurable por camara desde Analizadores >
-Detección Facial, junto con un contador acumulado de IDs (con reinicio
-diario programable).
+Quien es quien, cuantos van y que toma se guarda de cada identidad lo
+decide core/face_catalog.py: este widget solo refleja en su QListWidget lo
+que el catalogo le devuelve. Las dos listas van en el mismo orden (mas
+reciente primero) y por eso los indices coinciden. Configurable por camara
+desde Analizadores > Detección Facial.
 
 Cada captura lleva quemada una franja inferior con hora y porcentaje de
 certeza de la deteccion -- igual que un sello de metadata en video de
@@ -36,7 +19,6 @@ from __future__ import annotations
 import datetime as dt
 
 import cv2
-import numpy as np
 from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
@@ -44,49 +26,18 @@ from qfluentwidgets import CaptionLabel, FluentIcon, HeaderCardWidget, Transpare
 
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import DetectionEvent
+from aurea_vms.core.face_catalog import (
+    FaceCapture,
+    FaceCatalog,
+    FaceCatalogSettings,
+    clamp_bbox,
+    face_signature,
+    geometry_signature,
+)
 from aurea_vms.core.stream_manager import stream_manager
 from aurea_vms.models import repository
 
 THUMB_SIZE = QSize(220, 220)
-MAX_ITEMS = 24
-SIGNATURE_SIZE = 24
-DEFAULT_DIFF_THRESHOLD = 0.35
-DEFAULT_MAX_CAPTURES_PER_FACE = 1
-DEFAULT_COUNTING_ENABLED = True
-DEFAULT_COUNTING_RESET_TIME = "00:00"
-
-
-def _face_signature(crop_bgr: np.ndarray) -> np.ndarray:
-    """Firma chica y liviana de un recorte de cara: escala de grises,
-    24x24, ecualizada (para amortiguar diferencias de iluminación). No es
-    un embedding de reconocimiento facial, solo alcanza para comparar
-    "se parece a una captura ya guardada" contra las pocas que hay en la
-    galería."""
-    gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
-    resized = cv2.resize(gray, (SIGNATURE_SIZE, SIGNATURE_SIZE))
-    equalized = cv2.equalizeHist(resized)
-    return equalized.astype(np.float32) / 255.0
-
-
-def _geometry_signature(keypoints: tuple[tuple[float, float], ...] | None) -> np.ndarray | None:
-    """Distancias entre cada par de los 5 puntos de referencia (ojo der,
-    ojo izq, nariz, comisura de boca der, comisura de boca izq),
-    normalizadas por la distancia entre ojos -- da una firma de "forma"
-    de la cara que no depende de que tan cerca/lejos este de la camara."""
-    if not keypoints or len(keypoints) < 5:
-        return None
-    points = np.array(keypoints, dtype=np.float32)
-    eye_distance = float(np.linalg.norm(points[0] - points[1]))
-    if eye_distance < 1e-3:
-        return None
-    pairs = [(i, j) for i in range(len(points)) for j in range(i + 1, len(points))]
-    return np.array(
-        [np.linalg.norm(points[i] - points[j]) / eye_distance for i, j in pairs], dtype=np.float32
-    )
-
-
-def _difference(a: np.ndarray, b: np.ndarray) -> float:
-    return float(np.mean(np.abs(a - b)))
 
 
 def _cover_scaled(pixmap: QPixmap, size: QSize) -> QPixmap:
@@ -132,31 +83,12 @@ def _with_metadata_overlay(pixmap: QPixmap, when: str, confidence: float) -> QPi
     return stamped
 
 
-def _combined_difference(a: dict, b: dict) -> float:
-    """Combina apariencia (firma de pixeles) y forma (firma geometrica,
-    si ambas capturas la tienen) tomando el MAXIMO de las dos, no un
-    promedio: si cualquiera de las dos señales ya muestra una diferencia
-    clara, tiene que pesar como tal -- promediar dejaba que una firma
-    parecida "diluyera" a la otra aunque fuera claramente distinta (caso
-    real: dos personas con recortes de piel/fondo similares por
-    casualidad, pero geometria facial bien distinta, terminaban
-    matcheando como el mismo ID)."""
-    pixel_diff = _difference(a["signature"], b["signature"])
-    geo_a, geo_b = a.get("geometry"), b.get("geometry")
-    if geo_a is not None and geo_b is not None:
-        geo_diff = _difference(geo_a, geo_b)
-        return max(pixel_diff, geo_diff)
-    return pixel_diff
-
-
 class FaceGallery(HeaderCardWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setTitle("Detecciones Faciales")
         self._device_id: int | None = None
-        self._total_count = 0
-        self._next_track_id = 1
-        self._last_reset_date: dt.date | None = None
+        self._catalog = FaceCatalog()
 
         content = QWidget(self)
         self.viewLayout.addWidget(content)
@@ -196,15 +128,15 @@ class FaceGallery(HeaderCardWidget):
     def set_device(self, device_id: int | None) -> None:
         self._device_id = device_id
         self.list_widget.clear()
-        self._total_count = 0
-        self._next_track_id = 1
-        self._last_reset_date = None
-        self.counter_label.setText("IDs catalogados: 0")
+        self._catalog.reset()
+        self._refresh_counter()
 
     def _clear_counter(self) -> None:
-        self._total_count = 0
-        self._last_reset_date = dt.date.today()
-        self.counter_label.setText("IDs catalogados: 0")
+        self._catalog.clear_counter()
+        self._refresh_counter()
+
+    def _refresh_counter(self) -> None:
+        self.counter_label.setText(f"IDs catalogados: {self._catalog.total_count}")
 
     def _face_params(self) -> dict:
         if self._device_id is None:
@@ -212,36 +144,10 @@ class FaceGallery(HeaderCardWidget):
         config = repository.get_analytics_config_for(self._device_id, "face_detection")
         return (config.params if config else {}) or {}
 
-    def _apply_daily_reset(self, params: dict) -> None:
-        if not params.get("counting_enabled", DEFAULT_COUNTING_ENABLED):
-            return
-        reset_time_text = params.get("counting_reset_time", DEFAULT_COUNTING_RESET_TIME)
-        try:
-            reset_hour, reset_minute = (int(part) for part in reset_time_text.split(":")[:2])
-        except (ValueError, AttributeError):
-            reset_hour, reset_minute = 0, 0
-
-        now = dt.datetime.now()
-        reset_moment_today = now.replace(
-            hour=reset_hour, minute=reset_minute, second=0, microsecond=0
-        )
-        if now >= reset_moment_today and self._last_reset_date != now.date():
-            self._total_count = 0
-            self._last_reset_date = now.date()
-            self.counter_label.setText("IDs catalogados: 0")
-
-    def _find_matches(self, candidate: dict, threshold: float) -> list[int]:
-        """Filas de la galería que ya pertenecen a la misma identidad que
-        este candidato (vacío si no coincide con ninguna -- ID nuevo; puede
-        haber varias si "Capturas por rostro" > 1)."""
-        return [
-            i
-            for i in range(self.list_widget.count())
-            if (data := self.list_widget.item(i).data(Qt.ItemDataRole.UserRole)) is not None
-            and _combined_difference(candidate, data) < threshold
-        ]
-
     def _on_detection(self, event: DetectionEvent) -> None:
+        """Slot con QueuedConnection: corre en el hilo de la GUI. Acá solo
+        queda recortar el frame y pintar; quién es quién lo decide el
+        catálogo."""
         if event.device_id != self._device_id or event.analyzer_name != "face_detection":
             return
 
@@ -254,62 +160,45 @@ class FaceGallery(HeaderCardWidget):
         if frame is None:
             return
 
-        params = self._face_params()
-        self._apply_daily_reset(params)
-        threshold = params.get("capture_diff_threshold", DEFAULT_DIFF_THRESHOLD)
-        max_captures = params.get("max_captures_per_face", DEFAULT_MAX_CAPTURES_PER_FACE)
-        counting_enabled = params.get("counting_enabled", DEFAULT_COUNTING_ENABLED)
+        settings = FaceCatalogSettings.from_params(self._face_params())
+        if self._catalog.apply_daily_reset(settings):
+            self._refresh_counter()
 
         height, width = frame.shape[:2]
         when = dt.datetime.fromtimestamp(event.timestamp).strftime("%H:%M:%S")
 
         for det in faces:
-            x, y, w, h = det.bbox
-            x0, y0 = max(0, x), max(0, y)
-            x1, y1 = min(x + w, width), min(y + h, height)
-            if x1 <= x0 or y1 <= y0:
+            box = clamp_bbox(det.bbox, width, height)
+            if box is None:
                 continue
-
+            x0, y0, x1, y1 = box
             crop = frame[y0:y1, x0:x1]
-            candidate = {
-                "signature": _face_signature(crop),
-                "geometry": _geometry_signature(det.keypoints),
-                "area": (x1 - x0) * (y1 - y0),
-                "confidence": det.confidence,
-            }
 
-            match_rows = self._find_matches(candidate, threshold)
-            if match_rows:
-                matches = [
-                    (i, self.list_widget.item(i).data(Qt.ItemDataRole.UserRole)) for i in match_rows
-                ]
-                track_id = matches[0][1]["track_id"]
-                if len(matches) < max_captures:
-                    pass  # todavia no llegamos al tope: se suma como ranura nueva
-                else:
-                    smallest_row, smallest = min(matches, key=lambda pair: pair[1]["area"])
-                    if candidate["area"] <= smallest["area"]:
-                        continue  # ya tenemos "max_captures" tomas iguales o mejores de este ID
-                    self.list_widget.takeItem(smallest_row)
-            else:
-                track_id = self._next_track_id
-                self._next_track_id += 1
-                if counting_enabled:
-                    self._total_count += 1
-                    self.counter_label.setText(f"IDs catalogados: {self._total_count}")
+            update = self._catalog.observe(
+                signature=face_signature(crop),
+                geometry=geometry_signature(det.keypoints),
+                area=(x1 - x0) * (y1 - y0),
+                confidence=det.confidence,
+                settings=settings,
+            )
+            # El orden importa: el catálogo saca la fila vieja ANTES de
+            # insertar la nueva en la posición 0, y las dos listas tienen
+            # que quedar con los mismos índices.
+            if update.removed_index is not None:
+                self.list_widget.takeItem(update.removed_index)
+            if update.capture is None:
+                continue
+            self._insert_capture(crop, update.capture, when)
+            if update.is_new_identity:
+                self._refresh_counter()
 
-            candidate["track_id"] = track_id
-            self._insert_capture(crop, candidate, track_id, when)
-
-        while self.list_widget.count() > MAX_ITEMS:
+        for _ in range(self._catalog.prune()):
             self.list_widget.takeItem(self.list_widget.count() - 1)
 
-    def _insert_capture(self, crop: np.ndarray, candidate: dict, track_id: int, when: str) -> None:
+    def _insert_capture(self, crop, capture: FaceCapture, when: str) -> None:
         rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
         ch, cw = rgb.shape[:2]
         image = QImage(rgb.data, cw, ch, 3 * cw, QImage.Format.Format_RGB888)
         pixmap = _cover_scaled(QPixmap.fromImage(image), THUMB_SIZE)
-        pixmap = _with_metadata_overlay(pixmap, when, candidate.get("confidence", 0.0))
-        item = QListWidgetItem(QIcon(pixmap), f"ID #{track_id}")
-        item.setData(Qt.ItemDataRole.UserRole, candidate)
-        self.list_widget.insertItem(0, item)
+        pixmap = _with_metadata_overlay(pixmap, when, capture.confidence)
+        self.list_widget.insertItem(0, QListWidgetItem(QIcon(pixmap), f"ID #{capture.track_id}"))

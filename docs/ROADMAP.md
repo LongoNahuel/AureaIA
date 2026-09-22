@@ -45,7 +45,9 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
   ya cubierto por `ix_alarm_events_device_ts`. Falta `UNIQUE(site_id, name)`
   en `zones`.
 - Los seis `update_*` de `repository` hacen `setattr` sin whitelist: un typo
-  en un kwarg se pierde en silencio al commitear.
+  en un kwarg se pierde en silencio al commitear. (Los `add_*` **sí** validan:
+  el constructor de SQLAlchemy levanta `TypeError` ante un kwarg que no es
+  columna, verificado en la Fase 7.)
 - Migrar timestamps float → DateTime UTC unificado.
 - Si aparece multisede real con servidor central: nodo central en
   PostgreSQL (la capa SQLAlchemy ya es portable), grabadores por sitio
@@ -107,18 +109,12 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
 
 ## Rendimiento UI
 
-- Dashboard: reemplazar el fetch de 200 eventos + todos los dispositivos cada
-  5 s por consultas `COUNT` agregadas (`ui/modules/event_dashboard.py:123-134`,
-  `ui/widgets/dashboard_panel.py:154-171`). Esas funciones no existen todavía
-  en `repository`.
-- **La galería de rostros hace trabajo de CPU en el hilo de la GUI**
-  (`ui/widgets/face_gallery.py:194,244-300`): por cada cara y cada frame
-  calcula firma, geometría y comparación contra toda la galería. Ese
-  algoritmo es lógica de dominio viviendo en un widget — mover a `core/`,
-  donde entra al scope de cobertura y se puede reusar.
-- `ui/dialogs/device_dialog.py:18` importa `sqlalchemy.exc.IntegrityError`:
-  el ORM se filtra hasta el widget porque `repository` no expone una
-  excepción de dominio.
+- **La galería de rostros sigue calculando en el hilo de la GUI.** El
+  algoritmo ya salió a `core/face_catalog.py` (Fase 7), pero
+  `FaceGallery._on_detection` lo sigue invocando desde el hilo principal por
+  cada cara y cada frame, y `analytics_engine` documenta el caso facial "en
+  modo forense a 25fps". Ahora que el cómputo no depende de Qt, moverlo a un
+  worker es barato.
 
 ## Producto (ideas de NOVA a evaluar)
 
@@ -135,6 +131,31 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
   Sitios → Zonas → Cámaras).
 
 ## Hecho
+
+- ~~La galería de rostros tiene lógica de dominio dentro de un widget~~ —
+  `core/face_catalog.py` es dueño de las capturas, el dedup por umbral, la
+  asignación de `track_id`, el reemplazo por área y el reinicio diario (con el
+  reloj inyectable, que era lo que lo hacía intesteable). El `QListWidget`
+  dejó de ser el modelo de datos: el widget aplica el `CatalogUpdate` que le
+  devuelve el catálogo y las dos listas quedan con los mismos índices.
+  `tests/test_face_catalog.py`, 39 tests donde no había ninguno.
+
+- ~~Dashboard: reemplazar el fetch de 200 eventos + todos los dispositivos
+  cada 5 s por consultas `COUNT`~~ — `count_alarm_events()` (con filtros de
+  cámara, sitio, severidad y estado), `count_devices_by_status()` y
+  `list_alarm_events(site_id=…, device_id=…)`. No era sólo costo: se cerraron
+  **dos bugs de corrección**. La tarjeta "Eventos registrados" mostraba `len()`
+  de la página de 200, o sea 200 para siempre en cuanto hubiera más; y con el
+  filtro global de sitio activo la tabla mostraba un subconjunto de los últimos
+  200 **globales** en vez de los últimos 200 de ese sitio. De paso,
+  `list_devices(site_id=…)` pasó de dos consultas a un JOIN.
+
+- ~~El ORM se filtra hasta la UI~~ — `models/errors.py` con `RepositoryError`
+  y `DuplicateError`; `repository` traduce la `IntegrityError` en su frontera
+  (`_escritura()`, que envuelve las altas y las modificaciones). `grep -rn
+  sqlalchemy aurea_vms/ui/` ya no devuelve nada, y hay un test que lo fija.
+  De yapa, los siete `add_*` y los seis `update_*` pasaron a compartir
+  `_insert`/`_update`: eran trece copias del mismo bloque de cinco líneas.
 
 - ~~El único test de integración no corre inferencia~~ — `tests/test_registry.py`
   ejercita ahora `process_frame` sobre los 5 analizadores con sus modelos reales

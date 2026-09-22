@@ -15,10 +15,10 @@ from qfluentwidgets import (
     PushButton,
     SpinBox,
 )
-from sqlalchemy.exc import IntegrityError
 
 from aurea_vms.core.rtsp_templates import DEVICE_TYPE_LABELS, DEVICE_TYPES, build_rtsp_urls
 from aurea_vms.models import repository
+from aurea_vms.models.errors import DuplicateError
 from aurea_vms.ui.dialogs.onvif_discovery_dialog import OnvifDiscoveryDialog
 from aurea_vms.ui.notify import warn
 
@@ -131,7 +131,7 @@ class DeviceDialog(QDialog):
             return
         try:
             site = repository.add_site(name=name)
-        except IntegrityError:
+        except DuplicateError:
             warn(self, "Nuevo sitio", f'Ya existe un sitio llamado "{name}".')
             return
         self._reload_sites(select_id=site.id)
