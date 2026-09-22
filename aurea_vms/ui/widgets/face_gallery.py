@@ -89,6 +89,7 @@ class FaceGallery(HeaderCardWidget):
         self.setTitle("Detecciones Faciales")
         self._device_id: int | None = None
         self._catalog = FaceCatalog()
+        self._settings: FaceCatalogSettings | None = None
 
         content = QWidget(self)
         self.viewLayout.addWidget(content)
@@ -124,12 +125,20 @@ class FaceGallery(HeaderCardWidget):
         layout.addWidget(self.list_widget)
 
         event_bus.detection.connect(self._on_detection, Qt.ConnectionType.QueuedConnection)
+        event_bus.analytics_config_changed.connect(
+            self._on_analytics_config_changed, Qt.ConnectionType.QueuedConnection
+        )
 
     def set_device(self, device_id: int | None) -> None:
         self._device_id = device_id
+        self._settings = None
         self.list_widget.clear()
         self._catalog.reset()
         self._refresh_counter()
+
+    def _on_analytics_config_changed(self, device_id: int) -> None:
+        if device_id == self._device_id:
+            self._settings = None
 
     def _clear_counter(self) -> None:
         self._catalog.clear_counter()
@@ -138,11 +147,23 @@ class FaceGallery(HeaderCardWidget):
     def _refresh_counter(self) -> None:
         self.counter_label.setText(f"IDs catalogados: {self._catalog.total_count}")
 
-    def _face_params(self) -> dict:
-        if self._device_id is None:
-            return {}
-        config = repository.get_analytics_config_for(self._device_id, "face_detection")
-        return (config.params if config else {}) or {}
+    def _face_settings(self) -> FaceCatalogSettings:
+        """Cacheado hasta que la configuración de esta cámara cambie.
+
+        Leerlo de la DB en cada evento costaba 768 us **en el hilo de la
+        GUI**, o sea ~25 consultas por segundo y por cámara contra la misma
+        base que escriben los hilos de analítica: era el costo más grande
+        del panel, más que todo el cómputo de firmas junto. La invalidación
+        llega por `analytics_config_changed`, que ya emite el módulo de
+        Analizadores al guardar."""
+        if self._settings is None:
+            config = (
+                repository.get_analytics_config_for(self._device_id, "face_detection")
+                if self._device_id is not None
+                else None
+            )
+            self._settings = FaceCatalogSettings.from_params(config.params if config else None)
+        return self._settings
 
     def _on_detection(self, event: DetectionEvent) -> None:
         """Slot con QueuedConnection: corre en el hilo de la GUI. Acá solo
@@ -160,7 +181,7 @@ class FaceGallery(HeaderCardWidget):
         if frame is None:
             return
 
-        settings = FaceCatalogSettings.from_params(self._face_params())
+        settings = self._face_settings()
         if self._catalog.apply_daily_reset(settings):
             self._refresh_counter()
 

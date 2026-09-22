@@ -109,12 +109,16 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
 
 ## Rendimiento UI
 
-- **La galería de rostros sigue calculando en el hilo de la GUI.** El
-  algoritmo ya salió a `core/face_catalog.py` (Fase 7), pero
-  `FaceGallery._on_detection` lo sigue invocando desde el hilo principal por
-  cada cara y cada frame, y `analytics_engine` documenta el caso facial "en
-  modo forense a 25fps". Ahora que el cómputo no depende de Qt, moverlo a un
-  worker es barato.
+- **La galería de rostros calcula en el hilo de la GUI — medido, y no hace
+  falta moverlo.** Números por evento de detección, en la máquina de
+  desarrollo: antes eran 768 µs de consulta a la DB + 195 µs por cara; con la
+  configuración cacheada y `geometry_signature` vectorizada quedó en **65 µs
+  por cara y ninguna consulta**, o sea 0,3 % del hilo de la GUI con 2 caras a
+  25 fps (antes 2,9 %). Lo que queda no conviene mover: el 77 % del costo de
+  publicar una miniatura es armar el `QPixmap` con su overlay (654 µs), y eso
+  **no puede** salir del hilo de la GUI. Un worker con cola compraría 0,3
+  puntos a cambio de un actor y superficie de concurrencia nueva. Revisar solo
+  si aparece un caso con muchas más caras por frame.
 
 ## Producto (ideas de NOVA a evaluar)
 

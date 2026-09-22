@@ -28,6 +28,7 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from functools import lru_cache
 
 import cv2
 import numpy as np
@@ -52,21 +53,32 @@ def face_signature(crop_bgr: np.ndarray) -> np.ndarray:
     return equalized.astype(np.float32) / 255.0
 
 
+@lru_cache(maxsize=8)
+def _indices_de_pares(cantidad: int) -> tuple[np.ndarray, np.ndarray]:
+    """Los C(n,2) pares (i<j), cacheados: los puntos siempre son los mismos
+    y armar la lista en cada frame era parte del costo."""
+    return np.triu_indices(cantidad, k=1)
+
+
 def geometry_signature(keypoints: tuple[tuple[float, float], ...] | None) -> np.ndarray | None:
     """Distancias entre cada par de los 5 puntos de referencia (ojo der,
     ojo izq, nariz, comisura de boca der, comisura de boca izq),
     normalizadas por la distancia entre ojos -- da una firma de "forma"
-    de la cara que no depende de que tan cerca/lejos este de la camara."""
+    de la cara que no depende de que tan cerca/lejos este de la camara.
+
+    Vectorizado: la version con un np.linalg.norm por par costaba 85us por
+    cara, mas que face_signature entera (54us), casi todo overhead de
+    numpy por llamada. Corre por cada cara y cada frame.
+    """
     if not keypoints or len(keypoints) < 5:
         return None
-    points = np.array(keypoints, dtype=np.float32)
-    eye_distance = float(np.linalg.norm(points[0] - points[1]))
+    points = np.asarray(keypoints, dtype=np.float32)
+    eye_distance = float(np.hypot(*(points[0] - points[1])))
     if eye_distance < 1e-3:
         return None
-    pairs = [(i, j) for i in range(len(points)) for j in range(i + 1, len(points))]
-    return np.array(
-        [np.linalg.norm(points[i] - points[j]) / eye_distance for i, j in pairs], dtype=np.float32
-    )
+    filas, columnas = _indices_de_pares(len(points))
+    deltas = points[filas] - points[columnas]
+    return (np.hypot(deltas[:, 0], deltas[:, 1]) / eye_distance).astype(np.float32)
 
 
 def clamp_bbox(
