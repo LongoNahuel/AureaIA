@@ -100,7 +100,7 @@ def _start_background_engines() -> None:
 def _stop_background_engines() -> None:
     # Orden importa: los clips en curso necesitan el stream vivo para su
     # post-buffer, asi que se espera ANTES de cortar streams/analiticas.
-    clip_recorder.wait_for_pending(15.0)
+    clip_recorder.wait_for_pending()
     stream_manager.stop_all()
     analytics_engine.stop_all()
     alarm_engine.stop()

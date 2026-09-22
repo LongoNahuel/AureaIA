@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import cv2
@@ -145,3 +147,139 @@ class TestWriteMp4:
         por_evento = repository.list_media_for_events([event.id])
         kinds = {asset.kind for asset in por_evento[event.id]}
         assert kinds == {KIND_SNAPSHOT, KIND_CLIP}
+
+
+class FakeVideoWriter:
+    """Doble de cv2.VideoWriter que nunca abre -- el modo de falla real ante
+    un codec ausente o un disco lleno: no lanza, devuelve un writer cerrado
+    y los write() son no-op."""
+
+    def __init__(self, *_args) -> None:
+        self.writes = 0
+
+    def isOpened(self) -> bool:  # noqa: N802 - API de Qt/cv2
+        return False
+
+    def write(self, _frame) -> None:
+        self.writes += 1
+
+    def release(self) -> None:
+        pass
+
+
+class TestEvidenciaQueNoMiente:
+    """B4: lo que no se pudo escribir no se indexa, se loguea y no queda
+    basura en disco (un archivo fuera del indice es invisible para el
+    RetentionWorker y no lo limpia nunca nadie)."""
+
+    def test_imwrite_fallido_no_indexa_ni_deja_archivo(self, device_y_evento, monkeypatch, caplog):
+        device, event = device_y_evento
+        escrito: list[str] = []
+
+        def fake_imwrite(path, _frame):
+            escrito.append(path)
+            Path(path).write_bytes(b"")  # cv2 puede dejar el archivo tocado
+            return False
+
+        monkeypatch.setattr(clip_recorder.cv2, "imwrite", fake_imwrite)
+
+        with caplog.at_level(logging.ERROR, logger=clip_recorder.__name__):
+            asset = clip_recorder.save_snapshot(
+                device.id, event.id, np.zeros((10, 10, 3), dtype=np.uint8)
+            )
+
+        assert asset is None
+        assert repository.list_media(kind=KIND_SNAPSHOT) == []
+        assert not Path(escrito[0]).exists()
+        assert "cv2.imwrite" in caplog.text
+
+    def test_video_writer_que_no_abre_no_indexa(self, device_y_evento, monkeypatch, caplog):
+        device, event = device_y_evento
+        monkeypatch.setattr(clip_recorder.cv2, "VideoWriter", FakeVideoWriter)
+
+        with caplog.at_level(logging.ERROR, logger=clip_recorder.__name__):
+            asset = clip_recorder._write_mp4(device.id, event.id, [(0.0, _jpeg_frame(10))])
+
+        assert asset is None
+        assert repository.list_media(kind=KIND_CLIP) == []
+        assert "VideoWriter" in caplog.text
+
+    def test_primer_frame_corrupto_no_genera_clip(self, device_y_evento):
+        """Antes reventaba con AttributeError: first_frame.shape sobre None."""
+        device, event = device_y_evento
+        frames = [(0.0, b"esto no es un jpeg"), (0.2, _jpeg_frame(10))]
+
+        assert clip_recorder._write_mp4(device.id, event.id, frames) is None
+        assert repository.list_media(kind=KIND_CLIP) == []
+
+    def test_duration_s_cuenta_los_frames_escritos_no_los_intentados(self, device_y_evento):
+        device, event = device_y_evento
+        frames = [
+            (0.0, _jpeg_frame(10)),
+            (0.2, b"corrupto"),
+            (0.4, _jpeg_frame(50)),
+            (0.6, b""),
+            (0.8, _jpeg_frame(90)),
+        ]
+
+        asset = clip_recorder._write_mp4(device.id, event.id, frames)
+
+        assert asset is not None
+        # 3 escritos de 5 intentados: el clip no puede declarar 5/CLIP_FPS.
+        assert asset.duration_s == pytest.approx(3 / clip_recorder.CLIP_FPS)
+
+    def test_un_clip_que_no_se_escribio_no_se_anuncia_como_listo(
+        self, device_y_evento, monkeypatch
+    ):
+        """La UI no puede ofrecer "ver el clip" de algo que no existe."""
+        device, event = device_y_evento
+        pre = [(1.0, _jpeg_frame(10))]
+        fake_worker = SimpleNamespace(
+            get_recent_history=lambda: list(pre), get_latest_frame=lambda: None
+        )
+        monkeypatch.setattr(clip_recorder.stream_manager, "get_worker", lambda _id: fake_worker)
+        monkeypatch.setattr(clip_recorder, "settings", SimpleNamespace(clip_post_seconds=0.1))
+        monkeypatch.setattr(clip_recorder.cv2, "VideoWriter", FakeVideoWriter)
+
+        emitted: list = []
+        from aurea_vms.core.event_bus import event_bus
+
+        event_bus.clip_ready.connect(emitted.append)
+        try:
+            clip_recorder._record_clip(device.id, event.id)
+        finally:
+            event_bus.clip_ready.disconnect(emitted.append)
+
+        assert emitted == []
+        assert repository.list_media(kind=KIND_CLIP) == []
+
+
+class TestWaitForPending:
+    def test_el_tope_sale_de_settings_y_no_de_un_15_fijo(self, monkeypatch):
+        """Con el 15.0 hardcodeado, subir clip_post_seconds por encima de 15
+        truncaba clips en cada apagado."""
+        monkeypatch.setattr(clip_recorder, "settings", SimpleNamespace(clip_post_seconds=40))
+        usados: list[float] = []
+
+        class FakeThread:
+            def join(self, timeout=None) -> None:
+                usados.append(timeout)
+
+        monkeypatch.setattr(clip_recorder, "_active_threads", [FakeThread()])
+
+        clip_recorder.wait_for_pending()
+
+        assert usados[0] == pytest.approx(40 + clip_recorder.CLIP_SHUTDOWN_MARGIN_S, abs=0.5)
+
+    def test_un_timeout_explicito_se_respeta(self, monkeypatch):
+        usados: list[float] = []
+
+        class FakeThread:
+            def join(self, timeout=None) -> None:
+                usados.append(timeout)
+
+        monkeypatch.setattr(clip_recorder, "_active_threads", [FakeThread()])
+
+        clip_recorder.wait_for_pending(2.0)
+
+        assert usados[0] == pytest.approx(2.0, abs=0.5)

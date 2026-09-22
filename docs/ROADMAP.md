@@ -9,12 +9,6 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
 
 ## Robustez (bloqueantes de demo)
 
-- 🟠 **Un clip que no se pudo escribir se registra igual como evidencia**
-  (`clip_recorder.py:133-151`): `_write_mp4` no chequea `writer.isOpened()`
-  y `save_snapshot` no mira el retorno de `cv2.imwrite`. Un códec ausente o
-  un disco lleno dejan un incidente con un `.mp4` corrupto y sin un log de
-  error. `wait_for_pending(15.0)` tampoco se valida contra
-  `settings.clip_post_seconds`.
 - **Reconexión RTSP sin backoff** (`stream_manager.py:39,93,117`): 3 s fijos
   para siempre. Y `is_stale()` solo lo consume la UI, así que un stream que
   devuelve `ok=True` repitiendo el último frame no se reconecta nunca.
@@ -151,6 +145,24 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
   Sitios → Zonas → Cámaras).
 
 ## Hecho
+
+- ~~Un clip que no se pudo escribir se registra igual como evidencia~~ —
+  `save_snapshot` mira el retorno de `cv2.imwrite` y `_write_mp4` chequea
+  `writer.isOpened()`, que el primer frame decodifique y que se haya escrito
+  al menos uno; los dos devuelven `None` con el motivo en el log y **borran el
+  archivo a medias**, porque un archivo fuera de `media_assets` es invisible
+  para el `RetentionWorker` y no lo limpia nadie
+  (`clip_recorder.py:44-57,74-94,166-244`). `media_store.register()` valida
+  existencia y tamaño y levanta `MediaWriteError` en vez de un
+  `FileNotFoundError` crudo (`media_store.py:23-33,50-64`). `duration_s` sale
+  ahora de los frames escritos, no de los intentados, y `_record_clip` ya no
+  emite `clip_ready` si no hay clip. Efecto lateral importante: una captura
+  fallida **ya no se lleva puesta la alarma** — antes la excepción subía al
+  `except` por regla de `_on_detection` y el incidente no llegaba nunca a la UI
+  (`alarm_engine.py:148-158`). `wait_for_pending()` deriva su tope de
+  `settings.clip_post_seconds` en vez del 15.0 fijo que truncaba clips en el
+  apagado. `tests/test_clip_recorder.py::TestEvidenciaQueNoMiente`,
+  `::TestWaitForPending`, `tests/test_media_store.py::TestRegister`.
 
 - ~~`QSystemTrayIcon` creado desde un hilo de analítica~~ — la acción
   `notify_desktop` de una regla viaja ahora como flag del `AlarmEvent`

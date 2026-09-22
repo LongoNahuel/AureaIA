@@ -151,8 +151,13 @@ class AlarmEngine:
         if frame is not None:
             # Queda registrada en media_assets (vinculada al evento); el DTO
             # lleva la ruta absoluta solo para el thumbnail del popup.
+            # Puede devolver None: una captura que no se pudo escribir se
+            # loguea y se descarta, pero el incidente sigue su curso. Antes
+            # la excepcion subia hasta el except por regla de _on_detection y
+            # se perdia la alarma ENTERA por no haber podido escribir un jpg.
             asset = clip_recorder.save_snapshot(event.device_id, row.id, frame)
-            snapshot_path = str(media_store.absolute_path(asset.rel_path))
+            if asset is not None:
+                snapshot_path = str(media_store.absolute_path(asset.rel_path))
 
         if (rule.actions or {}).get("save_clip"):
             clip_recorder.record_clip_async(event.device_id, row.id)

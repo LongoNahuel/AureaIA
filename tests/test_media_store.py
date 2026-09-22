@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from aurea_vms.core import media_store
+from aurea_vms.models import repository
 
 
 @pytest.fixture(autouse=True)
@@ -41,3 +42,34 @@ class TestPaths:
         path = media_store.prepare_path("clip/2026/08/24/3/x.mp4")
         assert path.parent.is_dir()
         assert not path.exists()
+
+
+class TestRegister:
+    """B4: media_assets es el unico indice de evidencia. Una fila que apunta
+    a un archivo inexistente o vacio es peor que no tener la fila, porque el
+    operador la ve listada como evidencia valida del incidente."""
+
+    def test_archivo_inexistente_no_se_indexa(self, temp_db):
+        with pytest.raises(media_store.MediaWriteError):
+            media_store.register("clip", 1, "clip/2026/09/22/1/no-existe.mp4", timestamp=1.0)
+        assert repository.list_media(kind="clip") == []
+
+    def test_archivo_vacio_no_se_indexa(self, temp_db):
+        """El modo de falla real de un VideoWriter que no abrio: el archivo
+        existe, pesa 0 bytes y no hay nada que reproducir."""
+        rel_path = "clip/2026/09/22/1/vacio.mp4"
+        media_store.prepare_path(rel_path).touch()
+
+        with pytest.raises(media_store.MediaWriteError):
+            media_store.register("clip", 1, rel_path, timestamp=1.0)
+        assert repository.list_media(kind="clip") == []
+
+    def test_archivo_con_contenido_se_indexa_con_su_tamano(self, temp_db):
+        device = repository.add_device(name="Cam", ip="10.0.0.1", rtsp_main_url="rtsp://c/x")
+        rel_path = f"clip/2026/09/22/{device.id}/ok.mp4"
+        media_store.prepare_path(rel_path).write_bytes(b"x" * 321)
+
+        asset = media_store.register("clip", device.id, rel_path, timestamp=1.0)
+
+        assert asset.size_bytes == 321
+        assert asset.rel_path == rel_path

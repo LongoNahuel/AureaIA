@@ -112,6 +112,27 @@ class TestTrigger:
         desktop_notify aca, la llamada vuelve al hilo de la analitica."""
         assert not hasattr(ae_module, "desktop_notify")
 
+    def test_una_captura_fallida_no_se_lleva_puesta_la_alarma(self, temp_db, monkeypatch):
+        """B4: antes, un imwrite fallido dejaba a media_store.register
+        explotando con FileNotFoundError; la excepcion subia al except por
+        regla de _on_detection y el incidente NUNCA llegaba a la UI. Se
+        perdia la alarma entera por no haber podido escribir un jpg."""
+        _device, rule, event, _snaps, _clips = _setup(temp_db, monkeypatch, actions={})
+        monkeypatch.setattr(ae_module.clip_recorder, "save_snapshot", lambda *a, **k: None)
+
+        emitted: list = []
+        event_bus.alarm.connect(emitted.append)
+        try:
+            AlarmEngine._trigger(rule, event, event.detections[0])
+        finally:
+            event_bus.alarm.disconnect(emitted.append)
+
+        # El incidente se persiste igual...
+        assert len(repository.list_alarm_events()) == 1
+        # ...y la UI se entera, solo que sin thumbnail.
+        assert len(emitted) == 1
+        assert emitted[0].snapshot_path is None
+
     def test_sin_frame_no_hay_snapshot(self, temp_db, monkeypatch):
         _device, rule, event, snapshots, _clips = _setup(temp_db, monkeypatch, actions={})
         monkeypatch.setattr(ae_module.stream_manager, "get_worker", lambda _id: None)
