@@ -26,22 +26,6 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
 
 ## Datos
 
-- **`AlarmRule` usa la API legacy `Column`/`Any`** (`models/alarm_rule.py:19-40`)
-  mientras los otros 7 modelos usan `Mapped`. Consecuencia real:
-  `analyzer_name`, `min_confidence`, `cooldown_seconds`, `severity`,
-  `actions` y `enabled` quedaron **nullables** a nivel de esquema.
-- Falta `UNIQUE(device_id, analyzer_name)` en `analytics_configs`, que
-  `upsert_analytics_config`/`get_analytics_config_for` asumen con
-  `.one_or_none()` (`repository.py:177-187,190-211`). Un duplicado rompe el
-  arranque de analíticas con `MultipleResultsFound`.
-- Falta índice en `alarm_events.status` (lo filtra el dashboard,
-  `repository.py:299-307`); sobra el `index=True` de `alarm_events.device_id`,
-  ya cubierto por `ix_alarm_events_device_ts`. Falta `UNIQUE(site_id, name)`
-  en `zones`.
-- Los seis `update_*` de `repository` hacen `setattr` sin whitelist: un typo
-  en un kwarg se pierde en silencio al commitear. (Los `add_*` **sí** validan:
-  el constructor de SQLAlchemy levanta `TypeError` ante un kwarg que no es
-  columna, verificado en la Fase 7.)
 - Migrar timestamps float → DateTime UTC unificado.
 - Si aparece multisede real con servidor central: nodo central en
   PostgreSQL (la capa SQLAlchemy ya es portable), grabadores por sitio
@@ -129,6 +113,20 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
   Sitios → Zonas → Cámaras).
 
 ## Hecho
+
+- ~~Constraints e índices que faltaban, y kwargs que se perdían en silencio~~ —
+  revisión `0004_constraints`. `AlarmRule` salió de la API legacy `Column` y
+  sus ocho columnas dejaron de ser nullables; `UNIQUE(device_id, analyzer_name)`
+  en `analytics_configs` y `UNIQUE(site_id, name)` en `zones`; índice en
+  `alarm_events.status` y se fue el de `device_id`, redundante con el
+  compuesto. La revisión **sanea antes de restringir** — rellena NULLs con los
+  defaults del modelo, deduplica configuraciones quedándose con la más
+  reciente, y fusiona zonas duplicadas **reapuntando sus cámaras antes** de
+  borrar, porque `Device.zone_id` es SET NULL y borrar primero las dejaría
+  "Sin zona". Los seis `update_*` y el upsert levantan `ValueError` ante un
+  kwarg que no es columna, igual que ya hacían los `add_*`.
+  `tests/test_constraints.py` y `tests/test_repository_kwargs.py`, que incluye
+  la guarda sobre los 10 call-sites que pasan `**dict` desde los diálogos.
 
 - ~~Migraciones ad-hoc sin versionado de esquema~~ — Alembic, con las
   revisiones dentro del paquete (`aurea_vms/migrations/`) para que el `.exe`

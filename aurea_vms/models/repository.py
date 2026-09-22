@@ -7,9 +7,11 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from functools import cache
 from typing import TypeVar
 
 from sqlalchemy import func
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -61,8 +63,32 @@ def _insert(model: type[T], fields: dict) -> T:
         return row
 
 
+@cache
+def columnas_de(model: type) -> frozenset[str]:
+    """Nombres de las columnas mapeadas de un modelo."""
+    return frozenset(columna.key for columna in sa_inspect(model).mapper.column_attrs)
+
+
+def _validar_campos(model: type, fields: dict) -> None:
+    """Un kwarg que no es columna levanta, en vez de perderse en silencio.
+
+    Los add_* ya lo hacen desde siempre: el constructor declarativo de
+    SQLAlchemy levanta TypeError ante un kwarg desconocido. Los update_*
+    usaban setattr, que crea alegremente un atributo Python que nunca llega
+    al UPDATE -- el clasico "guardé y no pasó nada", sin error, sin log y sin
+    forma de darse cuenta salvo mirando la base.
+    """
+    desconocidos = sorted(set(fields) - columnas_de(model))
+    if desconocidos:
+        raise ValueError(
+            f"{model.__name__} no tiene la(s) columna(s) {desconocidos}. "
+            f"Válidas: {sorted(columnas_de(model))}"
+        )
+
+
 def _update(model: type, row_id: int, fields: dict) -> None:
     """Un id inexistente es un no-op silencioso, igual que antes."""
+    _validar_campos(model, fields)
     with _escritura() as session:
         row = session.get(model, row_id)
         if row is not None:
@@ -230,6 +256,7 @@ def upsert_analytics_config(
     device_id: int, analyzer_name: str, **fields: object
 ) -> AnalyticsConfig:
     analyzer_name = _normalize_analyzer_name(analyzer_name)
+    _validar_campos(AnalyticsConfig, fields)
     with _escritura() as session:
         config = (
             session.query(AnalyticsConfig)

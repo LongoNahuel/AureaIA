@@ -83,8 +83,8 @@ familia YOLO.
 
 ## Base de datos
 
-SQLite vía SQLAlchemy 2.0 (`models/db.py`) — salvo `AlarmRule`, que
-todavía usa la API legacy `Column` (ver ROADMAP). **Reglas de portabilidad**
+SQLite vía SQLAlchemy 2.0 (`models/db.py`), los 8 modelos con
+`Mapped`/`mapped_column`. **Reglas de portabilidad**
 (la DB puede cambiar de motor a futuro): tipos estándar, cero SQL crudo
 en la lógica, todo lo SQLite-específico vive en listeners/guards del
 engine (los `PRAGMA` de `_apply_sqlite_pragmas`) y en las revisiones de

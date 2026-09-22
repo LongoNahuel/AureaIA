@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aurea_vms.models.db import Base
@@ -8,6 +8,14 @@ from aurea_vms.models.db import Base
 
 class AnalyticsConfig(Base):
     __tablename__ = "analytics_configs"
+
+    # Una configuracion por (camara, analizador). `upsert_analytics_config` y
+    # `get_analytics_config_for` ya asumian esa unicidad con `.one_or_none()`
+    # sin que el esquema la garantizara: un duplicado -- dos guardados
+    # simultaneos, una importacion a mano -- rompia el arranque de las
+    # analiticas con MultipleResultsFound, y el error aparecia en main.py,
+    # lejos de la causa.
+    __table_args__ = (UniqueConstraint("device_id", "analyzer_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # Borrar la camara borra su configuracion de analiticas.

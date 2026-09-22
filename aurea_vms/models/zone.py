@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aurea_vms.models.db import Base
@@ -12,6 +12,12 @@ class Zone(Base):
     camaras y (a futuro) priorizarlas en reportes."""
 
     __tablename__ = "zones"
+
+    # Dos zonas con el mismo nombre en un sitio no se distinguen en ningun
+    # selector de la UI. Ademas el backfill de zonas y el seed de demo buscan
+    # la zona "General" por (site_id, name) y crean si no esta: sin unique,
+    # una carrera deja dos.
+    __table_args__ = (UniqueConstraint("site_id", "name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # CASCADE: borrar un sitio borra sus zonas (a diferencia de las

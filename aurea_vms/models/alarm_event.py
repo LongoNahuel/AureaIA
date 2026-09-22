@@ -27,7 +27,10 @@ class AlarmEvent(Base):
     )
     # Borrar la camara si borra sus eventos (sin camara no hay contexto
     # ni media asociada que mostrar).
-    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    # Sin index=True propio: lo cubre el compuesto ix_alarm_events_device_ts,
+    # que empieza por device_id. Un indice de mas es escritura de mas en cada
+    # alarma y una pagina mas de base que mantener.
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))
     timestamp: Mapped[float] = mapped_column(Float, index=True)
     object_class: Mapped[str] = mapped_column(String(60))
     confidence: Mapped[float] = mapped_column(Float)
@@ -36,5 +39,7 @@ class AlarmEvent(Base):
     severity: Mapped[str] = mapped_column(String(20), default="medio")
     # La media del evento (captura, clip) vive en media_assets, vinculada
     # por alarm_event_id -- este modelo ya no guarda rutas de archivos.
-    status: Mapped[str] = mapped_column(String(20), default=STATUS_NEW)
+    # Indexado: el tile de alarmas pendientes del dashboard lo filtra cada
+    # 5 segundos (repository.count_pending_alarm_events).
+    status: Mapped[str] = mapped_column(String(20), default=STATUS_NEW, index=True)
     notes: Mapped[str] = mapped_column(String(4000), default="")
