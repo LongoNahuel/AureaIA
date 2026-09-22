@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 
 # Los tests nunca deben abrir ventanas reales (ni fallar en un runner de CI
 # sin display) -- se fija antes de que cualquier import cree la QApplication.
@@ -11,11 +12,34 @@ import pytest  # noqa: E402
 from aurea_vms.models import db as db_module  # noqa: E402
 
 
+@pytest.fixture(scope="session")
+def _plantilla_migrada(tmp_path_factory):
+    """Una base ya migrada, creada UNA vez por corrida.
+
+    init_db sobre una base nueva cuesta ~73ms porque aplica las revisiones de
+    Alembic una por una. Con ~60 tests usando temp_db eso son mas de 4
+    segundos de cada corrida gastados en recrear siempre el mismo esquema.
+    Se migra una sola vez y cada test copia el archivo.
+    """
+    ruta = tmp_path_factory.mktemp("plantilla") / "plantilla.sqlite3"
+    db_module.init_db(ruta, force=True)
+    # dispose() cierra las conexiones y vuelca el WAL al archivo principal:
+    # sin eso, la copia se llevaria un esquema incompleto.
+    db_module._engine.dispose()
+    db_module._engine = None
+    db_module._SessionLocal = None
+    return ruta
+
+
 @pytest.fixture()
-def temp_db(tmp_path):
-    """Inicializa una base sqlite temporal y aislada para el test."""
-    db_module.init_db(tmp_path / "test.sqlite3", force=True)
+def temp_db(tmp_path, _plantilla_migrada):
+    """Base sqlite temporal y aislada para el test, copiada de la plantilla."""
+    destino = tmp_path / "test.sqlite3"
+    shutil.copyfile(_plantilla_migrada, destino)
+    db_module.init_db(destino, force=True)
     yield
+    if db_module._engine is not None:
+        db_module._engine.dispose()
     db_module._engine = None
     db_module._SessionLocal = None
 

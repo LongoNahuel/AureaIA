@@ -26,6 +26,12 @@ datas = [
     # maquina de demo puede no tener internet -- el download es solo
     # ultimo recurso).
     ("data/models", "models"),
+    # Revisiones de Alembic: la app migra la base del cliente al arrancar
+    # (models/db.py::migrar), asi que sin estos archivos el .exe no puede
+    # aplicar un cambio de esquema -- y no hay nadie que corra
+    # "alembic upgrade" a mano en una sala. El smoke del ejecutable es la
+    # prueba de que llegaron: init_db() corre dentro de --smoke.
+    ("aurea_vms/migrations", "aurea_vms/migrations"),
 ]
 
 # WSDL de onvif-zeep: viven en site-packages/wsdl (fuera del paquete
@@ -37,6 +43,10 @@ if _wsdl_dir.exists():
 
 binaries = []
 hiddenimports = collect_submodules("onvif") + ["zeep"]
+
+# Alembic carga env.py y cada revision con importlib, por ruta: el analisis
+# estatico de PyInstaller no ve ninguno de esos imports.
+hiddenimports += collect_submodules("alembic") + ["logging.config"]
 
 # onnxruntime: sus .dll/.pyd + datas internos cargan en runtime; sin
 # collect_all la sesion de inferencia muere recien al crear el primer

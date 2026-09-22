@@ -26,12 +26,6 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
 
 ## Datos
 
-- **Alembic**: hoy las migraciones son ad-hoc (`models/db.py:66,77-131`),
-  sin tabla de versión de esquema — no se puede saber en qué estado está
-  una DB de campo salvo inspeccionando columnas, y una columna agregada al
-  modelo pero olvidada en `_ADHOC_COLUMNS` rompe la DB vieja en silencio.
-- Dos `UPDATE` de migración de datos corren en **cada** arranque, para
-  siempre (`models/db.py:123-130`). Pertenecen a una revisión versionada.
 - **`AlarmRule` usa la API legacy `Column`/`Any`** (`models/alarm_rule.py:19-40`)
   mientras los otros 7 modelos usan `Mapped`. Consecuencia real:
   `analyzer_name`, `min_confidence`, `cooldown_seconds`, `severity`,
@@ -135,6 +129,22 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
   Sitios → Zonas → Cámaras).
 
 ## Hecho
+
+- ~~Migraciones ad-hoc sin versionado de esquema~~ — Alembic, con las
+  revisiones dentro del paquete (`aurea_vms/migrations/`) para que el `.exe`
+  se las lleve. `init_db` cubre los tres caminos: base nueva, base ya
+  versionada (con corte temprano, 73 ms → <1 ms en cada arranque a partir del
+  segundo) y base **anterior** a Alembic, que se adopta una sola vez y se
+  marca en la baseline. Los dos `UPDATE` de datos y el backfill de zonas
+  dejaron de correr en cada arranque: son la revisión `0002_datos_legados`.
+  Se fue además la columna legada `devices.site_id` (`0003`), y
+  `Base.metadata` lleva `naming_convention`, que es lo que la fase de
+  constraints va a necesitar para `batch_alter_table`.
+  Al adoptar apareció que el sistema ad-hoc **agregaba columnas pero nunca
+  sus índices**: la base de desarrollo venía sin `ix_devices_zone_id` desde
+  que existen las zonas. La adopción los crea. `tests/test_db_migrations.py`,
+  18 tests, incluido uno que corre `compare_metadata` y exige que la base
+  migrada no tenga ninguna deriva contra los modelos.
 
 - ~~La galería de rostros tiene lógica de dominio dentro de un widget~~ —
   `core/face_catalog.py` es dueño de las capturas, el dedup por umbral, la

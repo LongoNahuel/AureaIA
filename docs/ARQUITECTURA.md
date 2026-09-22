@@ -87,9 +87,27 @@ SQLite vía SQLAlchemy 2.0 (`models/db.py`) — salvo `AlarmRule`, que
 todavía usa la API legacy `Column` (ver ROADMAP). **Reglas de portabilidad**
 (la DB puede cambiar de motor a futuro): tipos estándar, cero SQL crudo
 en la lógica, todo lo SQLite-específico vive en listeners/guards del
-engine (`PRAGMA foreign_keys=ON`, migración ad-hoc de `devices.site_id`).
-Alembic entra cuando el esquema se estabilice, antes de la primera
-instalación en campo.
+engine (los `PRAGMA` de `_apply_sqlite_pragmas`) y en las revisiones de
+migración.
+
+**El esquema está versionado con Alembic** (`aurea_vms/migrations/`). La app
+migra sola al arrancar (`models/db.py::migrar`): en una instalación de
+cliente no hay nadie que corra `alembic upgrade` a mano. Tres caminos, y los
+tres terminan en la última revisión — base nueva (la crea la baseline), base
+ya versionada (aplica lo que falte, y si no falta nada corta temprano), y
+base **anterior** a Alembic, que se adopta una sola vez
+(`migrations/adopcion.py`) y se marca en la baseline.
+
+Las revisiones viven **dentro del paquete**, no en la raíz del repo, para
+que PyInstaller las empaquete: sin ellas el `.exe` no puede migrar la base
+del cliente. `Base.metadata` lleva una `naming_convention` porque SQLite no
+sabe alterar una tabla — Alembic lo emula recreándola con
+`batch_alter_table`, y para eso necesita poder referenciar cada constraint
+por nombre.
+
+Para agregar un cambio de esquema: tocar el modelo y correr
+`alembic revision --autogenerate -m "lo que cambia"` (el `alembic.ini` de la
+raíz es solo para esto; la app arma su config en memoria).
 
 8 tablas: `sites`, `zones`, `devices` (credenciales de cámara — **hoy en
 texto plano, ver ROADMAP**), `analytics_configs`, `alarm_rules`,

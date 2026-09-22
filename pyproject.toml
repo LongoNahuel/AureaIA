@@ -7,6 +7,10 @@ dependencies = [
     "PySide6>=6.7",
     "opencv-python>=4.10",
     "SQLAlchemy>=2.0",
+    # Versionado de esquema. Las revisiones viven DENTRO del paquete
+    # (aurea_vms/migrations) para que PyInstaller las empaquete: sin ellas,
+    # el .exe no puede migrar la base del cliente.
+    "alembic>=1.13",
     "numpy>=1.26",
     "onvif-zeep>=0.2.12",
     "wsdiscovery>=2.0",
@@ -69,7 +73,13 @@ source = [
     "aurea_vms.core",
     "aurea_vms.models",
     "aurea_vms.config",
+    "aurea_vms.migrations",
 ]
+# env.py SI se ejecuta (cada migracion lo carga), pero Alembic lo importa
+# con importlib bajo un nombre de modulo sintetico y coverage no puede
+# atribuirle las lineas. Omitirlo evita un 0% que miente; lo que prueba que
+# funciona son los tests de tests/test_db_migrations.py, que migran de verdad.
+omit = ["*/migrations/env.py"]
 
 [tool.coverage.report]
 show_missing = true

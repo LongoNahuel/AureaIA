@@ -1,21 +1,65 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import create_engine, event
+from alembic import command
+from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
+from sqlalchemy import MetaData, create_engine, event, inspect
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from aurea_vms.config.settings import settings
+from aurea_vms.migrations import BASELINE_REVISION, MIGRATIONS_DIR
+from aurea_vms.migrations.adopcion import adoptar
+
+# Nombres deterministas para indices y constraints. SQLite no sabe alterar
+# una tabla: Alembic emula ALTER con batch_alter_table, que copia la tabla
+# entera -- y para eso necesita poder referenciar cada constraint POR NOMBRE.
+# Sin esta convencion, las constraints que SQLAlchemy genera anonimas (todo
+# lo que sale de index=True, unique=True o un ForeignKey) no se pueden tocar
+# desde una migracion, que es exactamente lo que necesita la fase de
+# constraints e indices.
+NAMING_CONVENTION = {
+    "ix": "ix_%(table_name)s_%(column_0_N_name)s",
+    "uq": "uq_%(table_name)s_%(column_0_N_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
 
 
 class Base(DeclarativeBase):
-    pass
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
+
+logger = logging.getLogger(__name__)
 
 _engine = None
 _SessionLocal: sessionmaker[Session] | None = None
+
+
+def importar_modelos() -> None:
+    """Registra las 8 tablas en Base.metadata.
+
+    Los modelos no se importan en ningun lado por su valor: se importan para
+    que el mapeo declarativo corra. Lo necesitan el autogenerate de Alembic
+    (ver migrations/env.py), la adopcion de bases viejas y cualquier cosa que
+    lea el metadata.
+    """
+    from aurea_vms.models import (  # noqa: F401
+        alarm_event,
+        alarm_rule,
+        analytics_config,
+        device,
+        media_asset,
+        site,
+        user,
+        zone,
+    )
 
 
 # Milisegundos que una conexion reintenta antes de rendirse con "database
@@ -71,7 +115,8 @@ def _apply_sqlite_pragmas(dbapi_connection, _record) -> None:
 
 
 def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
-    """Crea el engine (si no existe, o si force=True) y todas las tablas.
+    """Crea el engine (si no existe, o si force=True) y deja la base en la
+    ultima revision de esquema.
 
     db_path permite apuntar a una base distinta a la de settings (usado en
     tests para aislar cada corrida en un sqlite temporal).
@@ -92,119 +137,57 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
         event.listen(_engine, "connect", _apply_sqlite_pragmas)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
-    # Importar los modelos para que queden registrados en Base.metadata
-    from aurea_vms.models import (  # noqa: F401
-        alarm_event,
-        alarm_rule,
-        analytics_config,
-        device,
-        media_asset,
-        site,
-        user,
-        zone,
-    )
-
-    Base.metadata.create_all(_engine)
-    _apply_adhoc_migrations()
+    importar_modelos()
+    migrar(_engine, path)
 
 
-# Columnas nuevas por tabla, agregadas a los modelos despues de que bases
-# de desarrollo pre-existentes ya tenian la tabla creada (create_all crea
-# tablas nuevas pero no altera las existentes). Cada entrada es
-# (columna, DDL sin "ADD COLUMN"); se aplican en orden y solo si faltan.
-# Cualquier cambio mas profundo (renombrar, borrar) se resuelve recreando
-# la DB. Alembic reemplaza esto cuando el esquema se estabilice, antes de
-# la primera instalacion en campo.
-_ADHOC_COLUMNS: dict[str, list[tuple[str, str]]] = {
-    "devices": [
-        # El ON DELETE SET NULL replica el ondelete del modelo (Device.zone_id):
-        # sin él, con PRAGMA foreign_keys=ON, borrar una zona con cámaras
-        # asignadas falla con IntegrityError en las DBs migradas.
-        ("zone_id", "INTEGER REFERENCES zones(id) ON DELETE SET NULL"),
-        ("device_type", "VARCHAR(10) NOT NULL DEFAULT 'ipc'"),
-        ("channel", "INTEGER NOT NULL DEFAULT 1"),
-        ("manufacturer", "VARCHAR(80)"),
-        ("model", "VARCHAR(120)"),
-        ("firmware_version", "VARCHAR(120)"),
-        ("serial_number", "VARCHAR(120)"),
-    ],
-    "sites": [
-        ("description", "VARCHAR(300) NOT NULL DEFAULT ''"),
-    ],
-    "alarm_events": [
-        ("severity", "VARCHAR(20) NOT NULL DEFAULT 'medio'"),
-        ("status", "VARCHAR(20) NOT NULL DEFAULT 'nueva'"),
-        ("notes", "VARCHAR(4000) NOT NULL DEFAULT ''"),
-    ],
-    "alarm_rules": [
-        ("severity", "VARCHAR(20) NOT NULL DEFAULT 'medio'"),
-        ("schedule_days", "JSON NOT NULL DEFAULT '[]'"),
-        ("schedule_start", "VARCHAR(5)"),
-        ("schedule_end", "VARCHAR(5)"),
-    ],
-}
+def _config_de_alembic(db_path: Path) -> Config:
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS_DIR))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    return config
 
 
-def _apply_adhoc_migrations() -> None:
-    """Aplica las columnas de _ADHOC_COLUMNS que falten en cada tabla ya
-    existente (una tabla nueva, creada recien por create_all, ya sale con
-    el esquema completo y no necesita nada de esto)."""
-    assert _engine is not None
-    if _engine.dialect.name != "sqlite":
+def migrar(engine, db_path: Path) -> None:
+    """Lleva la base a la ultima revision, venga de donde venga.
+
+    Tres casos, y los tres terminan en `upgrade head`:
+
+    - Base nueva: no hay tablas, las crea la revision baseline.
+    - Base ya versionada: aplica lo que falte.
+    - Base ANTERIOR a Alembic (tiene tablas pero no alembic_version): se
+      adopta -- se la lleva a la forma de la baseline con las columnas
+      ad-hoc que se venian agregando a mano -- y se la marca en esa
+      revision. Pasa una sola vez por base.
+
+    La app migra sola al arrancar porque en una instalacion de cliente no
+    hay nadie que corra `alembic upgrade` a mano.
+    """
+    config = _config_de_alembic(db_path)
+    cabeza = ScriptDirectory.from_config(config).get_current_head()
+
+    with engine.connect() as connection:
+        revision = MigrationContext.configure(connection).get_current_revision()
+        tablas = set(inspect(connection).get_table_names())
+
+    if revision == cabeza:
+        # El caso normal de todos los arranques a partir del segundo. Se
+        # corta aca para no cargar env.py ni armar la maquinaria de upgrade
+        # solo para descubrir que no hay nada que aplicar (73ms -> <1ms).
         return
-    with _engine.connect() as conn:
-        for table, columns in _ADHOC_COLUMNS.items():
-            existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
-            if not existing:
-                continue
-            for name, ddl in columns:
-                if name not in existing:
-                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
-        _backfill_zones_from_legacy_site_id(conn)
-        conn.exec_driver_sql(
-            "UPDATE analytics_configs SET analyzer_name = 'door_state' "
-            "WHERE analyzer_name = 'motion_detection'"
-        )
-        conn.exec_driver_sql(
-            "UPDATE alarm_rules SET analyzer_name = 'door_state' "
-            "WHERE analyzer_name = 'motion_detection'"
-        )
-        conn.commit()
+
+    if revision is None and tablas - {"alembic_version"}:
+        adoptar(engine, Base.metadata)
+        logger.info("Base de datos sin versionar: adoptada en la revisión %s", BASELINE_REVISION)
+        command.stamp(config, BASELINE_REVISION)
+
+    command.upgrade(config, "head")
 
 
-def _backfill_zones_from_legacy_site_id(conn) -> None:
-    """Las DBs anteriores a la jerarquia Sitio->Zona asignaban camaras
-    directo al sitio (devices.site_id, columna que el modelo actual ya no
-    declara pero que esas DBs conservan). Sin backfill, toda camara
-    asignada aparecia "Sin zona" en silencio tras migrar. Se crea (o reusa)
-    una zona "General" por sitio, se copia la asignacion y se consume el
-    site_id legado -- consumirlo hace el paso de una sola vez: desasignar
-    una camara despues no la re-asigna en el proximo arranque."""
-    device_columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(devices)")}
-    if "site_id" not in device_columns or "zone_id" not in device_columns:
-        return
-    legacy_site_ids = conn.exec_driver_sql(
-        "SELECT DISTINCT site_id FROM devices WHERE site_id IS NOT NULL AND zone_id IS NULL"
-    ).fetchall()
-    for (site_id,) in legacy_site_ids:
-        # El site_id legado no tenia FK confiable: si el sitio ya no existe,
-        # la camara queda "Sin zona" (no hay donde colgarla).
-        if conn.exec_driver_sql("SELECT 1 FROM sites WHERE id = ?", (site_id,)).fetchone() is None:
-            continue
-        zone_row = conn.exec_driver_sql(
-            "SELECT id FROM zones WHERE site_id = ? AND name = 'General'", (site_id,)
-        ).fetchone()
-        if zone_row is not None:
-            zone_id = zone_row[0]
-        else:
-            zone_id = conn.exec_driver_sql(
-                "INSERT INTO zones (site_id, name, critical) VALUES (?, 'General', 0)", (site_id,)
-            ).lastrowid
-        conn.exec_driver_sql(
-            "UPDATE devices SET zone_id = ? WHERE site_id = ? AND zone_id IS NULL",
-            (zone_id, site_id),
-        )
-    conn.exec_driver_sql("UPDATE devices SET site_id = NULL WHERE site_id IS NOT NULL")
+def revision_actual(engine) -> str | None:
+    """Revision en la que esta la base, o None si nunca se versiono."""
+    with engine.connect() as connection:
+        return MigrationContext.configure(connection).get_current_revision()
 
 
 @contextmanager
