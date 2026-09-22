@@ -109,8 +109,9 @@ Para agregar un cambio de esquema: tocar el modelo y correr
 `alembic revision --autogenerate -m "lo que cambia"` (el `alembic.ini` de la
 raíz es solo para esto; la app arma su config en memoria).
 
-8 tablas: `sites`, `zones`, `devices` (credenciales de cámara — **hoy en
-texto plano, ver ROADMAP**), `analytics_configs`, `alarm_rules`,
+8 tablas: `sites`, `zones`, `devices` (credenciales de cámara cifradas en
+reposo — ver `core/credential_store.py` para el alcance real de esa
+protección), `analytics_configs`, `alarm_rules`,
 `alarm_events`, `media_assets`, `users`. La jerarquía es
 Sitio → Zona → Cámara.
 

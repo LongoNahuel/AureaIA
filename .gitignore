@@ -19,6 +19,10 @@ data/media/*
 !data/snapshots/.gitkeep
 !data/media/.gitkeep
 data/preferences.json
+# Clave de cifrado de las credenciales de camara (core/credential_store.py).
+# Commitearla convertiria el cifrado en decoracion: cualquiera con el repo
+# podria descifrar la base de cualquier instalacion.
+data/camera_key
 *.log
 
 .pytest_cache/

@@ -6,14 +6,19 @@ la baseline. O sea que una tabla creada durante la adopcion nace ya con la
 forma de la ultima revision -- y despues las revisiones intermedias intentan
 aplicarle cambios que esa tabla ya tiene.
 
-El caso concreto que lo destapo: una base vieja sin `alarm_events`. La
-adopcion la crea con el modelo de hoy, que ya no lleva `index=True` en
-`device_id`; despues 0004 intentaba borrar `ix_alarm_events_device_id` y
-moria con "no such index".
+Dos casos concretos, uno por revision:
 
-Regla, entonces: **toda revision que borre o cree un indice chequea primero**.
-Alterar columnas o agregar constraints no necesita esto (la adopcion no
-altera nada existente, solo agrega columnas sueltas).
+- 0004: una base vieja sin `alarm_events`. La adopcion la crea con el modelo
+  de hoy, que ya no lleva `index=True` en `device_id`; despues la revision
+  intentaba borrar `ix_alarm_events_device_id` y moria con "no such index".
+- 0005: una base vieja sin `users`. La adopcion la crea con las columnas de
+  lockout ya puestas, y la revision moria con "duplicate column name:
+  failed_attempts".
+
+Regla, entonces: **toda revision que cree o borre un indice, o agregue una
+columna, chequea primero**. Alterar una columna existente o agregar una
+constraint no lo necesita: son idempotentes o fallan ruidosamente, no en
+silencio.
 """
 
 from __future__ import annotations

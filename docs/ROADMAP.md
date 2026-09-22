@@ -14,15 +14,17 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
 
 ## Seguridad
 
-- 🔴 **Credenciales de cámara en texto plano** (`devices.password`,
-  `models/device.py:24-25`). Cifrar en reposo (clave derivada de una master
-  key local o DPAPI en Windows) o al menos mover el data-dir a un perfil
-  con ACLs.
-- 🔴 **PBKDF2 con 260.000 iteraciones** (`core/auth.py:18`), por debajo del
-  mínimo OWASP actual (≥600.000). El salt de 16 bytes por usuario sí es
-  correcto. Subir la constante sola no re-hashea nada: hace falta
-  rehash-on-login, y persistir las iteraciones junto al hash.
-- 🔴 Rate-limit / lockout de intentos de login (`core/auth.py:52-69`).
+- **Master password para las credenciales de cámara.** Hoy la clave de
+  cifrado vive en un archivo 0600 al lado de la base
+  (`core/credential_store.py`), lo que saca las contraseñas de los backups y
+  de cualquier inspección casual, pero **no es secreto** contra alguien que
+  ya entró al equipo con el usuario de la app. Secreto real necesita que el
+  usuario tipee una master password al arrancar — y eso choca con que un VMS
+  de sala tiene que levantar solo después de un corte de luz. Decisión
+  consciente, a revisar si un cliente lo pide por contrato.
+- El enforcement de permisos es **solo de UI** (`core/permissions.py:9-11`):
+  nada impide llamar al repositorio directo desde un script.
+
 
 ## Datos
 
@@ -113,6 +115,31 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
   Sitios → Zonas → Cámaras).
 
 ## Hecho
+
+- ~~Credenciales de cámara en texto plano~~ — cifradas en reposo con Fernet,
+  clave en `<data_dir>/camera_key` creada con 0600 de entrada (no con un
+  `chmod` después: entre el `write` y el `chmod` hay una ventana en la que la
+  clave es legible). El cifrado vive en un `TypeDecorator`
+  (`models/types.py`), así que `device.password` sigue siendo texto plano en
+  Python y **ninguno de los doce lugares que lo leen cambió**. La revisión
+  `0005` ensancha la columna y cifra lo que ya estaba. Si la clave no
+  corresponde se devuelve vacío y se loguea, en vez de dejar la lista de
+  cámaras sin abrir.
+
+- ~~PBKDF2 con 260.000 iteraciones~~ — 600.000, con el hash en formato
+  auto-descriptivo `pbkdf2_sha256$<iteraciones>$<salt>$<hash>`. Que el coste
+  viaje adentro es lo que permite subirlo sin resetearle la contraseña a
+  nadie: `authenticate` valida contra los parámetros de ESE hash y lo
+  re-calcula al vuelo si quedaron viejos. La comparación pasó a
+  `hmac.compare_digest`, y `create_user` valida la política de contraseña —
+  era el único camino de alta que no lo hacía.
+
+- ~~Rate-limit / lockout de intentos de login~~ — `failed_attempts` y
+  `locked_until` en `users`, persistidos y no en memoria: un dict de módulo
+  se resetea cerrando y abriendo la app, que es justo lo que puede hacer
+  quien está sentado frente a la máquina. 5 intentos, 15 minutos, **por
+  ventana de tiempo y nunca permanente**. Un reset de admin levanta el
+  bloqueo. El diálogo de login distingue "te equivocaste" de "esperá".
 
 - ~~Constraints e índices que faltaban, y kwargs que se perdían en silencio~~ —
   revisión `0004_constraints`. `AlarmRule` salió de la API legacy `Column` y

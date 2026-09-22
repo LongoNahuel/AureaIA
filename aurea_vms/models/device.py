@@ -4,6 +4,7 @@ from sqlalchemy import Boolean, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aurea_vms.models.db import Base
+from aurea_vms.models.types import EncryptedString
 
 
 class Device(Base):
@@ -22,7 +23,11 @@ class Device(Base):
     ip: Mapped[str] = mapped_column(String(64))
     port: Mapped[int] = mapped_column(Integer, default=554)
     username: Mapped[str] = mapped_column(String(120), default="")
-    password: Mapped[str] = mapped_column(String(120), default="")
+    # Cifrada en reposo (ver core/credential_store.py). En Python sigue
+    # siendo texto plano: el cifrado vive en el tipo de columna. El ancho
+    # sube a 500 porque un token Fernet de una contraseña corta ya pasa los
+    # 100 caracteres.
+    password: Mapped[str] = mapped_column(EncryptedString(500), default="")
     rtsp_main_url: Mapped[str] = mapped_column(String(500))
     rtsp_sub_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     onvif_port: Mapped[int | None] = mapped_column(Integer, nullable=True)

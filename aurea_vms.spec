@@ -51,7 +51,10 @@ hiddenimports += collect_submodules("alembic") + ["logging.config"]
 # onnxruntime: sus .dll/.pyd + datas internos cargan en runtime; sin
 # collect_all la sesion de inferencia muere recien al crear el primer
 # detector (misma leccion que dejo MediaPipe antes de sacarlo).
-for package in ("onnxruntime", "qfluentwidgets"):
+# cryptography va en la lista por la misma razon que onnxruntime: trae
+# binarios nativos (_rust) que cargan en runtime, y sin ellos el primer
+# intento de descifrar una credencial muere en el .exe y no antes.
+for package in ("onnxruntime", "qfluentwidgets", "cryptography"):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)
     datas += pkg_datas
     binaries += pkg_binaries

@@ -9,7 +9,29 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
 
+from aurea_vms.core import auth  # noqa: E402
 from aurea_vms.models import db as db_module  # noqa: E402
+
+# Valores declarados, capturados ANTES de abaratarlos para los tests.
+ITERACIONES_DECLARADAS = auth.ITERACIONES
+ITERACIONES_LEGADAS_DECLARADAS = auth.ITERACIONES_LEGADAS
+
+
+@pytest.fixture(autouse=True)
+def _pbkdf2_barato(monkeypatch):
+    """PBKDF2 a 600.000 iteraciones cuesta ~150ms por hash -- a proposito, es
+    el punto de la funcion. Pero la suite hashea cientos de veces y eso solo
+    en test_auth.py eran 33 segundos. Se abarata el coste, no el algoritmo:
+    lo que se prueba es el formato, la migracion y el lockout, no cuanto
+    tarda. El valor declarado se verifica aparte, con la fixture de abajo."""
+    monkeypatch.setattr(auth, "ITERACIONES", 1_000)
+    monkeypatch.setattr(auth, "ITERACIONES_LEGADAS", 1_000)
+
+
+@pytest.fixture()
+def iteraciones_declaradas():
+    """El coste real configurado, sin el abaratamiento de los tests."""
+    return ITERACIONES_DECLARADAS
 
 
 @pytest.fixture(scope="session")

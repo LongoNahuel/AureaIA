@@ -79,7 +79,15 @@ class LoginDialog(QDialog):
     def _on_login(self) -> None:
         username = self.username_edit.text().strip()
         password = self.password_edit.text()
-        if auth.login(username, password) is not None:
+        try:
+            usuario = auth.login(username, password)
+        except auth.CuentaBloqueada as bloqueo:
+            minutos = max(1, round(bloqueo.segundos_restantes / 60))
+            self.error_label.setText(
+                f"Cuenta bloqueada por demasiados intentos. Volvé a intentar en {minutos} min."
+            )
+            return
+        if usuario is not None:
             self.accept()
             return
         self.error_label.setText("Usuario o contraseña incorrectos.")

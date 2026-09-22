@@ -11,6 +11,8 @@ dependencies = [
     # (aurea_vms/migrations) para que PyInstaller las empaquete: sin ellas,
     # el .exe no puede migrar la base del cliente.
     "alembic>=1.13",
+    # Cifrado en reposo de las credenciales de camara (core/credential_store.py).
+    "cryptography>=42.0",
     "numpy>=1.26",
     "onvif-zeep>=0.2.12",
     "wsdiscovery>=2.0",
