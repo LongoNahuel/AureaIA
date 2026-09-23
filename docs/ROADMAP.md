@@ -9,8 +9,28 @@ backend del 2026-09-21 — el detalle completo, con evidencia, está en
 
 ## Robustez (bloqueantes de demo)
 
-Sin ítems abiertos: los cinco bloqueantes del informe del 2026-09-21 (B1 a B5)
-se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
+Los cinco bloqueantes del informe del 2026-09-21 (B1 a B5) se cerraron entre
+el 21 y el 22 de septiembre; el detalle está en "Hecho". La re-auditoría del
+2026-09-23 ([`sesiones/2026-09-23.md`](../sesiones/2026-09-23.md)) abrió estos,
+que se trabajan ese mismo día:
+
+- 🔴 **El smoke del `.exe` no prueba el bundle**: comparte `AUREA_DATA_DIR` con
+  el smoke previo, así que no migra ni usa los modelos empaquetados, y no toca
+  Fernet ni ONVIF (`build-windows.yml:31`, `main.py:112-143`).
+- 🔴 **Una migración que falla a mitad deja la app sin arrancar**: DDL fuera de
+  transacción en SQLite deja `_alembic_tmp_*` huérfano. Tampoco hay backup
+  automático antes de migrar (`models/db.py:173-184`).
+- 🔴 **`camera_key` se regenera en silencio** con filas `enc1:` en la base
+  (`core/credential_store.py:54-65`).
+- 🔴 **La retención poda con los defaults si `preferences.json` está
+  ilegible**; `_write` no es atómico (`core/app_prefs.py:22-35`).
+- 🟠 Lockout sin tope si el reloj retrocede, re-bloqueo tras el primer
+  bloqueo, enumeración de usuarios por tiempo (`core/auth.py:108-120`).
+- 🟠 Hilos muertos que quedan registrados como vivos, sesión ONNX que se fuga
+  si `acquire()` falla, mp4 huérfano ante `IntegrityError`, `alarm_engine` en
+  el hilo de la GUI sin mirar `_active`.
+- 🟠 Falsos positivos del watchdog de congelado con cámaras "smart codec" en
+  escenas quietas (`stream_manager.py:82-90`).
 
 ## Seguridad
 
@@ -26,7 +46,28 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
   nada impide llamar al repositorio directo desde un script.
 
 
+- `core/credential_store.py` crea `camera_key` con `S_IRUSR|S_IWUSR`, que en
+  Windows no restringe nada: el archivo hereda la ACL de la carpeta. Bajo
+  `%LOCALAPPDATA%\AureaVMS` es aceptable (usuario, SYSTEM, Administrators);
+  con un `AUREA_DATA_DIR` como `C:\AureaData` hereda la de `C:\`. Si se
+  necesita, ACL explícita con `icacls` o `pywin32`.
+
 ## Datos
+
+- **Las migraciones no son portables**, aunque los modelos sí: 0002, 0003 y
+  `migrations/ayudas.py` consultan `PRAGMA`/`sqlite_master`; 0002 y 0004
+  comparan enteros contra booleanos; `models/db.py` fija `sqlite:///`. Antes de
+  un nodo PostgreSQL hay que pasarlas a `sa.inspect(conn)` y `sa.true()`.
+- **La adopción de bases legadas usa el metadata vivo**
+  (`migrations/adopcion.py:62,84-88`): una `op.create_table` o un `index=True`
+  futuros sobre una columna nueva la rompen. Congelar un snapshot del metadata
+  de la baseline.
+- **El `naming_convention` de `migrations/env.py` no hace nada**:
+  `context.configure` lo ignora, solo sirve pasado a cada `batch_alter_table`.
+  Las bases adoptadas conservan constraints anónimas; un `drop_constraint` por
+  nombre anda en tests y falla en campo.
+- `repository._traducir` decide por el texto del mensaje de error; mejor
+  `sqlite_errorname` o el pgcode 23505.
 
 - Migrar timestamps float → DateTime UTC unificado.
 - Si aparece multisede real con servidor central: nodo central en
@@ -44,6 +85,8 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
   (~54% del código) a medida que avance el backfill con pytest-qt.
 - `build-windows.yml` corre solo por tag o a mano: una regresión de
   empaquetado puede vivir en `main` hasta el próximo release.
+- La integración (`pytest -m integration`) no suma a la cobertura del CI:
+  falta `--cov-append` (≈1,2 puntos ya cubiertos que no se cuentan).
 
 ## Empaquetado y despliegue
 
@@ -94,6 +137,30 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
   **no puede** salir del hilo de la GUI. Un worker con cola compraría 0,3
   puntos a cambio de un actor y superficie de concurrencia nueva. Revisar solo
   si aparece un caso con muchas más caras por frame.
+
+## UI — para Nahuel
+
+Salieron de la re-auditoría del 2026-09-23; el detalle y cómo se
+reprodujeron están en [`sesiones/2026-09-23.md`](../sesiones/2026-09-23.md).
+
+- 🔴 **Cerrar una pestaña con un `FunctionWorker` en curso aborta el proceso**
+  (`QThread: Destroyed while thread is still running`, reproducido). El worker
+  tiene de padre al widget y `main_window.py:296-301` hace `deleteLater()` sin
+  esperar. Aparece en `device_management.py:315-325`,
+  `ptz_control_panel.py:88-95`, `onvif_discovery_dialog.py:62-66` y
+  `analytics_config_dialog_base.py:163-168`.
+- 🟠 **La `MainWindow` vieja sigue viva tras cerrar sesión**: los lambdas que
+  capturan `self` (`main_window.py:177-179`, `live_view.py:204,207,234`) la
+  mantienen suscrita al `event_bus`. Con N cierres de sesión, cada alarma
+  suena y notifica N+1 veces.
+- 🟠 **`DuplicateError` sin capturar** en `sites_zones_module.py:263,269,287,293`
+  y `user_management_module.py:195`: con los UNIQUE nuevos, una zona repetida
+  no se guarda y no avisa nada. Solo `device_dialog.py` lo maneja.
+- `video_tile.py:329-336` lee `preferences.json` del disco dos veces por frame
+  y por tile.
+- `face_gallery.py:179-196` recorta el frame **actual** con el bbox de otro.
+- El login corre PBKDF2 en el hilo de Qt: el primer login con un hash legado
+  congela la UI ~1 s.
 
 ## Producto (ideas de NOVA a evaluar)
 
