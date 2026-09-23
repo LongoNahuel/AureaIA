@@ -187,6 +187,7 @@ class VideoTile(QWidget):
             for config in repository.list_analytics_configs(self._device.id)
             if config.enabled
         ]
+        self._invalidate_render()
         self.update()
 
     def _apply_border(self) -> None:
@@ -241,6 +242,12 @@ class VideoTile(QWidget):
     def _on_detection(self, event: DetectionEvent) -> None:
         if self._device is not None and event.device_id == self._device.id:
             self._latest_events[event.analyzer_name] = event
+            self._invalidate_render()
+            self.update()
+
+    def _invalidate_render(self) -> None:
+        self._last_rendered_ts = 0.0
+        self._last_rendered_size = QSize()
 
     def _render_empty_state(self) -> None:
         size = self.video_label.size()
@@ -410,14 +417,24 @@ class VideoTile(QWidget):
         event = self._latest_events.get("people_counting")
         if not event:
             return
+        points = event.metrics.get("heatmap", [])
+        if not points:
+            return
+        painter.setPen(Qt.PenStyle.NoPen)
         for point in event.metrics.get("heatmap", []):
             if len(point) != 2:
                 continue
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(239, 68, 68, 70))
-            painter.drawEllipse(
-                QPointF(float(point[0]) * scale_x, float(point[1]) * scale_y), 10, 10
-            )
+            center = QPointF(float(point[0]) * scale_x, float(point[1]) * scale_y)
+            # Capas superpuestas: el centro amarillo indica mayor intensidad
+            # y el halo rojo hace visible la marca sobre escenas oscuras.
+            for radius, color in (
+                (24, QColor(239, 68, 68, 28)),
+                (17, QColor(249, 115, 22, 52)),
+                (10, QColor(250, 204, 21, 120)),
+                (4, QColor(255, 247, 133, 230)),
+            ):
+                painter.setBrush(color)
+                painter.drawEllipse(center, radius, radius)
 
     def _people_heatmap_enabled(self) -> bool:
         """El overlay sigue el estado guardado, aunque aún exista un evento
