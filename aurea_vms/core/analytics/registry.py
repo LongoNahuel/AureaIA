@@ -43,19 +43,36 @@ def create_analyzer(config: AnalyticsConfig) -> Analyzer:
         )
 
     if config.analyzer_name == "door_state":
+        zones = [
+            tuple(zone)
+            for zone in params.get("zones", [])
+            if isinstance(zone, (list, tuple)) and len(zone) == 4
+        ]
         return DoorStateAnalyzer(
             change_threshold=params.get("change_threshold", 0.10),
             confirmation_frames=params.get("confirmation_frames", 3),
             roi=_roi_from_config(config),
+            zones=zones or None,
+            opening_percent=params.get("opening_percent", 10.0),
+            threshold_seconds=params.get("threshold_seconds"),
         )
 
     if config.analyzer_name == "people_counting":
+        zones = [
+            tuple(zone)
+            for zone in params.get("zones", [])
+            if isinstance(zone, (list, tuple)) and len(zone) == 4
+        ]
         return PeopleCountingAnalyzer(
             confidence_threshold=config.confidence_threshold,
             roi=_roi_from_config(config),
             confirmation_frames=params.get("confirmation_frames", 2),
             min_area_percent=params.get("min_area_percent", 0.15),
             track_max_age_s=params.get("track_max_age_s", 1.5),
+            zones=zones or None,
+            max_people_alert=params.get("max_people_alert", 0),
+            head_shoulders_detection=params.get("head_shoulders_detection", True),
+            heatmap_enabled=params.get("heatmap_enabled", True),
         )
 
     if config.analyzer_name == "line_crossing":
@@ -70,6 +87,9 @@ def create_analyzer(config: AnalyticsConfig) -> Analyzer:
             label_out=params.get("label_out", "Salida"),
             confirmation_frames=params.get("confirmation_frames", 2),
             min_area_percent=params.get("min_area_percent", 0.15),
+            direction_enabled=params.get("direction_enabled", True),
+            smart_mark_enabled=params.get("smart_mark_enabled", False),
+            enhanced_filter=params.get("enhanced_filter", True),
         )
 
     if config.analyzer_name == "face_detection":
@@ -78,6 +98,7 @@ def create_analyzer(config: AnalyticsConfig) -> Analyzer:
             roi=_roi_from_config(config),
             min_pupillary_distance_px=params.get("min_pupillary_distance_px", 40),
             confirmation_frames=params.get("confirmation_frames", 2),
+            tilted_faces_filter=params.get("tilted_faces_filter", True),
         )
 
     raise ValueError(f"Analizador desconocido: {config.analyzer_name}")

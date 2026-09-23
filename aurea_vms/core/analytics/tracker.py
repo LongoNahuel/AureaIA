@@ -22,6 +22,18 @@ from dataclasses import dataclass
 from aurea_vms.core.events import Detection
 
 
+def _bbox_iou(
+    first: tuple[int, int, int, int], second: tuple[int, int, int, int]
+) -> float:
+    ax, ay, aw, ah = first
+    bx, by, bw, bh = second
+    left, top = max(ax, bx), max(ay, by)
+    right, bottom = min(ax + aw, bx + bw), min(ay + ah, by + bh)
+    intersection = max(0, right - left) * max(0, bottom - top)
+    union = aw * ah + bw * bh - intersection
+    return intersection / union if union else 0.0
+
+
 @dataclass
 class TrackedObject:
     track_id: int
@@ -44,11 +56,16 @@ class TrackedObject:
 
 class CentroidTracker:
     def __init__(
-        self, max_distance: float = 80.0, max_age_s: float = 2.0, min_hits: int = 1
+        self,
+        max_distance: float = 80.0,
+        max_age_s: float = 2.0,
+        min_hits: int = 1,
+        min_iou: float = 0.0,
     ) -> None:
         self.max_distance = max_distance
         self.max_age_s = max_age_s
         self.min_hits = max(1, min_hits)
+        self.min_iou = max(0.0, min(1.0, min_iou))
         self._next_id = 1
         self.tracks: dict[int, TrackedObject] = {}
 
@@ -73,6 +90,14 @@ class CentroidTracker:
             for tid in unmatched_ids:
                 track = self.tracks[tid]
                 if track.label != det.label:
+                    continue
+                iou = _bbox_iou(track.bbox, det.bbox)
+                if iou >= self.min_iou and iou > 0:
+                    if best_id is None or iou > _bbox_iou(
+                        self.tracks[best_id].bbox, det.bbox
+                    ):
+                        best_id = tid
+                        best_dist = math.dist(track.centroid, centroid)
                     continue
                 dist = math.dist(track.centroid, centroid)
                 if dist < best_dist:

@@ -46,3 +46,26 @@ def test_delete_device(temp_db):
 
     assert repository.get_device(device.id) is None
     assert repository.list_devices() == []
+
+
+def test_delete_parent_device_deletes_channels_and_dependents(temp_db):
+    parent = repository.add_device(
+        name="NVR",
+        ip="192.168.1.53",
+        rtsp_main_url="rtsp://192.168.1.53/main",
+        device_type="nvr",
+        channel=0,
+    )
+    child = repository.add_device(
+        name="NVR · Canal 1",
+        ip="192.168.1.53",
+        rtsp_main_url="rtsp://192.168.1.53/c1",
+        device_type="nvr",
+        channel=1,
+        parent_device_id=parent.id,
+    )
+
+    repository.delete_device(parent.id)
+
+    assert repository.get_device(child.id) is None
+    assert repository.list_devices() == []

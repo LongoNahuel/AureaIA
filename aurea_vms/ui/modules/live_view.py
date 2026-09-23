@@ -18,8 +18,7 @@ el tile lo selecciona, y ese es el tile que alimenta el panel lateral en
 Vista Inteligente) -- funciona igual en ambos modos.
 
 Doble click SOBRE un tile con camara asignada lo expande a pantalla
-completa de la grilla y pasa de sub-flujo a flujo principal (RTSP main,
-mayor resolucion); doble click de nuevo lo colapsa y vuelve a sub-flujo.
+completa de la grilla. Todas las vistas consumen el flujo principal.
 """
 
 from __future__ import annotations

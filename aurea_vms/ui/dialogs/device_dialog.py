@@ -239,6 +239,7 @@ class DeviceDialog(QDialog):
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.result_info:
             info = dialog.result_info
             self.ip_edit.setText(dialog.selected_ip)
+            self.port_spin.setValue(dialog.selected_rtsp_port)
             self.onvif_port_spin.setValue(dialog.selected_port)
             self.username_edit.setText(dialog.username)
             self.password_edit.setText(dialog.password)

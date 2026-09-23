@@ -42,6 +42,18 @@ class LineCrossingConfigDialog(AnalyticsConfigDialogBase):
         form.addRow("Etiqueta sentido A→B:", self.label_in_edit)
         form.addRow("Etiqueta sentido B→A:", self.label_out_edit)
 
+        self.direction_check = CheckBox("Aplicar sentido del cruce")
+        self.direction_check.setChecked(bool(params.get("direction_enabled", True)))
+        form.addRow(self.direction_check)
+
+        self.smart_mark_check = CheckBox("Dibujar marca inteligente al cruzar")
+        self.smart_mark_check.setChecked(bool(params.get("smart_mark_enabled", True)))
+        form.addRow(self.smart_mark_check)
+
+        self.enhanced_filter_check = CheckBox("Filtro mejorado")
+        self.enhanced_filter_check.setChecked(bool(params.get("enhanced_filter", True)))
+        form.addRow(self.enhanced_filter_check)
+
         self.confirmation_spin = SpinBox()
         self.confirmation_spin.setRange(1, 10)
         self.confirmation_spin.setMaximumWidth(FIELD_WIDTH)
@@ -89,6 +101,9 @@ class LineCrossingConfigDialog(AnalyticsConfigDialogBase):
             "line": [list(line[0]), list(line[1])] if line else None,
             "label_in": self.label_in_edit.text().strip() or "Entrada",
             "label_out": self.label_out_edit.text().strip() or "Salida",
+            "direction_enabled": self.direction_check.isChecked(),
+            "smart_mark_enabled": self.smart_mark_check.isChecked(),
+            "enhanced_filter": self.enhanced_filter_check.isChecked(),
             "confirmation_frames": self.confirmation_spin.value(),
             "min_area_percent": self.min_size_spin.value(),
             "fps": self.fps_spin.value(),

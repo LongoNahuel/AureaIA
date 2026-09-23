@@ -51,6 +51,9 @@ class LineCrossingAnalyzer(Analyzer):
         confirmation_frames: int = 2,
         track_max_age_s: float = 1.5,
         min_area_percent: float = 0.15,
+        direction_enabled: bool = True,
+        smart_mark_enabled: bool = False,
+        enhanced_filter: bool = True,
     ) -> None:
         self._detector = YoloxDetector()
         self._classes = object_classes or ["person"]
@@ -59,6 +62,9 @@ class LineCrossingAnalyzer(Analyzer):
         self.label_in = label_in
         self.label_out = label_out
         self._min_area_percent = max(0.0, min_area_percent)
+        self._direction_enabled = direction_enabled
+        self._smart_mark_enabled = smart_mark_enabled
+        self._enhanced_filter = enhanced_filter
         self._tracker = CentroidTracker(
             max_age_s=track_max_age_s, min_hits=max(1, confirmation_frames)
         )
@@ -82,24 +88,27 @@ class LineCrossingAnalyzer(Analyzer):
         detections = deduplicate_by_iou(raw_detections)
         self._tracker.update(detections, timestamp)
 
+        last_crossing = None
         for track in self._tracker.confirmed_tracks():
             new_side = _side_of_line(
                 track.centroid[0], track.centroid[1], self._x1, self._y1, self._x2, self._y2
             )
             if new_side == 0:
                 continue
-            if track.side is not None and track.side != new_side:
+            if self._direction_enabled and track.side is not None and track.side != new_side:
                 if track.side > 0 and new_side < 0:
                     self._count_in += 1
+                    last_crossing = self.label_in
                 elif track.side < 0 and new_side > 0:
                     self._count_out += 1
+                    last_crossing = self.label_out
             track.side = new_side
 
-        return AnalysisResult(
-            detections=tuple(detections),
-            metrics={
+        metrics = {
                 "count_in": self._count_in,
                 "count_out": self._count_out,
                 "total": self._count_in + self._count_out,
-            },
-        )
+        }
+        if self._smart_mark_enabled and last_crossing:
+            metrics["last_crossing"] = last_crossing
+        return AnalysisResult(detections=tuple(detections), metrics=metrics)

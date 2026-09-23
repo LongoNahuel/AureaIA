@@ -11,10 +11,11 @@ from pathlib import Path
 # setdefault para que un despliegue pueda overridearlo sin tocar codigo.
 os.environ.setdefault(
     "OPENCV_FFMPEG_CAPTURE_OPTIONS",
-    # Una cola minima permite que FFmpeg reordene paquetes TCP antes de
-    # entregarlos al decoder. max_delay=0/reorder_queue_size=0 reducia algo
-    # la latencia, pero producia NAL incompletos en varios NVR.
-    "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;500000|reorder_queue_size;1",
+    # El flujo principal del NVR es HEVC y necesita margen para reordenar
+    # paquetes al comenzar en mitad de un GOP. Una cola demasiado agresiva
+    # (nobuffer/reorder_queue_size=1) deja el decoder sin VPS/PPS y bloquea
+    # esperando un keyframe que nunca llega.
+    "rtsp_transport;tcp|fflags;discardcorrupt|flags;low_delay|max_delay;1500000|reorder_queue_size;4",
 )
 
 from PySide6.QtGui import QColor

@@ -222,10 +222,42 @@ def update_device(device_id: int, **fields: object) -> None:
 
 
 def delete_device(device_id: int) -> None:
+    """Elimina un dispositivo y sus canales/dependencias de forma explícita.
+
+    Las bases creadas antes de la migración de jerarquía pueden conservar
+    FKs ``NO ACTION`` aunque el modelo actual declare CASCADE. No depender
+    solo de SQLite permite borrar también un NVR padre con sus canales.
+    """
     with get_session() as session:
         device = session.get(Device, device_id)
-        if device is not None:
-            session.delete(device)
+        if device is None:
+            return
+
+        ids = [device_id]
+        pending = [device_id]
+        while pending:
+            child_ids = [
+                row[0]
+                for row in session.query(Device.id)
+                .filter(Device.parent_device_id.in_(pending))
+                .all()
+            ]
+            ids.extend(child_ids)
+            pending = child_ids
+
+        session.query(MediaAsset).filter(MediaAsset.device_id.in_(ids)).delete(
+            synchronize_session=False
+        )
+        session.query(AlarmEventRow).filter(AlarmEventRow.device_id.in_(ids)).delete(
+            synchronize_session=False
+        )
+        session.query(AnalyticsConfig).filter(AnalyticsConfig.device_id.in_(ids)).delete(
+            synchronize_session=False
+        )
+        session.query(AlarmRule).filter(AlarmRule.device_id.in_(ids)).delete(
+            synchronize_session=False
+        )
+        session.query(Device).filter(Device.id.in_(ids)).delete(synchronize_session=False)
 
 
 def list_analytics_configs(device_id: int | None = None) -> list[AnalyticsConfig]:

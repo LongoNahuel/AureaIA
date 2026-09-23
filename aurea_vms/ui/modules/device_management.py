@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -26,6 +28,7 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     BodyLabel,
     CaptionLabel,
+    CheckBox,
     DoubleSpinBox,
     FluentIcon,
     LineEdit,
@@ -53,6 +56,8 @@ from aurea_vms.ui.notify import confirm, notify, warn
 from aurea_vms.ui.theme import STATUS_COLORS
 from aurea_vms.ui.widgets.row_icon_button import row_icon_button as _row_icon_button
 from aurea_vms.ui.workers import FunctionWorker
+
+logger = logging.getLogger(__name__)
 
 MANAGED_COLUMNS = [
     "",
@@ -149,6 +154,7 @@ class DeviceManagementModule(QWidget):
         self._discovered: list[OnvifDiscoveryResult] = []
         self._workers: list[FunctionWorker] = []
         self._discovery_timeout = 3.0
+        self._updating_selection = False
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._build_managed_section(), stretch=1)
@@ -206,6 +212,11 @@ class DeviceManagementModule(QWidget):
         self.managed_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.managed_table.setBorderVisible(True)
         self.managed_table.setBorderRadius(6)
+        self.select_all_checkbox = CheckBox("Seleccionar todos", section)
+        self.select_all_checkbox.setTristate(True)
+        self.select_all_checkbox.checkStateChanged.connect(self._on_select_all_changed)
+        header_row.insertWidget(0, self.select_all_checkbox)
+        self.managed_table.itemChanged.connect(self._on_managed_item_changed)
         section_layout.addWidget(self.managed_table)
         return section
 
@@ -227,6 +238,7 @@ class DeviceManagementModule(QWidget):
         self.managed_table.setRowCount(len(self._devices))
         for row, device in enumerate(self._devices):
             self._set_managed_row(row, device)
+        self._update_select_all_state()
         self._apply_managed_filter(self.managed_search.text())
 
     def _set_managed_row(self, row: int, device: Device) -> None:
@@ -307,6 +319,45 @@ class DeviceManagementModule(QWidget):
                 ids.append(self.managed_table.item(row, 1).data(Qt.ItemDataRole.UserRole))
         return ids
 
+    def _on_select_all_changed(self, state: int) -> None:
+        if self._updating_selection or state == Qt.CheckState.PartiallyChecked:
+            return
+        checked = Qt.CheckState.Checked if state == Qt.CheckState.Checked else Qt.CheckState.Unchecked
+        self._updating_selection = True
+        try:
+            for row in range(self.managed_table.rowCount()):
+                item = self.managed_table.item(row, 0)
+                if item is not None:
+                    item.setCheckState(checked)
+        finally:
+            self._updating_selection = False
+
+    def _on_managed_item_changed(self, item: QTableWidgetItem) -> None:
+        if item.column() == 0:
+            self._update_select_all_state()
+
+    def _update_select_all_state(self) -> None:
+        if not hasattr(self, "select_all_checkbox"):
+            return
+        total = self.managed_table.rowCount()
+        checked = sum(
+            self.managed_table.item(row, 0).checkState() == Qt.CheckState.Checked
+            for row in range(total)
+            if self.managed_table.item(row, 0) is not None
+        )
+        state = (
+            Qt.CheckState.Unchecked
+            if checked == 0
+            else Qt.CheckState.Checked
+            if checked == total
+            else Qt.CheckState.PartiallyChecked
+        )
+        self._updating_selection = True
+        try:
+            self.select_all_checkbox.setCheckState(state)
+        finally:
+            self._updating_selection = False
+
     def _run(self, func, on_success=None, on_error=None) -> None:
         worker = FunctionWorker(func, self)
         if on_success:
@@ -372,14 +423,18 @@ class DeviceManagementModule(QWidget):
             self, "Eliminar dispositivos", f"¿Eliminar {len(device_ids)} dispositivo{plural}?"
         ):
             return
-        for device_id in device_ids:
-            # Primero se apagan los consumidores vivos (analiticas y streams);
-            # recien despues se borra la fila, y la cascada de la DB se lleva
-            # configs/reglas/eventos asociados.
-            for config in repository.list_analytics_configs(device_id):
-                analytics_engine.stop(config.id)
-            stream_manager.stop_device(device_id)
-            repository.delete_device(device_id)
+        try:
+            for device_id in device_ids:
+                # Primero se apagan los consumidores vivos (analiticas y streams);
+                # recien despues se borra la fila, y la cascada de la DB se lleva
+                # configs/reglas/eventos asociados.
+                for config in repository.list_analytics_configs(device_id):
+                    analytics_engine.stop(config.id)
+                stream_manager.stop_device(device_id)
+                repository.delete_device(device_id)
+        except Exception as exc:  # noqa: BLE001 - mostrar el error al usuario
+            logger.exception("No se pudieron eliminar los dispositivos seleccionados")
+            warn(self, "Eliminar dispositivos", f"No se pudieron eliminar: {exc}")
         self._reload_managed()
 
     def _on_device_status(self, event: DeviceStatusEvent) -> None:

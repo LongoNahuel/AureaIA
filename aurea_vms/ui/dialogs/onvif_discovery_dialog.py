@@ -4,9 +4,19 @@ y soporte PTZ) para precargar el formulario de alta de dispositivo."""
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QListWidgetItem, QVBoxLayout
-from qfluentwidgets import BodyLabel, FluentIcon, LineEdit, ListWidget, PasswordLineEdit, PushButton
+from qfluentwidgets import (
+    BodyLabel,
+    FluentIcon,
+    LineEdit,
+    ListWidget,
+    PasswordLineEdit,
+    PushButton,
+    SpinBox,
+)
 
 from aurea_vms.core import device_manager
 from aurea_vms.core.device_manager import OnvifDiscoveryResult, OnvifProfileInfo
@@ -22,6 +32,7 @@ class OnvifDiscoveryDialog(QDialog):
         self.result_info: OnvifProfileInfo | None = None
         self.selected_ip = ""
         self.selected_port = 0
+        self.selected_rtsp_port = 554
         self.selected_manufacturer: str | None = None
         self.selected_model: str | None = None
         self.username = ""
@@ -30,6 +41,16 @@ class OnvifDiscoveryDialog(QDialog):
         self._worker: FunctionWorker | None = None
 
         self.scan_button = PushButton(FluentIcon.SEARCH, "Escanear LAN")
+        self.remote_host_edit = LineEdit()
+        self.remote_host_edit.setPlaceholderText("IP o dominio público del equipo")
+        self.remote_port_spin = SpinBox()
+        self.remote_port_spin.setRange(1, 65535)
+        self.remote_port_spin.setValue(80)
+        self.remote_rtsp_port_spin = SpinBox()
+        self.remote_rtsp_port_spin.setRange(0, 65535)
+        self.remote_rtsp_port_spin.setValue(554)
+        self.remote_rtsp_port_spin.setSpecialValueText("(mantener URI)")
+        self.remote_query_button = PushButton(FluentIcon.WIFI, "Consultar ONVIF remoto")
         self.list_widget = ListWidget()
         self.username_edit = LineEdit()
         self.password_edit = PasswordLineEdit()
@@ -44,6 +65,15 @@ class OnvifDiscoveryDialog(QDialog):
         cred_row.addWidget(BodyLabel("Contraseña:"))
         cred_row.addWidget(self.password_edit)
 
+        remote_row = QHBoxLayout()
+        remote_row.addWidget(BodyLabel("Host:"))
+        remote_row.addWidget(self.remote_host_edit, stretch=1)
+        remote_row.addWidget(BodyLabel("ONVIF:"))
+        remote_row.addWidget(self.remote_port_spin)
+        remote_row.addWidget(BodyLabel("RTSP:"))
+        remote_row.addWidget(self.remote_rtsp_port_spin)
+        remote_row.addWidget(self.remote_query_button)
+
         cancel_button = PushButton("Cancelar")
         cancel_button.clicked.connect(self.reject)
         buttons_row = QHBoxLayout()
@@ -52,6 +82,7 @@ class OnvifDiscoveryDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.scan_button)
+        layout.addLayout(remote_row)
         layout.addWidget(self.list_widget)
         layout.addLayout(cred_row)
         layout.addWidget(self.fetch_button)
@@ -61,6 +92,7 @@ class OnvifDiscoveryDialog(QDialog):
         self.scan_button.clicked.connect(self._start_scan)
         self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
         self.fetch_button.clicked.connect(self._start_fetch)
+        self.remote_query_button.clicked.connect(self._start_remote_fetch)
 
     def _run(self, func, on_success, on_error) -> None:
         self._worker = FunctionWorker(func, self)
@@ -117,6 +149,45 @@ class OnvifDiscoveryDialog(QDialog):
             self._on_fetch_failed,
         )
 
+    def _start_remote_fetch(self) -> None:
+        host = self.remote_host_edit.text().strip()
+        if not host:
+            self.status_label.setText("Ingresá una IP o dominio público.")
+            return
+        username = self.username_edit.text()
+        password = self.password_edit.text()
+        self.status_label.setText("Consultando ONVIF remoto...")
+        self.remote_query_button.setEnabled(False)
+        self._run(
+            lambda: device_manager.fetch_onvif_profiles(
+                host, self.remote_port_spin.value(), username, password
+            ),
+            lambda info: self._on_remote_fetch_done(host, username, password, info),
+            self._on_remote_fetch_failed,
+        )
+
+    def _on_remote_fetch_done(
+        self, host: str, username: str, password: str, info: OnvifProfileInfo
+    ) -> None:
+        self.result_info = device_manager.remap_onvif_stream_host(
+            info, host, self.remote_rtsp_port_spin.value() or None
+        )
+        self.selected_ip = host
+        self.selected_port = self.remote_port_spin.value()
+        self.selected_rtsp_port = (
+            self.remote_rtsp_port_spin.value()
+            or urlsplit(self.result_info.rtsp_main_url).port
+            or 554
+        )
+        self.username = username
+        self.password = password
+        self.status_label.setText("ONVIF remoto consultado correctamente.")
+        self.accept()
+
+    def _on_remote_fetch_failed(self, message: str) -> None:
+        self.remote_query_button.setEnabled(True)
+        self.status_label.setText(f"Error al consultar ONVIF remoto: {message}")
+
     def _on_fetch_done(
         self,
         result: OnvifDiscoveryResult,
@@ -127,6 +198,7 @@ class OnvifDiscoveryDialog(QDialog):
         self.result_info = info
         self.selected_ip = result.ip
         self.selected_port = result.port
+        self.selected_rtsp_port = urlsplit(info.rtsp_main_url).port or 554
         self.selected_manufacturer = result.manufacturer
         self.selected_model = result.model
         self.username = username

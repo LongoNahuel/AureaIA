@@ -92,10 +92,10 @@ class VideoTile(QWidget):
         self._offline_rendered = False
         self._last_rendered_ts = 0.0
         self._last_rendered_size = QSize()
-        # Tiles de grilla (index >= 0) arrancan en sub-flujo (liviano, para
-        # miniaturas); el tile de Vista Inteligente (index < 0) y cualquier
-        # tile expandido con doble click usan el flujo principal.
-        self._stream_kind = "main" if index < 0 else "sub"
+        # Todas las vistas usan exclusivamente el flujo principal. El
+        # substream puede seguir configurado en el dispositivo para pruebas,
+        # pero nunca se abre desde la interfaz.
+        self._stream_kind = "main"
         self._intelligent_mode = False
 
         self.setAcceptDrops(True)
@@ -154,8 +154,8 @@ class VideoTile(QWidget):
         return self._device.id if self._device is not None else None
 
     def set_stream_kind(self, kind: str) -> None:
-        """Cambia entre flujo "main" y "sub" para la camara ya asignada
-        (usado al expandir/colapsar un tile con doble click)."""
+        """Mantiene la vista en el flujo principal."""
+        kind = "main"
         if kind == self._stream_kind:
             return
         if self._device is not None:
@@ -356,6 +356,7 @@ class VideoTile(QWidget):
         scale_y = result.height() / frame_h
         if self._intelligent_mode:
             self._draw_analytics_guides(painter, scale_x, scale_y)
+            self._draw_people_heatmap(painter, scale_x, scale_y)
             self._draw_analytics_status(painter, result.width())
 
         for analyzer_name, event in self._latest_events.items():
@@ -372,9 +373,8 @@ class VideoTile(QWidget):
     def _draw_analytics_guides(self, painter: QPainter, scale_x: float, scale_y: float) -> None:
         for config in self._analytics_configs:
             color = ANALYTIC_COLORS.get(config.analyzer_name, QColor("#93c5fd"))
-            roi = self._roi_for_config(config)
-            if roi is not None:
-                x, y, width, height = roi
+            rois = self._rois_for_config(config)
+            for x, y, width, height in rois:
                 pen = QPen(color)
                 pen.setWidthF(1.4)
                 pen.setStyle(Qt.PenStyle.DashLine)
@@ -387,8 +387,11 @@ class VideoTile(QWidget):
             line = (config.params or {}).get("line")
             if config.analyzer_name == "line_crossing" and line and len(line) == 2:
                 (x1, y1), (x2, y2) = line
+                event = self._latest_events.get("line_crossing")
+                if event and event.metrics.get("last_crossing") and dt.datetime.now().timestamp() - event.timestamp < 1.5:
+                    color = QColor("#22c55e")
                 pen = QPen(color)
-                pen.setWidthF(2.2)
+                pen.setWidthF(4.5 if event and event.metrics.get("last_crossing") and dt.datetime.now().timestamp() - event.timestamp < 1.5 else 2.2)
                 painter.setPen(pen)
                 painter.drawLine(
                     QPointF(float(x1) * scale_x, float(y1) * scale_y),
@@ -400,6 +403,19 @@ class VideoTile(QWidget):
                     ANALYZER_DISPLAY_NAMES.get(config.analyzer_name, config.analyzer_name),
                     color,
                 )
+
+    def _draw_people_heatmap(self, painter: QPainter, scale_x: float, scale_y: float) -> None:
+        event = self._latest_events.get("people_counting")
+        if not event:
+            return
+        for point in event.metrics.get("heatmap", []):
+            if len(point) != 2:
+                continue
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(239, 68, 68, 70))
+            painter.drawEllipse(
+                QPointF(float(point[0]) * scale_x, float(point[1]) * scale_y), 10, 10
+            )
 
     def _draw_analytics_status(self, painter: QPainter, width: int) -> None:
         if not self._analytics_configs:
@@ -426,6 +442,12 @@ class VideoTile(QWidget):
         if None in values:
             return None
         return values
+
+    @classmethod
+    def _rois_for_config(cls, config) -> list[tuple[int, int, int, int]]:
+        zones = (config.params or {}).get("zones", [])
+        valid = [tuple(zone) for zone in zones if len(zone) == 4]
+        return valid or ([cls._roi_for_config(config)] if cls._roi_for_config(config) else [])
 
     @staticmethod
     def _draw_guide_label(painter: QPainter, point: QPointF, text: str, color: QColor) -> None:

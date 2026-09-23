@@ -102,6 +102,7 @@ class FaceDetectionAnalyzer(Analyzer):
         min_pupillary_distance_px: int = 40,
         confirmation_frames: int = 2,
         track_max_age_s: float = 0.6,
+        tilted_faces_filter: bool = True,
     ) -> None:
         self._detector = cv2.FaceDetectorYN.create(
             _ensure_model(),
@@ -113,6 +114,7 @@ class FaceDetectionAnalyzer(Analyzer):
         )
         self._roi = roi
         self._min_pupillary_distance_px = max(0, min_pupillary_distance_px)
+        self._tilted_faces_filter = tilted_faces_filter
         self._tracker = CentroidTracker(
             max_age_s=track_max_age_s, min_hits=max(1, confirmation_frames)
         )
@@ -134,7 +136,7 @@ class FaceDetectionAnalyzer(Analyzer):
         for face in faces if faces is not None else []:
             if not self._passes_box_shape_filter(face):
                 continue
-            if not self._passes_geometry_filter(face):
+            if self._tilted_faces_filter and not self._passes_geometry_filter(face):
                 continue
             if not self._passes_head_alignment_filter(face):
                 continue

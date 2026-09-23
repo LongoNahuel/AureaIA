@@ -69,10 +69,10 @@ class FaceDetectionConfigDialog(AnalyticsConfigDialogBase):
         self.sensitivity_slider.setRange(1, 100)
         self.sensitivity_slider.setValue(confidence_to_sensitivity(confidence))
         self.sensitivity_slider.setToolTip("Más alto = detecta caras más dudosas (más sensible).")
-        self.sensitivity_value_label = BodyLabel(str(self.sensitivity_slider.value()))
+        self.sensitivity_value_label = BodyLabel(f"{self.sensitivity_slider.value()}%")
         self.sensitivity_value_label.setFixedWidth(28)
         self.sensitivity_slider.valueChanged.connect(
-            lambda v: self.sensitivity_value_label.setText(str(v))
+            lambda v: self.sensitivity_value_label.setText(f"{v}%")
         )
         sensitivity_row = QHBoxLayout()
         sensitivity_row.addWidget(self.sensitivity_slider, stretch=1)
@@ -87,6 +87,10 @@ class FaceDetectionConfigDialog(AnalyticsConfigDialogBase):
         self.min_pupillary_spin.setValue(params.get("min_pupillary_distance_px", 40))
         self.min_pupillary_spin.setToolTip("Descarta caras muy chicas/lejanas. 0 px = sin mínimo.")
         form.addRow("Distancia pupilar mínima:", self.min_pupillary_spin)
+
+        self.tilt_filter_check = CheckBox("Filtrar rostros inclinados")
+        self.tilt_filter_check.setChecked(bool(params.get("tilted_faces_filter", True)))
+        form.addRow(self.tilt_filter_check)
 
         self.confirmation_spin = SpinBox()
         self.confirmation_spin.setRange(*CONFIRMATION_RANGE)
@@ -107,6 +111,20 @@ class FaceDetectionConfigDialog(AnalyticsConfigDialogBase):
         self.counting_check = CheckBox("Contador de capturas habilitado")
         self.counting_check.setChecked(bool(params.get("counting_enabled", True)))
         form.addRow(self.counting_check)
+
+        self.best_capture_check = CheckBox("Conservar la mejor captura")
+        self.best_capture_check.setChecked(bool(params.get("best_capture_enabled", True)))
+        form.addRow(self.best_capture_check)
+
+        self.attribute_checks = {
+            "gafas": CheckBox("Gafas"),
+            "barbijo": CheckBox("Barbijo"),
+            "sombrero": CheckBox("Sombrero"),
+        }
+        selected_attributes = set(params.get("face_attributes", []))
+        for name, check in self.attribute_checks.items():
+            check.setChecked(name in selected_attributes)
+            form.addRow(check)
 
         self.reset_time_edit = QTimeEdit()
         self.reset_time_edit.setDisplayFormat("HH:mm")
@@ -163,6 +181,11 @@ class FaceDetectionConfigDialog(AnalyticsConfigDialogBase):
             "min_pupillary_distance_px": self.min_pupillary_spin.value(),
             "confirmation_frames": self.confirmation_spin.value(),
             "counting_enabled": self.counting_check.isChecked(),
+            "best_capture_enabled": self.best_capture_check.isChecked(),
+            "tilted_faces_filter": self.tilt_filter_check.isChecked(),
+            "face_attributes": [
+                name for name, check in self.attribute_checks.items() if check.isChecked()
+            ],
             "counting_reset_time": self.reset_time_edit.time().toString("HH:mm"),
             "capture_diff_threshold": self.capture_threshold_spin.value() / 100.0,
             "max_captures_per_face": self.max_captures_spin.value(),

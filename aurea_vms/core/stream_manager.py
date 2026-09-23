@@ -49,8 +49,8 @@ FRAME_SIGNATURE_STEP = 32
 # (sin cerrar el TCP: cable cortado, switch reiniciado) puede bloquear el
 # hilo indefinidamente. Con read-timeout, read() devuelve False y el loop
 # de reconexion existente actua de watchdog.
-OPEN_TIMEOUT_MS = 5_000
-READ_TIMEOUT_MS = 5_000
+OPEN_TIMEOUT_MS = 3_000
+READ_TIMEOUT_MS = 3_000
 STALE_FRAME_S = 15.0
 CAPTURE_BUFFER_SIZE = 1
 
@@ -137,8 +137,7 @@ class StreamWorker(threading.Thread):
                     break
                 continue
 
-            logger.info("Camara %s (%s): conectada", self.device_id, self.kind)
-            self._report_status(True, "Conectado")
+            logger.info("Camara %s (%s): socket RTSP conectado, esperando primer frame", self.device_id, self.kind)
             delivered_frames, frozen = self._capture_loop(cap)
             cap.release()
 
@@ -184,6 +183,9 @@ class StreamWorker(threading.Thread):
 
             now = time.time()
             captured_at = time.monotonic()
+            if not delivered_frames:
+                logger.info("Camara %s (%s): conectada", self.device_id, self.kind)
+                self._report_status(True, "Conectado")
 
             # Watchdog de congelado. Un decoder colgado sigue devolviendo
             # ok=True con el MISMO frame ya decodificado, asi que el corte
@@ -244,7 +246,11 @@ class StreamWorker(threading.Thread):
 
     def get_latest_frame(self) -> np.ndarray | None:
         with self._lock:
-            return None if self._latest_frame is None else self._latest_frame.copy()
+            # El capturador nunca vuelve a modificar el array despues de
+            # publicarlo: reemplaza la referencia por el siguiente frame.
+            # Compartirlo evita copiar varios megabytes por cada tile,
+            # analitica y preview de configuracion.
+            return self._latest_frame
 
     def get_latest_frame_with_timestamp(self) -> tuple[np.ndarray | None, float]:
         """Devuelve el último frame y su timestamp de captura.
@@ -253,8 +259,7 @@ class StreamWorker(threading.Thread):
         la misma imagen cuando el CPU tarda más que el FPS solicitado.
         """
         with self._lock:
-            frame = None if self._latest_frame is None else self._latest_frame.copy()
-            return frame, self._latest_frame_ts
+            return self._latest_frame, self._latest_frame_ts
 
     def get_recent_history(self) -> list[tuple[float, bytes]]:
         """Frames JPEG de los ultimos settings.clip_pre_seconds, mas viejo primero."""
@@ -328,14 +333,18 @@ class StreamManager:
         return fallback if kind != "main" and fallback in self._workers else None
 
     def release(self, device_id: int, kind: str = "main") -> None:
+        worker_to_stop = None
         with self._lock:
             key = self._resolve_key(device_id, kind)
             if key is None:
                 return
             self._refcounts[key] -= 1
             if self._refcounts[key] <= 0:
-                self._workers.pop(key).stop()
+                worker_to_stop = self._workers.pop(key)
+                worker_to_stop.stop()
                 self._refcounts.pop(key, None)
+        if worker_to_stop is not None:
+            worker_to_stop.join(timeout=1.0)
 
     def get_worker(self, device_id: int, kind: str = "main") -> StreamWorker | None:
         with self._lock:

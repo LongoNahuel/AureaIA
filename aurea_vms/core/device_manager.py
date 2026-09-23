@@ -291,6 +291,47 @@ def fetch_onvif_profiles(ip: str, port: int, username: str, password: str) -> On
     )
 
 
+def remap_onvif_stream_host(
+    info: OnvifProfileInfo, host: str, rtsp_port: int | None = None
+) -> OnvifProfileInfo:
+    """Adapta las URI RTSP ONVIF a un host/puerto publicados por NAT.
+
+    Muchos NVR devuelven desde ONVIF una URI con su IP privada (por ejemplo
+    192.168.x.x). Esa URI funciona dentro de la LAN, pero no desde el VMS
+    remoto aunque el puerto haya sido redirigido. Se conserva el path y se
+    reemplaza solo host/puerto.
+    """
+    host = host.strip()
+    if not host:
+        raise ValueError("El host remoto no puede estar vacío")
+
+    def remap(url: str | None) -> str | None:
+        if not url:
+            return None
+        parts = urlsplit(url)
+        netloc = host
+        if rtsp_port:
+            netloc = f"{host}:{rtsp_port}"
+        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+    channels = tuple(
+        OnvifChannelInfo(
+            channel=row.channel,
+            name=row.name,
+            rtsp_main_url=remap(row.rtsp_main_url) or row.rtsp_main_url,
+            rtsp_sub_url=remap(row.rtsp_sub_url),
+            has_ptz=row.has_ptz,
+        )
+        for row in info.channels
+    )
+    return OnvifProfileInfo(
+        rtsp_main_url=remap(info.rtsp_main_url) or info.rtsp_main_url,
+        rtsp_sub_url=remap(info.rtsp_sub_url),
+        has_ptz=info.has_ptz,
+        channels=channels,
+    )
+
+
 def reboot_device(ip: str, port: int, username: str, password: str) -> None:
     """Reinicia el dispositivo via ONVIF (SystemReboot). Operacion estandar
     del servicio de gestion de dispositivos -- el equipo va a estar fuera

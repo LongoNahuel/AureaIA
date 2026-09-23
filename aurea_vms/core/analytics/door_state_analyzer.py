@@ -22,61 +22,59 @@ class DoorStateAnalyzer(Analyzer):
         change_threshold: float = 0.10,
         confirmation_frames: int = 3,
         roi: tuple[int, int, int, int] | None = None,
+        zones: list[tuple[int, int, int, int]] | None = None,
+        opening_percent: float = 10.0,
+        threshold_seconds: float | None = None,
     ) -> None:
         # El umbral representa la fraccion minima del ROI ocupada por el
         # cambio morfologico. No depende de la resolucion de la camara.
         self._threshold = max(0.01, min(0.8, float(change_threshold)))
+        self._opening_percent = max(1.0, min(100.0, float(opening_percent))) / 100.0
         self._confirmation_frames = max(1, int(confirmation_frames))
-        self._roi = roi
-        self._baseline: np.ndarray | None = None
+        self._threshold_seconds = max(0.0, float(threshold_seconds or 0.0))
+        self._rois = zones or ([roi] if roi is not None else [None])
+        self._baselines: list[np.ndarray | None] = [None] * len(self._rois)
         self._morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         self._candidate = "cerrada"
         self._candidate_hits = 0
+        self._candidate_since = 0.0
         self._state = "cerrada"
 
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
-        crop, offset_x, offset_y = crop_to_roi(frame, self._roi)
-        small, scale = resize_for_inference(crop)
-        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        scores: list[tuple[float, int, int, float, tuple[int, ...]]] = []
+        for index, roi in enumerate(self._rois):
+            crop, offset_x, offset_y = crop_to_roi(frame, roi)
+            small, scale = resize_for_inference(crop)
+            gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            if self._baselines[index] is None:
+                self._baselines[index] = blurred.copy()
+                continue
 
-        if self._baseline is None:
-            self._baseline = blurred.copy()
-            return self._result("cerrada", 0.0, None, offset_x, offset_y, scale, small.shape)
+            difference = cv2.absdiff(blurred, self._baselines[index])
+            difference_u8 = np.clip(difference * 255.0, 0, 255).astype(np.uint8)
+            _, mask = cv2.threshold(difference_u8, 24, 255, cv2.THRESH_BINARY)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self._morph_kernel, iterations=1)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self._morph_kernel, iterations=2)
+            changed_area = float(cv2.countNonZero(mask) / mask.size)
+            scores.append((changed_area, offset_x, offset_y, scale, small.shape))
 
-        difference = cv2.absdiff(blurred, self._baseline)
-        # La diferencia se convierte en una silueta binaria y se limpia
-        # morfologicamente: OPEN quita ruido de compresion y CLOSE rellena
-        # huecos producidos por barrotes, reflejos o la manija.
-        difference_u8 = np.clip(difference * 255.0, 0, 255).astype(np.uint8)
-        _, mask = cv2.threshold(difference_u8, 24, 255, cv2.THRESH_BINARY)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self._morph_kernel, iterations=1)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self._morph_kernel, iterations=2)
-
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        changed_area = 0.0
-        if contours:
-            # Se ignoran componentes diminutos; la puerta debe formar una
-            # region conectada significativa dentro del ROI.
-            min_component_area = mask.size * 0.002
-            changed_area = (
-                sum(
-                    cv2.contourArea(contour)
-                    for contour in contours
-                    if cv2.contourArea(contour) >= min_component_area
-                )
-                / mask.size
-            )
-        score = float(min(1.0, changed_area))
-        candidate = "abierta" if score >= self._threshold else "cerrada"
+        score, offset_x, offset_y, scale, shape = max(
+            scores, default=(0.0, 0, 0, 1.0, frame.shape)
+        )
+        candidate = "abierta" if score >= max(self._threshold, self._opening_percent) else "cerrada"
         if candidate == self._candidate:
             self._candidate_hits += 1
         else:
             self._candidate = candidate
             self._candidate_hits = 1
+            self._candidate_since = timestamp
 
         transition: str | None = None
-        if self._candidate_hits >= self._confirmation_frames and candidate != self._state:
+        confirmed = self._candidate_hits >= self._confirmation_frames
+        if self._threshold_seconds:
+            confirmed = confirmed and timestamp - self._candidate_since >= self._threshold_seconds
+        if confirmed and candidate != self._state:
             previous = self._state
             self._state = candidate
             transition = f"{previous}_a_{candidate}"
@@ -93,8 +91,9 @@ class DoorStateAnalyzer(Analyzer):
         scale: float,
         shape: tuple[int, ...],
     ) -> AnalysisResult:
-        if self._roi is not None:
-            _, _, width, height = self._roi
+        roi = self._rois[0] if self._rois and self._rois[0] is not None else None
+        if roi is not None:
+            _, _, width, height = roi
         else:
             height, width = shape[:2]
             if scale != 1.0:

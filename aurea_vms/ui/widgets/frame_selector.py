@@ -18,16 +18,20 @@ DRAG_COLOR = QColor("#facc15")
 
 
 class FrameSelectorWidget(QLabel):
-    def __init__(self, mode: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, mode: str, parent: QWidget | None = None, *, max_rects: int = 1
+    ) -> None:
         super().__init__(parent)
-        if mode not in ("rect", "line"):
-            raise ValueError("mode debe ser 'rect' o 'line'")
+        if mode not in ("rect", "rects", "line"):
+            raise ValueError("mode debe ser 'rect', 'rects' o 'line'")
         self._mode = mode
+        self._max_rects = max(1, max_rects)
         self._frame: np.ndarray | None = None
         self._pixmap_rect = QRect()
         self._drag_start: QPoint | None = None
         self._drag_current: QPoint | None = None
         self._selection: Rect | None = None
+        self._selections: list[Rect] = []
         self._line: tuple[Point, Point] | None = None
 
         self.setMinimumSize(320, 180)
@@ -43,6 +47,12 @@ class FrameSelectorWidget(QLabel):
 
     def set_initial_rect(self, rect: Rect | None) -> None:
         self._selection = rect
+        self._selections = [rect] if rect is not None else []
+        self.update()
+
+    def set_initial_rects(self, rects: list[Rect]) -> None:
+        self._selections = list(rects[: self._max_rects])
+        self._selection = self._selections[0] if self._selections else None
         self.update()
 
     def set_initial_line(self, line: tuple[Point, Point] | None) -> None:
@@ -50,13 +60,17 @@ class FrameSelectorWidget(QLabel):
         self.update()
 
     def get_rect(self) -> Rect | None:
-        return self._selection
+        return self._selections[0] if self._selections else self._selection
+
+    def get_rects(self) -> list[Rect]:
+        return list(self._selections or ([self._selection] if self._selection else []))
 
     def get_line(self) -> tuple[Point, Point] | None:
         return self._line
 
     def clear_selection(self) -> None:
         self._selection = None
+        self._selections = []
         self._line = None
         self.update()
 
@@ -84,10 +98,11 @@ class FrameSelectorWidget(QLabel):
         pen = QPen(SELECTION_COLOR, 2)
         painter.setPen(pen)
 
-        if self._mode == "rect" and self._selection is not None:
-            rect = self._frame_rect_to_widget(self._selection)
-            if rect is not None:
-                painter.drawRect(rect)
+        if self._mode in ("rect", "rects"):
+            for selection in self.get_rects():
+                rect = self._frame_rect_to_widget(selection)
+                if rect is not None:
+                    painter.drawRect(rect)
         elif self._mode == "line" and self._line is not None:
             p1 = self._frame_point_to_widget(self._line[0])
             p2 = self._frame_point_to_widget(self._line[1])
@@ -96,7 +111,7 @@ class FrameSelectorWidget(QLabel):
 
         if self._drag_start is not None and self._drag_current is not None:
             painter.setPen(QPen(DRAG_COLOR, 2))
-            if self._mode == "rect":
+            if self._mode in ("rect", "rects"):
                 painter.drawRect(QRect(self._drag_start, self._drag_current).normalized())
             else:
                 painter.drawLine(self._drag_start, self._drag_current)
@@ -155,13 +170,19 @@ class FrameSelectorWidget(QLabel):
         self._drag_current = None
 
         if start_frame is not None and end_frame is not None:
-            if self._mode == "rect":
+            if self._mode in ("rect", "rects"):
                 x1, y1 = start_frame
                 x2, y2 = end_frame
                 x, y = min(x1, x2), min(y1, y2)
                 w, h = abs(x2 - x1), abs(y2 - y1)
                 if w > 4 and h > 4:
-                    self._selection = (x, y, w, h)
+                    rect = (x, y, w, h)
+                    if self._mode == "rect":
+                        self._selection = rect
+                        self._selections = [rect]
+                    else:
+                        self._selections = (self._selections + [rect])[-self._max_rects :]
+                        self._selection = self._selections[0]
             elif start_frame != end_frame:
                 self._line = (start_frame, end_frame)
 
