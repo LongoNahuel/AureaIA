@@ -70,11 +70,6 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
   ya está reservado).
 - Reproductor embebido (hoy abre el reproductor del SO) y captura
   manual con `created_by`.
-- **Compartir la sesión de ONNX entre analíticas**: hoy cada analizador crea
-  su propia `InferenceSession` de YOLOX-Tiny (`object_detector_backend.py:271-287`,
-  `people_counting_analyzer.py:62`, `line_crossing_analyzer.py:55`), o sea 20 MB
-  de modelo por analítica y por cámara. Mitigado a medias con
-  `intra_op_num_threads=2`.
 - `analytics_fps` por cámara (hoy global, con override en `params["fps"]`).
   Evaluar un execution provider con GPU si el hardware de sala lo permite.
 - Tracker: matching greedy por centroide dependiente del orden de las
@@ -115,6 +110,19 @@ se cerraron entre el 21 y el 22 de septiembre. El detalle está en "Hecho".
   Sitios → Zonas → Cámaras).
 
 ## Hecho
+
+- ~~Cada analizador crea su propia `InferenceSession` de 20 MB~~ — una sesión
+  por **archivo de modelo**, con refcount y lock porque los analizadores se
+  construyen desde hilos distintos. `close()` dejó de ser un hook vacío: lo
+  implementan `PeopleCountingAnalyzer`, `LineCrossingAnalyzer` y
+  `FaceDetectionAnalyzer`, y es idempotente (un doble decremento liberaría
+  una sesión en uso). Medido con 4 cámaras × 2 analíticas sobre 12 cores:
+  **50 MB en vez de 150 MB, y 25% más rápido** (17,8 contra 14,2
+  inferencias/s) — no hubo trade-off RAM/CPU, se ganó en las dos, porque 8
+  sesiones × 2 threads peleaban por los mismos cores que la captura RTSP y la
+  UI. YuNet **no** se comparte a propósito: guarda el tamaño de entrada
+  adentro (`setInputSize` por frame), así que dos cámaras con recortes
+  distintos se lo pisarían, y pesa 228 KB contra 20 MB.
 
 - ~~Credenciales de cámara en texto plano~~ — cifradas en reposo con Fernet,
   clave en `<data_dir>/camera_key` creada con 0600 de entrada (no con un

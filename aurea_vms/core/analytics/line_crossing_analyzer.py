@@ -105,10 +105,18 @@ class LineCrossingAnalyzer(Analyzer):
             track.side = new_side
 
         metrics = {
-                "count_in": self._count_in,
-                "count_out": self._count_out,
-                "total": self._count_in + self._count_out,
+            "count_in": self._count_in,
+            "count_out": self._count_out,
+            "total": self._count_in + self._count_out,
         }
         if self._smart_mark_enabled and last_crossing:
             metrics["last_crossing"] = last_crossing
         return AnalysisResult(detections=tuple(detections), metrics=metrics)
+
+    def close(self) -> None:
+        """Suelta la sesion ONNX compartida. Sin esto el contrato de
+        Analyzer.close() era un hook vacio y el modelo quedaba vivo hasta
+        que lo juntara el GC -- con los destructores nativos corriendo
+        recien al cierre del interprete, que es el escenario que
+        core/analytics/base.py señala como riesgo de crash en headless.        """
+        self._detector.close()
