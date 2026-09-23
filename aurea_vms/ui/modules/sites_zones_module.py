@@ -229,7 +229,9 @@ class SitesZonesModule(QWidget):
             self.zones_table.setItem(row, 0, QTableWidgetItem(zone.name))
             self.zones_table.setItem(row, 1, QTableWidgetItem(site_names.get(zone.site_id, "?")))
             self.zones_table.setItem(row, 2, QTableWidgetItem("Sí" if zone.critical else "No"))
-            self.zones_table.setItem(row, 3, QTableWidgetItem(str(len(devices_by_zone.get(zone.id, set())))))
+            self.zones_table.setItem(
+                row, 3, QTableWidgetItem(str(len(devices_by_zone.get(zone.id, set()))))
+            )
             self.zones_table.setCellWidget(row, 4, self._zone_operation_widget(zone))
 
     def _site_operation_widget(self, site: Site) -> QWidget:

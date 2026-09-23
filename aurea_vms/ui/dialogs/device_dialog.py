@@ -144,7 +144,9 @@ class DeviceDialog(QDialog):
             self.channel_list.addItem(item)
         visible = bool(channels)
         self.channel_label.setVisible(visible)
-        self.channel_list.setVisible(visible and self.device_type_combo.currentData() in {"nvr", "xvr"})
+        self.channel_list.setVisible(
+            visible and self.device_type_combo.currentData() in {"nvr", "xvr"}
+        )
         self._detected_channels = channels
 
     def _on_type_changed(self, *_args) -> None:

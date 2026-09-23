@@ -137,8 +137,7 @@ class PeopleCountingAnalyzer(Analyzer):
             metrics["alerta_maxima"] = len(confirmed) >= self._max_people_alert
         if self._heatmap_enabled:
             self._heatmap_points.extend(
-                (det.bbox[0] + det.bbox[2] // 2, det.bbox[1] + det.bbox[3])
-                for det in confirmed
+                (det.bbox[0] + det.bbox[2] // 2, det.bbox[1] + det.bbox[3]) for det in confirmed
             )
             self._heatmap_points = self._heatmap_points[-200:]
             metrics["heatmap"] = self._heatmap_points
@@ -149,5 +148,5 @@ class PeopleCountingAnalyzer(Analyzer):
         Analyzer.close() era un hook vacio y el modelo quedaba vivo hasta
         que lo juntara el GC -- con los destructores nativos corriendo
         recien al cierre del interprete, que es el escenario que
-        core/analytics/base.py señala como riesgo de crash en headless.        """
+        core/analytics/base.py señala como riesgo de crash en headless."""
         self._detector.close()

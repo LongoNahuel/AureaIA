@@ -322,7 +322,9 @@ class DeviceManagementModule(QWidget):
     def _on_select_all_changed(self, state: int) -> None:
         if self._updating_selection or state == Qt.CheckState.PartiallyChecked:
             return
-        checked = Qt.CheckState.Checked if state == Qt.CheckState.Checked else Qt.CheckState.Unchecked
+        checked = (
+            Qt.CheckState.Checked if state == Qt.CheckState.Checked else Qt.CheckState.Unchecked
+        )
         self._updating_selection = True
         try:
             for row in range(self.managed_table.rowCount()):
@@ -595,7 +597,7 @@ class DeviceManagementModule(QWidget):
             parent = repository.add_device(**parent_values)
             for values in values_list:
                 values.update(
-                    name=f'{parent.name} · Canal {values["channel"]}',
+                    name=f"{parent.name} · Canal {values['channel']}",
                     parent_device_id=parent.id,
                     **metadata,
                 )
@@ -607,8 +609,7 @@ class DeviceManagementModule(QWidget):
         notify(
             self,
             "Dispositivo agregado",
-            f'"{values_list[0]["name"]}" se agregó correctamente '
-            f'({len(values_list)} canal(es)).',
+            f'"{values_list[0]["name"]}" se agregó correctamente ({len(values_list)} canal(es)).',
         )
         self._reload_managed()
         self._reload_discovered_table()

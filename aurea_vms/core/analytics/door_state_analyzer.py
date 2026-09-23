@@ -59,9 +59,7 @@ class DoorStateAnalyzer(Analyzer):
             changed_area = float(cv2.countNonZero(mask) / mask.size)
             scores.append((changed_area, offset_x, offset_y, scale, small.shape))
 
-        score, offset_x, offset_y, scale, shape = max(
-            scores, default=(0.0, 0, 0, 1.0, frame.shape)
-        )
+        score, offset_x, offset_y, scale, shape = max(scores, default=(0.0, 0, 0, 1.0, frame.shape))
         candidate = "abierta" if score >= max(self._threshold, self._opening_percent) else "cerrada"
         if candidate == self._candidate:
             self._candidate_hits += 1

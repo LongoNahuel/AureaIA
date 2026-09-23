@@ -199,10 +199,12 @@ class AnalyticsConfigModule(QWidget):
         for index, analyzer_name in enumerate(AVAILABLE_ANALYZERS):
             card = _DashboardCard(
                 ANALYZER_DISPLAY_NAMES[analyzer_name],
-                {"door_state": "#f59e0b", "people_counting": "#3b82f6",
-                 "line_crossing": "#22c55e", "face_detection": "#a855f7"}.get(
-                    analyzer_name, "#64748b"
-                ),
+                {
+                    "door_state": "#f59e0b",
+                    "people_counting": "#3b82f6",
+                    "line_crossing": "#22c55e",
+                    "face_detection": "#a855f7",
+                }.get(analyzer_name, "#64748b"),
                 self.dashboard_card,
             )
             self._dashboard_cards[analyzer_name] = card

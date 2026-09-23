@@ -314,9 +314,7 @@ class VideoTile(QWidget):
             return
 
         worker = stream_manager.get_worker(self._device.id, self._stream_kind)
-        frame, frame_ts = (
-            worker.get_latest_frame_with_timestamp() if worker else (None, 0.0)
-        )
+        frame, frame_ts = worker.get_latest_frame_with_timestamp() if worker else (None, 0.0)
         if frame is None or worker.is_stale():
             # Antes quedaba el ultimo frame congelado, que parece en vivo --
             # exactamente lo que is_stale() existia para evitar.
@@ -395,10 +393,20 @@ class VideoTile(QWidget):
             if config.analyzer_name == "line_crossing" and line and len(line) == 2:
                 (x1, y1), (x2, y2) = line
                 event = self._latest_events.get("line_crossing")
-                if event and event.metrics.get("last_crossing") and dt.datetime.now().timestamp() - event.timestamp < 1.5:
+                if (
+                    event
+                    and event.metrics.get("last_crossing")
+                    and dt.datetime.now().timestamp() - event.timestamp < 1.5
+                ):
                     color = QColor("#22c55e")
                 pen = QPen(color)
-                pen.setWidthF(4.5 if event and event.metrics.get("last_crossing") and dt.datetime.now().timestamp() - event.timestamp < 1.5 else 2.2)
+                pen.setWidthF(
+                    4.5
+                    if event
+                    and event.metrics.get("last_crossing")
+                    and dt.datetime.now().timestamp() - event.timestamp < 1.5
+                    else 2.2
+                )
                 painter.setPen(pen)
                 painter.drawLine(
                     QPointF(float(x1) * scale_x, float(y1) * scale_y),

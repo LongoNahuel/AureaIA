@@ -137,7 +137,11 @@ class StreamWorker(threading.Thread):
                     break
                 continue
 
-            logger.info("Camara %s (%s): socket RTSP conectado, esperando primer frame", self.device_id, self.kind)
+            logger.info(
+                "Camara %s (%s): socket RTSP conectado, esperando primer frame",
+                self.device_id,
+                self.kind,
+            )
             delivered_frames, frozen = self._capture_loop(cap)
             cap.release()
 

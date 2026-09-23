@@ -22,9 +22,7 @@ from dataclasses import dataclass
 from aurea_vms.core.events import Detection
 
 
-def _bbox_iou(
-    first: tuple[int, int, int, int], second: tuple[int, int, int, int]
-) -> float:
+def _bbox_iou(first: tuple[int, int, int, int], second: tuple[int, int, int, int]) -> float:
     ax, ay, aw, ah = first
     bx, by, bw, bh = second
     left, top = max(ax, bx), max(ay, by)
@@ -93,9 +91,7 @@ class CentroidTracker:
                     continue
                 iou = _bbox_iou(track.bbox, det.bbox)
                 if iou >= self.min_iou and iou > 0:
-                    if best_id is None or iou > _bbox_iou(
-                        self.tracks[best_id].bbox, det.bbox
-                    ):
+                    if best_id is None or iou > _bbox_iou(self.tracks[best_id].bbox, det.bbox):
                         best_id = tid
                         best_dist = math.dist(track.centroid, centroid)
                     continue

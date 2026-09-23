@@ -144,8 +144,7 @@ class LiveViewModule(QWidget):
             title_row.addWidget(title_icon)
             title = BodyLabel("Vista Inteligente", right_side)
             title.setStyleSheet(
-                "font-size: 22px; font-weight: 700; color: #e8f7ff; "
-                "background: transparent;"
+                "font-size: 22px; font-weight: 700; color: #e8f7ff; background: transparent;"
             )
             title_row.addWidget(title)
             title_row.addStretch(1)

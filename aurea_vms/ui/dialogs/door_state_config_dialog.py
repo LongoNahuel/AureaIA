@@ -72,9 +72,7 @@ class DoorStateConfigDialog(AnalyticsConfigDialogBase):
 
     def build_params(self) -> dict:
         return {
-            "change_threshold": max(
-                0.01, 0.8 - (self.sensitivity_slider.value() - 1) / 99 * 0.79
-            ),
+            "change_threshold": max(0.01, 0.8 - (self.sensitivity_slider.value() - 1) / 99 * 0.79),
             "opening_percent": self.open_percent_spin.value(),
             "confirmation_frames": self.confirmation_spin.value(),
             "threshold_seconds": self.time_threshold_spin.value(),

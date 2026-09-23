@@ -18,9 +18,7 @@ DRAG_COLOR = QColor("#facc15")
 
 
 class FrameSelectorWidget(QLabel):
-    def __init__(
-        self, mode: str, parent: QWidget | None = None, *, max_rects: int = 1
-    ) -> None:
+    def __init__(self, mode: str, parent: QWidget | None = None, *, max_rects: int = 1) -> None:
         super().__init__(parent)
         if mode not in ("rect", "rects", "line"):
             raise ValueError("mode debe ser 'rect', 'rects' o 'line'")

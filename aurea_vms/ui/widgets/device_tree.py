@@ -109,9 +109,7 @@ class DeviceTreeWidget(QWidget):
             if self._site_filter is not None and site.id != self._site_filter:
                 continue
             site_zones = zones_by_site.get(site.id, [])
-            site_devices_by_id = {
-                device.id: device for device in devices_by_site.get(site.id, [])
-            }
+            site_devices_by_id = {device.id: device for device in devices_by_site.get(site.id, [])}
             for zone in site_zones:
                 for device in devices_by_zone.get(zone.id, []):
                     site_devices_by_id[device.id] = device
@@ -130,10 +128,14 @@ class DeviceTreeWidget(QWidget):
 
             for zone in site_zones:
                 zone_devices = devices_by_zone.get(zone.id, [])
-                zone_devices = [device for device in zone_devices if device.parent_device_id is None]
+                zone_devices = [
+                    device for device in zone_devices if device.parent_device_id is None
+                ]
                 if not zone_devices:
                     continue
-                zone_count = sum(len(devices_by_parent.get(device.id, [])) or 1 for device in zone_devices)
+                zone_count = sum(
+                    len(devices_by_parent.get(device.id, [])) or 1 for device in zone_devices
+                )
                 zone_item = QTreeWidgetItem([f"{zone.name} ({zone_count})"])
                 zone_item.setFlags(zone_item.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
                 if zone.critical:
