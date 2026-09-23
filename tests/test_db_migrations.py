@@ -199,6 +199,19 @@ class TestAdopcionDeUnaBaseLegada:
 
         assert "ix_devices_zone_id" in _indices(ruta, "devices")
 
+    def test_adopta_aunque_los_modelos_declaren_columnas_posteriores(self, tmp_path):
+        """El metadata vivo declara índices sobre columnas de 0006 que una
+        base legada no tiene. La adopción no puede intentar crearlos (moría
+        con "no such column"): los crea la revisión que agrega la columna."""
+        ruta = _base_legada(tmp_path)
+
+        db_module.init_db(ruta, force=True)
+
+        assert {"ix_devices_parent_device_id", "ix_devices_assigned_site_id"} <= _indices(
+            ruta, "devices"
+        )
+        assert db_module.revision_actual(db_module._engine) == _cabeza()
+
     def test_la_camara_asignada_al_sitio_legado_queda_en_una_zona(self, tmp_path):
         """El backfill: sin él, toda cámara asignada aparecía "Sin zona" en
         silencio e invisible para el filtro global de sitio."""

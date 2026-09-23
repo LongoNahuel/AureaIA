@@ -57,10 +57,12 @@ class TestUnKwargDesconocidoLevanta:
             repository.update_zone(datos["zona"].id, critico=True)  # es `critical`
 
     def test_update_device(self, datos):
-        """El caso exacto que rompió el seed de demo: site_id dejó de ser
-        columna de Device cuando entraron las zonas."""
-        with pytest.raises(ValueError, match="site_id"):
-            repository.update_device(datos["device"].id, site_id=1)
+        """El mismo tipo de error que rompió el seed de demo (entonces fue
+        site_id, cuando dejó de ser columna). Hoy el tropiezo probable es el
+        inverso: la columna en la base se llama assigned_site_id, pero el
+        atributo del modelo es site_id (0006)."""
+        with pytest.raises(ValueError, match="assigned_site_id"):
+            repository.update_device(datos["device"].id, assigned_site_id=1)
 
     def test_update_alarm_rule(self, datos):
         with pytest.raises(ValueError):
@@ -80,17 +82,17 @@ class TestUnKwargDesconocidoLevanta:
 
     def test_el_mensaje_dice_cual_sobra_y_cuales_valen(self, datos):
         with pytest.raises(ValueError) as error:
-            repository.update_device(datos["device"].id, site_id=1)
+            repository.update_device(datos["device"].id, assigned_site_id=1)
 
         mensaje = str(error.value)
-        assert "site_id" in mensaje
-        assert "zone_id" in mensaje  # la que probablemente quería usar
+        assert "assigned_site_id" in mensaje
+        assert "'site_id'" in mensaje  # la que probablemente quería usar
 
     def test_no_escribe_nada_de_lo_que_venia_en_el_mismo_lote(self, datos):
         """Levanta ANTES de abrir la sesión: un lote con una clave mala no
         guarda a medias."""
         with pytest.raises(ValueError):
-            repository.update_device(datos["device"].id, name="Nuevo nombre", site_id=1)
+            repository.update_device(datos["device"].id, name="Nuevo nombre", assigned_site_id=1)
 
         assert repository.get_device(datos["device"].id).name == "Cam"
 

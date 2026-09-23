@@ -76,13 +76,25 @@ def adoptar(engine, metadata) -> list[str]:
     # agrega la columna y nada mas: la base de desarrollo venia corriendo
     # sin ix_devices_zone_id desde que existen las zonas, o sea que filtrar
     # camaras por zona hacia scan completo.
+    #
+    # Solo los indices cuyas columnas ya estan en la tabla. `metadata` es el
+    # de los modelos de HOY, que declaran columnas posteriores a la baseline
+    # (devices.parent_device_id, de 0006): su indice lo crea la revision que
+    # agrega la columna. Sin este filtro la adopcion moria con "no such
+    # column" contra cualquier base legada, que fue lo que llevo a reflotar
+    # el sistema ad-hoc el 23/09.
     with engine.begin() as conn:
         existentes = {
             row[0]
             for row in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='index'")
         }
         for tabla in metadata.tables.values():
+            columnas_reales = {
+                row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({tabla.name})")
+            }
             for indice in tabla.indexes:
+                if not {c.name for c in indice.columns} <= columnas_reales:
+                    continue
                 if indice.name not in existentes:
                     indice.create(bind=conn)
                     tocado.append(f"índice {indice.name}")

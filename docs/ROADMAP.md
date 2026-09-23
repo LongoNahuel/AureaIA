@@ -59,9 +59,22 @@ que se trabajan ese mismo día:
   comparan enteros contra booleanos; `models/db.py` fija `sqlite:///`. Antes de
   un nodo PostgreSQL hay que pasarlas a `sa.inspect(conn)` y `sa.true()`.
 - **La adopción de bases legadas usa el metadata vivo**
-  (`migrations/adopcion.py:62,84-88`): una `op.create_table` o un `index=True`
-  futuros sobre una columna nueva la rompen. Congelar un snapshot del metadata
-  de la baseline.
+  (`migrations/adopcion.py`): una `op.create_table` futura choca con la tabla
+  que la adopción ya creó con la forma nueva. Los índices sobre columnas
+  posteriores a la baseline ya están cubiertos: se saltean si la columna no
+  existe (23/09, al pasar a 0006 las columnas de grabadores). Congelar un
+  snapshot del metadata de la baseline.
+- **Toda columna nueva va en una revisión** (`aurea_vms/migrations/versions/`),
+  nunca como `ALTER TABLE` en `models/db.py`: el 23/09 el sistema ad-hoc
+  volvió por una rama anterior a Alembic y dejó `main` en rojo. Hay un test
+  que lo fija (`tests/test_migracion_0006.py::TestNoVuelveElSistemaAdhoc`).
+- 🟠 **Las bases adoptadas no quedan con el esquema de los modelos.** La
+  base de dev, adoptada el 22/09, tiene `devices.zone_id` con la FK **sin**
+  `ON DELETE SET NULL` (borrar una zona con cámaras falla ahí y no en una
+  base nueva) y le faltan los UNIQUE de `sites.name`, `users.username` y
+  `media_assets.rel_path`. El test de deriva solo mira bases nuevas. Hace
+  falta una revisión que normalice las adoptadas y un test de deriva sobre
+  una base adoptada.
 - **El `naming_convention` de `migrations/env.py` no hace nada**:
   `context.configure` lo ignora, solo sirve pasado a cada `batch_alter_table`.
   Las bases adoptadas conservan constraints anónimas; un `drop_constraint` por
