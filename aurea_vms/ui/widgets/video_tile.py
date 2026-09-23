@@ -405,6 +405,8 @@ class VideoTile(QWidget):
                 )
 
     def _draw_people_heatmap(self, painter: QPainter, scale_x: float, scale_y: float) -> None:
+        if not self._people_heatmap_enabled():
+            return
         event = self._latest_events.get("people_counting")
         if not event:
             return
@@ -416,6 +418,14 @@ class VideoTile(QWidget):
             painter.drawEllipse(
                 QPointF(float(point[0]) * scale_x, float(point[1]) * scale_y), 10, 10
             )
+
+    def _people_heatmap_enabled(self) -> bool:
+        """El overlay sigue el estado guardado, aunque aún exista un evento
+        anterior en memoria con puntos del mapa de calor."""
+        for config in self._analytics_configs:
+            if config.analyzer_name == "people_counting":
+                return bool((config.params or {}).get("heatmap_enabled", True))
+        return False
 
     def _draw_analytics_status(self, painter: QPainter, width: int) -> None:
         if not self._analytics_configs:
