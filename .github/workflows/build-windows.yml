@@ -20,6 +20,14 @@ on:
       - "pyproject.toml"
       - "requirements*.txt"
       - ".github/workflows/build-windows.yml"
+      # Lo que se carga en runtime por ruta o con binarios nativos: una
+      # regresion aca solo la ve el smoke del .exe.
+      - "aurea_vms/migrations/**"
+      - "aurea_vms/smoke.py"
+      - "aurea_vms/main.py"
+      - "aurea_vms/config/resources.py"
+      - "aurea_vms/core/credential_store.py"
+      - "aurea_vms/core/analytics/model_assets.py"
 
 jobs:
   build:
@@ -27,8 +35,10 @@ jobs:
     timeout-minutes: 45
     env:
       QT_QPA_PLATFORM: offscreen
-      # El smoke no debe ensuciar el perfil del runner.
-      AUREA_DATA_DIR: ${{ github.workspace }}\smoke-data
+      # Sin __pycache__ en el arbol: el smoke previo importa las revisiones
+      # y el spec copia aurea_vms/migrations entera como datas.
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,12 +47,26 @@ jobs:
           cache: pip
       - name: Instalar proyecto + PyInstaller
         run: pip install -e . pyinstaller
+      # Cada smoke con su propio data-dir, VACIO. Hasta el 23/09 compartian
+      # uno: el del .exe encontraba la base ya en head y los .onnx ya
+      # copiados, asi que no corria ninguna revision ni usaba el bundle.
       - name: Smoke pre-build (entorno completo, 4 analizadores reales)
+        env:
+          AUREA_DATA_DIR: ${{ github.workspace }}\smoke-pre
         run: python -m aurea_vms.main --smoke
       - name: Compilar onedir
         run: pyinstaller aurea_vms.spec --noconfirm
-      - name: Smoke del ejecutable
-        run: .\dist\AureaVMS\AureaVMS.exe --smoke
+      - name: Smoke del ejecutable (data-dir vacio)
+        shell: bash
+        env:
+          AUREA_DATA_DIR: ${{ github.workspace }}\smoke-exe
+        run: |
+          ./dist/AureaVMS/AureaVMS.exe --smoke 2>&1 | tee smoke-exe.log
+          # Un smoke verde sobre un data-dir usado no prueba el bundle.
+          grep -q "base nueva: corrieron todas las revisiones" smoke-exe.log
+          # `if` y no `! grep`: set -e ignora los comandos negados con `!`.
+          if grep -q "smoke: AVISO" smoke-exe.log; then exit 1; fi
+          grep -q "^SMOKE OK" smoke-exe.log
       - name: Empaquetar zip
         run: Compress-Archive -Path dist\AureaVMS -DestinationPath AureaVMS-win64.zip
       - uses: actions/upload-artifact@v4

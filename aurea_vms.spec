@@ -8,7 +8,7 @@ corporativas bloquean ejecucion desde TEMP). onedir arranca rapido y se
 distribuye como zip.
 
 Build:  pyinstaller aurea_vms.spec --noconfirm
-Smoke:  dist/AureaVMS/AureaVMS.exe --smoke   (con AUREA_DATA_DIR a un tmp)
+Smoke:  dist/AureaVMS/AureaVMS.exe --smoke   (con AUREA_DATA_DIR a un dir VACIO)
 """
 
 from pathlib import Path
@@ -31,22 +31,35 @@ datas = [
     # aplicar un cambio de esquema -- y no hay nadie que corra
     # "alembic upgrade" a mano en una sala. El smoke del ejecutable es la
     # prueba de que llegaron: init_db() corre dentro de --smoke.
-    ("aurea_vms/migrations", "aurea_vms/migrations"),
+]
+# Archivo por archivo y sin __pycache__: la carpeta entera se llevaba los
+# .pyc que dejara cualquier corrida previa (tests, el smoke pre-build) --
+# bytecode de otra version de las fuentes, metido en el bundle.
+_migrations = Path("aurea_vms/migrations")
+datas += [
+    (str(archivo), str(archivo.parent))
+    for archivo in _migrations.rglob("*")
+    if archivo.is_file() and "__pycache__" not in archivo.parts
 ]
 
 # WSDL de onvif-zeep: viven en site-packages/wsdl (fuera del paquete
 # onvif) y sin ellos ONVIFCamera muere; resources.onvif_camera_kwargs()
 # apunta a este directorio cuando corre frozen.
+# Fail-fast: antes era un `if exists()` mudo, y si el layout del paquete
+# onvif cambiaba el build salia verde y ONVIF moria recien en la sala.
 _wsdl_dir = Path(onvif.__file__).resolve().parent.parent / "wsdl"
-if _wsdl_dir.exists():
-    datas.append((str(_wsdl_dir), "wsdl"))
+if not (_wsdl_dir / "devicemgmt.wsdl").exists():
+    raise SystemExit(f"No se encontro el WSDL de ONVIF en {_wsdl_dir}")
+datas.append((str(_wsdl_dir), "wsdl"))
 
 binaries = []
 hiddenimports = collect_submodules("onvif") + ["zeep"]
 
 # Alembic carga env.py y cada revision con importlib, por ruta: el analisis
 # estatico de PyInstaller no ve ninguno de esos imports.
-hiddenimports += collect_submodules("alembic") + ["logging.config"]
+# `ayudas` solo lo importan las revisiones, asi que tampoco lo ve: sin
+# declararlo, depende del finder de respaldo de PyInstaller.
+hiddenimports += collect_submodules("alembic") + ["logging.config", "aurea_vms.migrations.ayudas"]
 
 # onnxruntime: sus .dll/.pyd + datas internos cargan en runtime; sin
 # collect_all la sesion de inferencia muere recien al crear el primer

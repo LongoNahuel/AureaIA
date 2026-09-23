@@ -14,9 +14,9 @@ el 21 y el 22 de septiembre; el detalle está en "Hecho". La re-auditoría del
 2026-09-23 ([`sesiones/2026-09-23.md`](../sesiones/2026-09-23.md)) abrió estos,
 que se trabajan ese mismo día:
 
-- 🔴 **El smoke del `.exe` no prueba el bundle**: comparte `AUREA_DATA_DIR` con
-  el smoke previo, así que no migra ni usa los modelos empaquetados, y no toca
-  Fernet ni ONVIF (`build-windows.yml:31`, `main.py:112-143`).
+- 🔴 **Falta correr `build-windows.yml`** con el smoke nuevo: es la única
+  prueba de que el `.exe` trae las migraciones, `cryptography`, el WSDL y los
+  modelos. Actions → "Build Windows" → *Run workflow*.
 - 🔴 **Una migración que falla a mitad deja la app sin arrancar**: DDL fuera de
   transacción en SQLite deja `_alembic_tmp_*` huérfano. Tampoco hay backup
   automático antes de migrar (`models/db.py:173-184`).
@@ -103,10 +103,6 @@ que se trabajan ese mismo día:
 
 ## Empaquetado y despliegue
 
-- El spec de PyInstaller empaqueta el WSDL de ONVIF condicionalmente
-  (`aurea_vms.spec:30-33`, `if _wsdl_dir.exists()`) y sin fail-fast: si el
-  layout del paquete `onvif` cambia, compila igual y falla recién al usar
-  ONVIF desde el `.exe`.
 - `console=True` en el spec mientras el build madura; flip a `False` para la
   entrega final.
 - `main()` nunca llama a `app.setWindowIcon()` (`main.py:157-160`), así que el
@@ -190,6 +186,20 @@ reprodujeron están en [`sesiones/2026-09-23.md`](../sesiones/2026-09-23.md).
   Sitios → Zonas → Cámaras).
 
 ## Hecho
+
+- ~~El smoke del `.exe` no prueba el bundle~~ — compartía `AUREA_DATA_DIR`
+  con el smoke previo al build: encontraba la base en head y los `.onnx`
+  copiados, así que no corría ninguna revisión ni usaba los modelos
+  empaquetados, y no tocaba Fernet ni ONVIF. `aurea_vms/smoke.py` ejercita
+  migraciones desde base nueva, una contraseña ida y vuelta leyendo la
+  columna cruda, el WSDL con zeep **sin red** (exigiendo el `DeviceBinding`,
+  porque zeep acepta un archivo vacío) y los analizadores **con las descargas
+  prohibidas**. El workflow usa un data-dir vacío por smoke y exige "base
+  nueva" y cero AVISOS. El spec falla si no encuentra el WSDL y copia las
+  revisiones sin `__pycache__`. Un test de integración corre el smoke
+  completo en el CI de cada push (`tests/test_smoke.py`).
+- ~~Una ruta de datos con `%` rompe el arranque~~ — `_config_de_alembic`
+  escapa `%` (`ConfigParser` levantaba `invalid interpolation syntax`).
 
 - ~~Cada analizador crea su propia `InferenceSession` de 20 MB~~ — una sesión
   por **archivo de modelo**, con refcount y lock porque los analizadores se

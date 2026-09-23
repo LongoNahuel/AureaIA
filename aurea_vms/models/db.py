@@ -142,9 +142,12 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
 
 
 def _config_de_alembic(db_path: Path) -> Config:
+    # set_main_option pasa por la interpolacion de ConfigParser: un "%" en
+    # la ruta (un usuario de Windows "ana%20", un AUREA_DATA_DIR raro)
+    # levantaba ValueError al arrancar. "%%" es el escape.
     config = Config()
-    config.set_main_option("script_location", str(MIGRATIONS_DIR))
-    config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    config.set_main_option("script_location", str(MIGRATIONS_DIR).replace("%", "%%"))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}".replace("%", "%%"))
     return config
 
 

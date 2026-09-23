@@ -117,37 +117,13 @@ def _stop_background_engines() -> None:
 
 
 def _smoke_test() -> int:
-    """Verificacion minima de que el entorno (o el .exe empaquetado) esta
-    completo: directorios, DB, Qt y -- clave -- los CUATRO analizadores con
-    sus modelos nativos reales. Las DLL de onnxruntime cargan recien al
-    crear la primera sesion de inferencia (importar el modulo no alcanza),
-    asi que el smoke crea los detectores y procesa un frame.
+    """Verificacion de que el entorno (o el .exe empaquetado) esta completo.
+    Los chequeos viven en aurea_vms/smoke.py.
 
-    Uso: AureaVMS.exe --smoke  (idealmente con AUREA_DATA_DIR a un tmp)."""
-    import numpy as np
+    Uso: AureaVMS.exe --smoke  (con AUREA_DATA_DIR a un directorio VACIO)."""
+    from aurea_vms import smoke
 
-    from aurea_vms.core.analytics.registry import AVAILABLE_ANALYZERS, create_analyzer
-    from aurea_vms.models.analytics_config import AnalyticsConfig
-
-    settings.ensure_dirs()
-    setup_logging()
-    init_db()
-
-    frame = np.zeros((360, 640, 3), dtype=np.uint8)
-    for name in AVAILABLE_ANALYZERS:
-        params = {"line": [[0, 180], [640, 180]]} if name == "line_crossing" else {}
-        config = AnalyticsConfig(
-            device_id=0, analyzer_name=name, confidence_threshold=0.5, params=params
-        )
-        analyzer = create_analyzer(config)
-        analyzer.process_frame(frame, 0.0)
-        analyzer.close()
-        print(f"smoke: {name} OK")
-
-    app = QApplication(sys.argv[:1])
-    app.processEvents()
-    print("SMOKE OK")
-    return 0
+    return smoke.run()
 
 
 def main() -> int:

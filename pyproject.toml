@@ -76,6 +76,7 @@ source = [
     "aurea_vms.models",
     "aurea_vms.config",
     "aurea_vms.migrations",
+    "aurea_vms.smoke",
 ]
 # env.py SI se ejecuta (cada migracion lo carga), pero Alembic lo importa
 # con importlib bajo un nombre de modulo sintetico y coverage no puede
