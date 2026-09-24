@@ -408,7 +408,7 @@ class TestWatchdogDeCongelado:
         monkeypatch.setattr(
             worker_aislado,
             "_report_status",
-            lambda online, detail: estados.append((online, detail)),
+            lambda online, detail, **_kw: estados.append((online, detail)),
         )
         _capturas(monkeypatch, [FakeCapture(frames=[_frame(70)] * 5)])
         worker_aislado._stop_event = FakeStopEvent(stop_after_waits=1)

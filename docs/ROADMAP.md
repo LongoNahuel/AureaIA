@@ -35,8 +35,11 @@ que se trabajan ese mismo día:
   el hilo de la GUI sin mirar `_active`~~ — Fase 5 del 24/09. Queda abierto si
   `alarm_engine` se muda del hilo de la GUI (medido: ~1 ms por evento, ~41 ms
   por disparo; ver `sesiones/2026-09-24.md`).
-- 🟠 Falsos positivos del watchdog de congelado con cámaras "smart codec" en
-  escenas quietas (`stream_manager.py:82-90`).
+- ~~🟠 Falsos positivos del watchdog de congelado con cámaras "smart codec" en
+  escenas quietas~~ — Fase 6 del 24/09: congelado = PTS quieto **y** misma
+  firma (medido con el rig: 19,9 s de cuadros idénticos con el PTS avanzando);
+  un corte del watchdog ya no persiste "offline". Pendiente: confirmar que el
+  PTS avanza también con cámaras IP reales (el rig es mediamtx + ffmpeg).
 
 ## Seguridad
 

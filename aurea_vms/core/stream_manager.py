@@ -55,10 +55,19 @@ READ_TIMEOUT_MS = 3_000
 STALE_FRAME_S = 15.0
 CAPTURE_BUFFER_SIZE = 1
 
-# Cuanto tiempo seguido tiene que repetirse EXACTAMENTE el mismo frame para
-# dar el stream por congelado. Mismo valor que STALE_FRAME_S pero otra cosa:
-# aquel mide "la imagen que tiene la UI esta vieja", este mide "el decoder
-# nos devuelve siempre la misma foto".
+# Cuanto tiempo seguido tiene que estar quieto el stream -- el PTS sin
+# avanzar Y el mismo frame exacto -- para darlo por congelado. Mismo valor
+# que STALE_FRAME_S pero otra cosa: aquel mide "la imagen que tiene la UI
+# esta vieja", este mide "el decoder nos devuelve siempre la misma foto".
+#
+# Por que el PTS (medido con el rig el 2026-09-24, sesiones/2026-09-24.md):
+# una camara sana que mira una escena quieta con un codec que no manda
+# ruido ("smart codec", o de noche) entrega cuadros decodificados
+# IDENTICOS -- reproducido con un stream lossless: 19.9 s de firma identica
+# seguida, que con el criterio de solo-firma cortaba la camara cada 15 s.
+# Pero su PTS avanza en todos los cuadros. Un decoder colgado, en cambio,
+# devuelve el mismo cuadro: mismo PTS. Si el backend no reporta PTS (queda
+# fijo), el criterio se reduce al de la firma, como era antes.
 FROZEN_STREAM_S = STALE_FRAME_S
 
 
@@ -201,9 +210,13 @@ class StreamWorker(threading.Thread):
         # seguiriamos con los 3s fijos de antes.
         attempt = 1 if delivered_frames else attempt + 1
         reason = "El stream quedó congelado" if frozen else "Se perdió la conexión"
-        return self._wait_before_retry(attempt, reason), attempt
+        # Un corte del watchdog reconecta enseguida: se le avisa a la UI,
+        # pero no se escribe "offline" en la base (el dashboard mostraba
+        # caida una camara que volvia en 3 s). Si la reconexion falla, ese
+        # intento si lo persiste.
+        return self._wait_before_retry(attempt, reason, persistir=not frozen), attempt
 
-    def _wait_before_retry(self, attempt: int, reason: str) -> bool:
+    def _wait_before_retry(self, attempt: int, reason: str, *, persistir: bool = True) -> bool:
         """Reporta el estado y espera el backoff. True si hay que cortar el
         hilo (alguien llamo a stop() mientras esperaba)."""
         delay = _reconnect_delay(attempt)
@@ -215,7 +228,7 @@ class StreamWorker(threading.Thread):
             attempt,
             delay,
         )
-        self._report_status(False, f"{reason}, reintentando en {delay:.0f}s")
+        self._report_status(False, f"{reason}, reintentando en {delay:.0f}s", persistir=persistir)
         return self._stop_event.wait(delay)
 
     def _capture_loop(self, cap) -> tuple[bool, bool]:
@@ -223,6 +236,7 @@ class StreamWorker(threading.Thread):
         worker. Devuelve (entregó frames, quedó congelado)."""
         delivered_frames = False
         last_signature: bytes | None = None
+        last_pts: float | None = None
         identical_since = 0.0
 
         while not self._stop_event.is_set():
@@ -246,12 +260,17 @@ class StreamWorker(threading.Thread):
             # nunca, y el doble requisito evita cortar un mp4 en loop con un
             # tramo estatico (el rig de demo de tools/demo).
             signature = _frame_signature(frame)
-            if signature != last_signature:
+            # Dobles de prueba y backends minimos pueden no exponer get().
+            pts = cap.get(cv2.CAP_PROP_POS_MSEC) if hasattr(cap, "get") else None
+            # Cualquier cambio del PTS cuenta como vida, tambien hacia atras
+            # (la camara reinicio su reloj).
+            if signature != last_signature or pts != last_pts:
                 last_signature = signature
+                last_pts = pts
                 identical_since = captured_at
             elif captured_at - identical_since > FROZEN_STREAM_S:
                 logger.warning(
-                    "Camara %s (%s): el mismo frame hace %.0fs, se da por congelado",
+                    "Camara %s (%s): el mismo frame y el mismo PTS hace %.0fs, se da por congelado",
                     self.device_id,
                     self.kind,
                     captured_at - identical_since,
@@ -277,7 +296,7 @@ class StreamWorker(threading.Thread):
         while self._history and self._history[0][0] < cutoff:
             self._history.popleft()
 
-    def _report_status(self, online: bool, detail: str) -> None:
+    def _report_status(self, online: bool, detail: str, *, persistir: bool = True) -> None:
         # Despues de stop() no se informa nada: el worker se va porque se
         # cerro la vista o se borro la camara, y escribir "offline" ahi
         # pisaba el estado que ya habia puesto el worker nuevo (o escribia
@@ -291,7 +310,7 @@ class StreamWorker(threading.Thread):
         # boton "probar conexion", asi que el dashboard mostraba camaras
         # transmitiendo como "Sin probar". Solo en transiciones (dedup por
         # worker) y sin dejar que un error de DB mate el hilo de captura.
-        if online == self._last_persisted_online:
+        if not persistir or online == self._last_persisted_online:
             return
         try:
             repository.update_device_status(self.device_id, "online" if online else "offline")
