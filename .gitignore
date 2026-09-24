@@ -42,6 +42,8 @@ htmlcov/
 # certificado autofirmado que mediamtx genera al arrancar.
 tools/demo/mediamtx
 tools/demo/mediamtx.exe
+# Clips que publican las camaras falsas (pesados, cada uno trae los suyos).
+tools/demo/media/
 auto.crt
 auto.key
 

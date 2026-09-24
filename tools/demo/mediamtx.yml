@@ -2,6 +2,17 @@
 # cualquier path puede publicarse (los ffmpeg publican cam1..cam4).
 rtsp: yes
 rtspAddress: :8554
+# Solo TCP. Por UDP se pierden paquetes con 4 camaras 1080p + las analiticas
+# en la misma maquina (medido: 4-5 errores de H.264 y ~6% de cuadros perdidos
+# cada 15 s por camara; por TCP, 0). Los clientes que piden UDP caen solos a
+# TCP.
+rtspTransports: [tcp]
+# Cola de salida por lector, en paquetes RTP (potencia de 2). La de fabrica
+# (512) es ~740 KB y los clips van a 7-12 Mbps con I-frames de hasta 812 KB
+# (~570 paquetes): un solo I-frame la llenaba, y con el lector un instante
+# ocupado mediamtx descartaba cuadros ("reader is too slow") y el decoder
+# del VMS tiraba "error while decoding MB". 4096 son ~5 s de video.
+writeQueueSize: 4096
 rtmp: no
 hls: no
 webrtc: no
