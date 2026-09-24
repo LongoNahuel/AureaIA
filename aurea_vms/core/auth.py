@@ -44,6 +44,12 @@ PASSWORD_MIN_LENGTH = 9
 # tiempo y nunca permanente -- ver el comentario de User.locked_until.
 MAX_INTENTOS = 5
 BLOQUEO_SEGUNDOS = 15 * 60
+# Un hash que dice llevar mas iteraciones que esto es un hash corrupto o
+# plantado: verificarlo congelaria el login (1e12 iteraciones son horas).
+ITERACIONES_MAXIMAS = 10 * ITERACIONES
+# Salt fijo para el PBKDF2 "de relleno" de un usuario que no existe: lo que
+# importa es gastar el mismo tiempo, no el resultado.
+_SALT_DE_RELLENO = b"\x00" * 16
 
 __all__ = ["ROLES"]  # re-export por compatibilidad
 
@@ -90,8 +96,22 @@ def _verificar(password: str, user: User) -> tuple[bool, bool]:
         if algoritmo != ALGORITMO:
             logger.error("Usuario %s: algoritmo de hash desconocido %r", user.username, algoritmo)
             return False, False
-        iteraciones = int(iteraciones_txt)
-        calculado = _hash_password(password, bytes.fromhex(salt_hex), iteraciones)
+        # Un hash corrupto es "contraseña incorrecta", no un ValueError que
+        # tumba el dialogo de login.
+        try:
+            iteraciones = int(iteraciones_txt)
+            salt = bytes.fromhex(salt_hex)
+        except ValueError:
+            logger.error("Usuario %s: hash de contraseña ilegible", user.username)
+            return False, False
+        if not 0 < iteraciones <= ITERACIONES_MAXIMAS:
+            logger.error(
+                "Usuario %s: el hash dice llevar %d iteraciones, fuera de rango",
+                user.username,
+                iteraciones,
+            )
+            return False, False
+        calculado = _hash_password(password, salt, iteraciones)
         # compare_digest y no !=: la comparacion de strings corta en el
         # primer byte distinto y filtra informacion por tiempo.
         correcta = hmac.compare_digest(calculado, guardado)
@@ -100,31 +120,50 @@ def _verificar(password: str, user: User) -> tuple[bool, bool]:
     # Formato legado: hex pelado + columna salt, siempre 260.000 iteraciones.
     if not user.salt:
         return False, False
+    try:
+        salt_legado = bytes.fromhex(user.salt)
+    except ValueError:
+        logger.error("Usuario %s: salt legado ilegible", user.username)
+        return False, False
     legado = hashlib.pbkdf2_hmac(
-        "sha256", password.encode("utf-8"), bytes.fromhex(user.salt), ITERACIONES_LEGADAS
+        "sha256", password.encode("utf-8"), salt_legado, ITERACIONES_LEGADAS
     ).hex()
     correcta = hmac.compare_digest(legado, guardado)
     return correcta, correcta
 
 
 def _segundos_de_bloqueo(user: User) -> float:
+    """Con tope en BLOQUEO_SEGUNDOS: si el reloj del equipo retrocede (un
+    NTP que corrige, una pila de BIOS agotada que vuelve a 2001), un
+    `locked_until` del "futuro" dejaba la cuenta bloqueada dias o años. El
+    peor caso ahora es el bloqueo normal."""
     if not user.locked_until:
         return 0.0
-    return max(0.0, user.locked_until - time.time())
+    return min(max(0.0, user.locked_until - time.time()), float(BLOQUEO_SEGUNDOS))
+
+
+def _gastar_como_si_verificara(password: str) -> None:
+    """Un PBKDF2 con el coste vigente cuyo resultado se descarta. Sin esto,
+    "el usuario no existe" respondia en microsegundos y "contraseña
+    incorrecta" en ~150ms: cronometrar el login decia que usuarios existen."""
+    _hash_password(password, _SALT_DE_RELLENO)
 
 
 def _registrar_fallo(user: User) -> None:
-    intentos = (user.failed_attempts or 0) + 1
-    campos: dict = {"failed_attempts": intentos}
+    if user.locked_until and _segundos_de_bloqueo(user) == 0:
+        # El bloqueo anterior ya vencio: se arranca de cero. Antes el
+        # contador seguia en MAX_INTENTOS y el primer error despues de
+        # esperar los 15 minutos volvia a bloquear la cuenta.
+        repository.update_user(user.id, failed_attempts=0, locked_until=None)
+    intentos = repository.sumar_intento_fallido(user.id)
     if intentos >= MAX_INTENTOS:
-        campos["locked_until"] = time.time() + BLOQUEO_SEGUNDOS
+        repository.update_user(user.id, locked_until=time.time() + BLOQUEO_SEGUNDOS)
         logger.warning(
             "Usuario %s bloqueado %d minutos tras %d intentos fallidos",
             user.username,
             BLOQUEO_SEGUNDOS // 60,
             intentos,
         )
-    repository.update_user(user.id, **campos)
 
 
 def _limpiar_fallos(user: User) -> None:
@@ -164,6 +203,7 @@ def authenticate(username: str, password: str) -> User | None:
     """
     user = repository.get_user_by_username(username)
     if user is None:
+        _gastar_como_si_verificara(password)
         return None
 
     restantes = _segundos_de_bloqueo(user)
@@ -209,11 +249,11 @@ def is_admin(user: User | None = None) -> bool:
 def change_password(username: str, current_password: str, new_password: str) -> str | None:
     """Cambia la contraseña del usuario si la actual es correcta. Devuelve
     un mensaje de error, o None si el cambio se aplico."""
-    user = repository.get_user_by_username(username)
-    if user is None:
-        return "La contraseña actual no es correcta."
+    # authenticate primero, tambien para un usuario que no existe: gasta el
+    # PBKDF2 de relleno, asi que responde en el mismo tiempo que uno real.
     try:
-        if authenticate(username, current_password) is None:
+        user = authenticate(username, current_password)
+        if user is None:
             return "La contraseña actual no es correcta."
     except CuentaBloqueada as bloqueo:
         return f"Cuenta bloqueada. Volvé a intentar en {bloqueo.segundos_restantes / 60:.0f} min."

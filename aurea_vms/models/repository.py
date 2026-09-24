@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from functools import cache
 from typing import TypeVar
 
-from sqlalchemy import func
+from sqlalchemy import func, update
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session
@@ -567,3 +567,20 @@ def delete_user(user_id: int) -> None:
 
 def update_user(user_id: int, **fields: object) -> None:
     _update(User, user_id, fields)
+
+
+def sumar_intento_fallido(user_id: int) -> int:
+    """failed_attempts + 1 EN LA BASE, y devuelve el valor nuevo.
+
+    Antes auth leia el contador, le sumaba 1 en Python y escribia el
+    resultado: dos intentos simultaneos (dos instancias, o el login y el
+    cambio de contraseña) leian el mismo valor y uno se perdia. UPDATE ...
+    RETURNING es de SQLite >= 3.35 y de Postgres, asi que no ata el motor.
+    """
+    with _escritura() as session:
+        return session.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(failed_attempts=User.failed_attempts + 1)
+            .returning(User.failed_attempts)
+        ).scalar_one()

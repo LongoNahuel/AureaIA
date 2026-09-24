@@ -113,10 +113,17 @@ class RetentionWorker(threading.Thread):
             return
         while not self._stop_event.is_set():
             try:
-                stats = prune(
-                    max_age_days=app_prefs.get_retention_days(),
-                    max_total_gb=app_prefs.get_retention_max_gb(),
-                )
+                dias, gb = app_prefs.leer_retencion()
+            except app_prefs.PrefsIlegibles as exc:
+                # Podar con los defaults puede borrar evidencia que el
+                # operador configuro conservar (ver core/app_prefs.py). Se
+                # saltea la pasada y se reintenta en la proxima.
+                logger.error("Retención suspendida: no se pudieron leer las preferencias (%s)", exc)
+                if self._stop_event.wait(self._interval_s):
+                    break
+                continue
+            try:
+                stats = prune(max_age_days=dias, max_total_gb=gb)
             except Exception:
                 logger.exception("Falló la pasada de retención")
             else:

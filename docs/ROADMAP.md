@@ -23,10 +23,13 @@ que se trabajan ese mismo día:
 - ~~🔴 **`camera_key` se regenera en silencio**~~ — Fase 3 del 24/09: estado
   `CLAVE_PERDIDA`, el token se conserva, nada conecta con una credencial
   ilegible y el arranque avisa (ver `core/credential_store.py`).
-- 🔴 **La retención poda con los defaults si `preferences.json` está
-  ilegible**; `_write` no es atómico (`core/app_prefs.py:22-35`).
-- 🟠 Lockout sin tope si el reloj retrocede, re-bloqueo tras el primer
-  bloqueo, enumeración de usuarios por tiempo (`core/auth.py:108-120`).
+- ~~🔴 **La retención poda con los defaults si `preferences.json` está
+  ilegible**~~ — Fase 4 del 24/09: escritura atómica, `leer_retencion()`
+  estricta, y la retención saltea la pasada si no puede leer.
+- ~~🟠 Lockout sin tope si el reloj retrocede, re-bloqueo tras el primer
+  bloqueo, enumeración de usuarios por tiempo~~ — Fase 4 del 24/09. Además:
+  hash corrupto = contraseña incorrecta, tope de iteraciones, contador
+  atómico.
 - 🟠 Hilos muertos que quedan registrados como vivos, sesión ONNX que se fuga
   si `acquire()` falla, mp4 huérfano ante `IntegrityError`, `alarm_engine` en
   el hilo de la GUI sin mirar `_active`.
@@ -171,7 +174,10 @@ reprodujeron están en [`sesiones/2026-09-23.md`](../sesiones/2026-09-23.md).
   y por tile.
 - `face_gallery.py:179-196` recorta el frame **actual** con el bbox de otro.
 - El login corre PBKDF2 en el hilo de Qt: el primer login con un hash legado
-  congela la UI ~1 s.
+  congela la UI ~1 s. Medido el 24/09 en la máquina de Daniel: **~580 ms por
+  intento** con el coste vigente (600.000 iteraciones), también con un usuario
+  que no existe (ahora se gasta el mismo PBKDF2 a propósito para no delatar
+  qué usuarios existen). Moverlo a un worker lo resuelve para los dos casos.
 - **Clave de credenciales perdida (Fase 3, 24/09)** — el backend ya la
   maneja, falta la UI:
   - `device_management.py:378,400`: `add_device`/`update_device` pueden
