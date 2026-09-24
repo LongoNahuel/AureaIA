@@ -52,8 +52,6 @@ class AlarmEngine:
         candidates = event.triggers if event.triggers is not None else event.detections
         if not candidates:
             return
-        if event.analyzer_name == "door_state" and not event.metrics.get("transicion"):
-            return
 
         # Este metodo es un slot conectado a una signal que emiten los
         # AnalyticsWorker: corre en SU hilo. Una excepcion que se escape de

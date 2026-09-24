@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 from alembic import command
+from alembic.script import ScriptDirectory
 
 from aurea_vms.models import db as db_module
 
@@ -124,8 +125,11 @@ class TestBaseDelSistemaAdhoc:
 
         db_module.init_db(ruta, force=True)
 
-        # init_db lleva la base a la cabeza, que puede ser posterior a 0006.
-        assert _revision(ruta) >= REVISION
+        # init_db lleva la base a la cabeza, que puede ser posterior a 0006:
+        # se pide que 0006 este en la cadena, no que el texto compare ">=".
+        script = ScriptDirectory.from_config(db_module._config_de_alembic(ruta))
+        aplicadas = {r.revision for r in script.iterate_revisions(_revision(ruta), "base")}
+        assert REVISION in aplicadas
         assert {"ix_devices_assigned_site_id", "ix_devices_parent_device_id"} <= (
             _indices_de_devices(ruta)
         )

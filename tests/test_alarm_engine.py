@@ -172,45 +172,6 @@ class TestCooldown:
         )
         assert called == []
 
-    def test_puerta_no_repite_alerta_sin_transicion(self, monkeypatch):
-        engine = AlarmEngine()
-        rule = _rule(analyzer_name="door_state", object_classes=["puerta_abierta"])
-        rule.id = 100
-        monkeypatch.setattr(alarm_engine_mod.repository, "list_alarm_rules_for", lambda *_: [rule])
-        triggered: list[tuple] = []
-        monkeypatch.setattr(engine, "_trigger", lambda *args: triggered.append(args))
-        detection = _detection("puerta_abierta", 0.95)
-
-        engine._on_detection(
-            DetectionEvent(
-                device_id=1,
-                analyzer_name="door_state",
-                timestamp=1000.0,
-                detections=(detection,),
-                metrics={"estado": "abierta", "transicion": None},
-            )
-        )
-        engine._on_detection(
-            DetectionEvent(
-                device_id=1,
-                analyzer_name="door_state",
-                timestamp=1001.0,
-                detections=(detection,),
-                metrics={"estado": "abierta", "transicion": "cerrada_a_abierta"},
-            )
-        )
-        engine._on_detection(
-            DetectionEvent(
-                device_id=1,
-                analyzer_name="door_state",
-                timestamp=1002.0,
-                detections=(detection,),
-                metrics={"estado": "abierta", "transicion": None},
-            )
-        )
-
-        assert len(triggered) == 1
-
 
 class TestResilienciaDeHilo:
     """`_on_detection` es un slot conectado a una signal que emiten los

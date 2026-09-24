@@ -97,7 +97,10 @@ def _update(model: type, row_id: int, fields: dict) -> None:
 
 
 # Analiticas retiradas -> la que ocupa su lugar. Movimiento paso a ser
-# "estado de puerta" (0002) y puerta paso a ser "Detección de incidentes" (0007).
+# puerta (0002) y puerta paso a ser Detección de incidentes (0007), asi que
+# los dos nombres legados terminan en monitor_tamper. Se traduce al guardar
+# y al buscar: una llamada con el nombre viejo no crea una segunda config de
+# la camara ni se queda sin reglas (tests/test_repository_crud.py).
 _RETIRED_ANALYZERS = {"motion_detection": "monitor_tamper", "door_state": "monitor_tamper"}
 
 

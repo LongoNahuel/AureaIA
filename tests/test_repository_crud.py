@@ -148,3 +148,29 @@ class TestUsers:
 
         repository.delete_user(user.id)
         assert repository.count_users() == 0
+
+
+class TestAnaliticasRetiradas:
+    """movimiento (0002) y puerta (0007) se retiraron: el repositorio los
+    traduce a Detección de incidentes al guardar y al buscar, para que una
+    llamada con el nombre legado no cree una segunda config de la camara ni
+    se quede sin reglas."""
+
+    def test_guardar_con_el_nombre_legado_guarda_la_vigente(self, temp_db):
+        device_id = _device()
+
+        for legado in ("motion_detection", "door_state"):
+            config = repository.upsert_analytics_config(device_id, legado)
+            assert config.analyzer_name == "monitor_tamper"
+
+        assert [c.analyzer_name for c in repository.list_analytics_configs()] == ["monitor_tamper"]
+
+    def test_las_reglas_se_buscan_con_el_nombre_vigente(self, temp_db):
+        device_id = _device()
+        repository.add_alarm_rule(device_id=device_id, analyzer_name="door_state")
+
+        reglas = repository.list_alarm_rules_for(device_id, "monitor_tamper")
+
+        assert [r.analyzer_name for r in reglas] == ["monitor_tamper"]
+        legadas = repository.list_alarm_rules_for(device_id, "motion_detection")
+        assert [r.id for r in legadas] == [r.id for r in reglas]

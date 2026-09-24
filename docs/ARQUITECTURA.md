@@ -49,14 +49,20 @@ Puntos finos ya resueltos (no romper):
 Interfaz pluggable `core/analytics/base.py` (`Analyzer.process_frame` →
 `AnalysisResult`), registry/factory en `core/analytics/registry.py`.
 
-Las cuatro que expone el registry son `door_state`, `people_counting`,
+Las cuatro que expone el registry son `monitor_tamper`, `people_counting`,
 `line_crossing` y `face_detection`. `motion_detection` (MOG2) sigue
-construible desde el registry por compatibilidad con configuraciones
-viejas, pero la UI ya no lo ofrece: lo reemplazó `door_state`.
+construible desde el registry por compatibilidad, pero la UI ya no lo
+ofrece. El repositorio traduce los nombres retirados (`motion_detection`,
+`door_state`) a `monitor_tamper` al guardar y al buscar.
 
-- Estado de puerta: umbral morfológico sobre un ROI estático contra una
-  línea de base, con `confirmation_frames` de histéresis. Solo reporta
-  **transiciones** — el `AlarmEngine` descarta el evento si no las trae.
+- Detección de incidentes (`monitor_tamper`, reemplazó al estado de puerta
+  el 23/09, revisión 0007): cada zona es la pantalla de una máquina, y
+  **RTMPose-s** (pose top-down, ONNX) sobre el recorte ampliado de cada zona
+  detecta patadas (tobillo adentro) y golpes con la mano (velocidad de la
+  muñeca). Exige al menos una zona o un ROI: la revisión 0008 apaga las
+  configs que no tienen ninguna. La alarma sale **una vez por incidente**,
+  en `AnalysisResult.triggers` (que el `AlarmEngine` usa en lugar de
+  `detections` cuando viene).
 - Conteo de personas y cruce de línea: **YOLOX-Tiny** (COCO, ONNX vía
   onnxruntime CPU) + `CentroidTracker` con histéresis (`min_hits`) y
   tolerancia a oclusiones (`max_age_s`).
@@ -69,13 +75,16 @@ viejas, pero la UI ya no lo ofrece: lo reemplazó `door_state`.
   por stride 8/16/32 con NMS class-agnostic — **replica exactamente el
   demo oficial de ONNXRuntime de YOLOX**; un detalle mal portado ahí
   decodifica cajas en cualquier lado sin ningún error que lo delate. Los
-  analizadores que no usan el modelo (puerta) recortan a ROI **antes** de
+  analizadores que trabajan sobre un ROI recortan **antes** de
   `resize_for_inference` (máx. 640 px de lado) y usan `rescale_bbox` para
   volver a coordenadas nativas.
 - `Analyzer.close()` libera el modelo nativo (lo llama el worker al
   detenerse).
 
-**Licencias**: YOLOX (Megvii) y YuNet (OpenCV Zoo) son Apache 2.0.
+**Licencias**: YOLOX (Megvii), YuNet (OpenCV Zoo) y RTMPose (OpenMMLab)
+son Apache 2.0. Pendiente: los pesos *body7* de RTMPose se entrenaron con
+datasets que tienen términos de uso de investigación, y el bundle no lleva
+LICENSE/NOTICE de terceros (ver ROADMAP).
 **No reintroducir `ultralytics`** (YOLOv5/v8) sin decisión comercial
 explícita: es AGPL-3.0, copyleft fuerte. Fue la razón por la que se lo
 sacó del proyecto, y sigue vigente aunque el stack haya vuelto a la

@@ -68,13 +68,12 @@ que se trabajan ese mismo día:
   nunca como `ALTER TABLE` en `models/db.py`: el 23/09 el sistema ad-hoc
   volvió por una rama anterior a Alembic y dejó `main` en rojo. Hay un test
   que lo fija (`tests/test_migracion_0006.py::TestNoVuelveElSistemaAdhoc`).
-- 🟠 **Las bases adoptadas no quedan con el esquema de los modelos.** La
-  base de dev, adoptada el 22/09, tiene `devices.zone_id` con la FK **sin**
-  `ON DELETE SET NULL` (borrar una zona con cámaras falla ahí y no en una
-  base nueva) y le faltan los UNIQUE de `sites.name`, `users.username` y
-  `media_assets.rel_path`. El test de deriva solo mira bases nuevas. Hace
-  falta una revisión que normalice las adoptadas y un test de deriva sobre
-  una base adoptada.
+- ~~🟠 **Las bases adoptadas no quedan con el esquema de los modelos.**~~ —
+  resuelto el 24/09 por la revisión `0008_normaliza_adoptadas`: FK
+  `devices.zone_id` con `ON DELETE SET NULL`, FK `analytics_configs.device_id`
+  (faltaba en las bases pre-baseline) y los UNIQUE, que **existían** pero sin
+  nombre. `tests/test_migracion_0008.py` corre `compare_metadata` sobre una
+  base adoptada.
 - **El `naming_convention` de `migrations/env.py` no hace nada**:
   `context.configure` lo ignora, solo sirve pasado a cada `batch_alter_table`.
   Las bases adoptadas conservan constraints anónimas; un `drop_constraint` por
@@ -146,6 +145,8 @@ que se trabajan ese mismo día:
   **no puede** salir del hilo de la GUI. Un worker con cola compraría 0,3
   puntos a cambio de un actor y superficie de concurrencia nueva. Revisar solo
   si aparece un caso con muchas más caras por frame.
+  *(Medición de la galería del 22/09; esa lógica salió con `face_catalog.py`
+  el 23/09. La galería nueva no se midió.)*
 
 ## UI — para Nahuel
 
@@ -170,6 +171,35 @@ reprodujeron están en [`sesiones/2026-09-23.md`](../sesiones/2026-09-23.md).
 - `face_gallery.py:179-196` recorta el frame **actual** con el bbox de otro.
 - El login corre PBKDF2 en el hilo de Qt: el primer login con un hash legado
   congela la UI ~1 s.
+
+## Analíticas — para Nahuel
+
+Salieron de la revisión del 2026-09-24 de `f309d79`; el detalle está en
+[`sesiones/2026-09-24.md`](../sesiones/2026-09-24.md).
+
+- 🟠 **Detección de incidentes puede no alarmar nunca un incidente.** El
+  trigger sale solo en la primera muestra, con la confianza del keypoint
+  (una patada cuenta desde 0.30), y la regla filtra `min_confidence` 0.5. Si
+  el primer golpe sale con 0.30-0.49, los siguientes del mismo incidente ya
+  no generan trigger. Lo fija
+  `tests/test_monitor_tamper_alarma.py` (xfail strict: cuando se arregle, el
+  CI avisa para sacar la marca).
+- RTMPose corre en cada cuadro por zona, sin prefiltro de movimiento
+  (~20 ms por zona en CPU): 4 zonas a 8 fps son ~640 ms de CPU por segundo,
+  compitiendo con YOLOX y YuNet.
+- El modelo de pose (22 MB) se carga en el hilo de la GUI
+  (`analytics_engine.start` → `create_analyzer` → `PoseEstimator()`), y si
+  falta el archivo la descarga es `urlretrieve` sin timeout.
+- La descarga de respaldo del zip de pose no es atómica
+  (`pose_backend._ensure_model`): un zip cortado queda como `.onnx`
+  "existente" y falla en cada arranque.
+- `FaceShot` lleva recorte nativo + JPEG del cuadro a 1280 px; con 60
+  capturas × 8 tomas por cámara (`face_registry.py`) el peor caso son
+  cientos de MB por cámara.
+- Licencias: los pesos *body7* de RTMPose se entrenaron con datasets de uso
+  de investigación (AI Challenger, Halpe, PoseTrack…). Revisar antes de un
+  uso comercial, y sumar LICENSE/NOTICE de terceros al bundle (falta
+  también para YOLOX y YuNet).
 
 ## Producto (ideas de NOVA a evaluar)
 
@@ -276,6 +306,9 @@ reprodujeron están en [`sesiones/2026-09-23.md`](../sesiones/2026-09-23.md).
   dejó de ser el modelo de datos: el widget aplica el `CatalogUpdate` que le
   devuelve el catálogo y las dos listas quedan con los mismos índices.
   `tests/test_face_catalog.py`, 39 tests donde no había ninguno.
+  *(El 23/09 Nahuel retiró `face_catalog.py` junto con la re-identificación y
+  el conteo de únicos, por decisión de producto: las capturas ahora salen de
+  `core/analytics/face_quality.py` y `ui/face_registry.py`.)*
 
 - ~~Dashboard: reemplazar el fetch de 200 eventos + todos los dispositivos
   cada 5 s por consultas `COUNT`~~ — `count_alarm_events()` (con filtros de
