@@ -97,15 +97,17 @@ class TestLaClave:
 
     def test_con_la_clave_cambiada_no_rompe_la_app(self, data_dir, caplog):
         """Que no se pueda descifrar UNA contraseña no puede dejar la lista
-        de cámaras sin abrir: se devuelve vacío y se loguea, y el operador la
-        vuelve a cargar."""
+        de cámaras sin abrir: se devuelve el token intacto (no el vacío, con
+        el que el stream conectaba) y se loguea. El detalle de la clave
+        perdida está en tests/test_clave_perdida.py."""
         cifrada = credential_store.cifrar("secreto")
         (data_dir / credential_store.KEY_FILENAME).unlink()
         credential_store.reset_cache()
 
         with caplog.at_level("ERROR", logger=credential_store.__name__):
-            assert credential_store.descifrar(cifrada) == ""
+            assert credential_store.descifrar(cifrada) == cifrada
 
+        assert credential_store.es_ilegible(cifrada)
         assert "no se pudo descifrar" in caplog.text.lower()
 
 

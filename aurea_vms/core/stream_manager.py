@@ -29,6 +29,7 @@ import cv2
 import numpy as np
 
 from aurea_vms.config.settings import settings
+from aurea_vms.core import credential_store
 from aurea_vms.core.device_manager import build_authenticated_url
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import DeviceStatusEvent
@@ -99,6 +100,11 @@ class StreamWorker(threading.Thread):
         raw_url = (
             device.rtsp_sub_url if kind == "sub" and device.rtsp_sub_url else device.rtsp_main_url
         )
+        # Una credencial que no se pudo descifrar llega como el token cifrado
+        # (ver credential_store.es_ilegible). Conectar con ella -- o, como
+        # antes, con la contraseña vacia -- son intentos fallidos en loop
+        # contra la camara, que es como una camara bloquea la IP.
+        self._credencial_ilegible = credential_store.es_ilegible(device.password)
         self._url = build_authenticated_url(raw_url, device.username, device.password)
         self._lock = threading.Lock()
         self._latest_frame: np.ndarray | None = None
@@ -114,6 +120,16 @@ class StreamWorker(threading.Thread):
         self._frame_times: deque[float] = deque(maxlen=FPS_WINDOW_SIZE)
 
     def run(self) -> None:
+        if self._credencial_ilegible:
+            motivo = (
+                "Sin credencial: la contraseña guardada no se puede descifrar "
+                f"({credential_store.motivo() or 'clave de credenciales distinta'}). "
+                "Hay que restaurar camera_key o volver a cargar la contraseña."
+            )
+            logger.error("Cámara %s (%s): %s", self.device_id, self.kind, motivo)
+            self._report_status(False, motivo)
+            self._stop_event.wait()
+            return
         attempt = 0
         while not self._stop_event.is_set():
             cap = cv2.VideoCapture(

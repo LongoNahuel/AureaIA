@@ -102,9 +102,19 @@ def downgrade() -> None:
         sa.text("SELECT id, password FROM devices WHERE password IS NOT NULL AND password <> ''")
     ).fetchall():
         if credential_store.esta_cifrado(password):
+            plana = credential_store.descifrar(password)
+            if credential_store.es_ilegible(plana):
+                # Antes se escribia lo que devolviera descifrar (el vacio):
+                # el downgrade borraba la contraseña para siempre. Sin la
+                # clave no hay vuelta atras posible; que lo diga, y la
+                # transaccion de la migracion deja la base como estaba.
+                raise RuntimeError(
+                    f"No se puede bajar de 0005: la contraseña de la cámara {device_id} "
+                    "no se puede descifrar con la clave actual. Restaurá camera_key antes."
+                )
             conn.execute(
                 sa.text("UPDATE devices SET password = :plana WHERE id = :device_id"),
-                {"plana": credential_store.descifrar(password), "device_id": device_id},
+                {"plana": plana, "device_id": device_id},
             )
 
     with op.batch_alter_table("users", schema=None) as batch_op:

@@ -19,15 +19,16 @@ os.environ.setdefault(
 )
 
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 from qfluentwidgets import setThemeColor
 
 from aurea_vms.config.settings import settings
-from aurea_vms.core import app_prefs, auth, clip_recorder, retention
+from aurea_vms.core import app_prefs, auth, clip_recorder, credential_store, retention
 from aurea_vms.core.alarm_engine import alarm_engine
 from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.core.logging_setup import setup_logging
 from aurea_vms.core.stream_manager import stream_manager
+from aurea_vms.migrations.resguardo import BACKUPS_DIRNAME
 from aurea_vms.models import repository
 from aurea_vms.models.db import init_db
 from aurea_vms.ui.dialogs.login_dialog import LoginDialog
@@ -126,6 +127,84 @@ def _smoke_test() -> int:
     return smoke.run()
 
 
+CONTINUAR, REGENERAR, SALIR = "continuar", "regenerar", "salir"
+
+
+def _texto_clave_perdida() -> str:
+    ruta = settings.data_dir / credential_store.KEY_FILENAME
+    backups = sorted(
+        (settings.db_path.parent / BACKUPS_DIRNAME).glob(f"*.{credential_store.KEY_FILENAME}"),
+        reverse=True,
+    )
+    lineas = [
+        "No se pueden descifrar las contraseñas de cámara guardadas.",
+        "",
+        f"Motivo: {credential_store.motivo()}.",
+        f"Cámaras afectadas: {credential_store.credenciales_ilegibles()}. "
+        "Quedan sin conectar hasta resolverlo; las demás funcionan normalmente.",
+        "",
+        f"Para recuperarlas, cerrá la app y copiá la clave original a:\n{ruta}",
+    ]
+    if backups:
+        lineas += ["", "Copias de la clave junto a los backups de la base:"]
+        lineas += [f"  • {b}" for b in backups[:3]]
+    lineas += [
+        "",
+        "Regenerar crea una clave nueva: las contraseñas guardadas se pierden y hay "
+        "que volver a cargarlas en cada cámara.",
+    ]
+    return "\n".join(lineas)
+
+
+def _preguntar_clave_perdida(texto: str) -> str:
+    caja = QMessageBox(QMessageBox.Icon.Warning, "Clave de credenciales perdida", texto)
+    continuar = caja.addButton("Continuar sin esas cámaras", QMessageBox.ButtonRole.AcceptRole)
+    regenerar = caja.addButton("Regenerar clave…", QMessageBox.ButtonRole.DestructiveRole)
+    caja.addButton("Salir", QMessageBox.ButtonRole.RejectRole)
+    caja.setDefaultButton(continuar)
+    caja.exec()
+    elegido = caja.clickedButton()
+    if elegido is continuar:
+        return CONTINUAR
+    return REGENERAR if elegido is regenerar else SALIR
+
+
+def _confirmar_regenerar(afectadas: int) -> bool:
+    respuesta = QMessageBox.warning(
+        None,
+        "Regenerar la clave",
+        f"Las contraseñas guardadas de {afectadas} cámara(s) se pierden para siempre "
+        "y hay que volver a cargarlas. La clave actual, si existe, se renombra (no se "
+        "borra).\n\n¿Regenerar?",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    return respuesta == QMessageBox.StandardButton.Yes
+
+
+def _resolver_clave_perdida(
+    preguntar=_preguntar_clave_perdida, confirmar=_confirmar_regenerar
+) -> bool:
+    """Aviso de bootstrap si `init_db` encontro la clave perdida (ver
+    core/credential_store.py). Devuelve False si hay que salir.
+
+    Salir del estado degradado es explicito: regenerar pide una segunda
+    confirmacion que dice cuanto se pierde. Si no se confirma, la app sigue
+    degradada: las camaras con contraseña no conectan y guardar una
+    contraseña nueva da error, hasta restaurar la clave."""
+    if credential_store.estado() != credential_store.ESTADO_CLAVE_PERDIDA:
+        return True
+    eleccion = preguntar(_texto_clave_perdida())
+    if eleccion == SALIR:
+        return False
+    if eleccion == REGENERAR and confirmar(credential_store.credenciales_ilegibles()):
+        apartada = credential_store.regenerar_clave()
+        logging.getLogger(__name__).warning(
+            "Clave de credenciales regenerada por el operador (la anterior: %s)", apartada
+        )
+    return True
+
+
 def main() -> int:
     _ensure_linux_qt_plugin_path()
     _warn_if_missing_xcb_cursor()
@@ -141,6 +220,9 @@ def main() -> int:
     app.setApplicationName("AureaIA VMS")
     setThemeColor(QColor(ACCENT))
     apply_theme(app_prefs.get_theme() == "dark")
+
+    if not _resolver_clave_perdida():
+        return 0
 
     # Primer arranque (sin usuarios todavia): alta del Super Administrador.
     # Si se cierra el wizard sin completarlo, la app no llega a abrir.

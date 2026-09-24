@@ -12,9 +12,10 @@ from typing import TypeVar
 
 from sqlalchemy import func
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session
 
+from aurea_vms.core.credential_store import ClavePerdidaError
 from aurea_vms.models.alarm_event import STATUS_RESOLVED
 from aurea_vms.models.alarm_event import AlarmEvent as AlarmEventRow
 from aurea_vms.models.alarm_rule import AlarmRule
@@ -49,6 +50,12 @@ def _escritura() -> Iterator[Session]:
             yield session
     except IntegrityError as exc:
         raise _traducir(exc) from exc
+    except StatementError as exc:
+        # Guardar una contraseña sin clave valida (core/credential_store.py):
+        # el TypeDecorator levanta dentro del flush y SQLAlchemy lo envuelve.
+        if isinstance(exc.orig, ClavePerdidaError):
+            raise exc.orig from exc
+        raise
 
 
 def _insert(model: type[T], fields: dict) -> T:

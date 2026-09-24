@@ -17,11 +17,12 @@ que se trabajan ese mismo día:
 - 🔴 **Falta correr `build-windows.yml`** con el smoke nuevo: es la única
   prueba de que el `.exe` trae las migraciones, `cryptography`, el WSDL y los
   modelos. Actions → "Build Windows" → *Run workflow*.
-- 🔴 **Una migración que falla a mitad deja la app sin arrancar**: DDL fuera de
-  transacción en SQLite deja `_alembic_tmp_*` huérfano. Tampoco hay backup
-  automático antes de migrar (`models/db.py:173-184`).
-- 🔴 **`camera_key` se regenera en silencio** con filas `enc1:` en la base
-  (`core/credential_store.py:54-65`).
+- ~~🔴 **Una migración que falla a mitad deja la app sin arrancar**~~ — Fase 2
+  del 24/09 (`d2e3d46`): upgrade atómico, backup previo rotado a 3, lock
+  entre procesos, limpieza de `_alembic_tmp_*`.
+- ~~🔴 **`camera_key` se regenera en silencio**~~ — Fase 3 del 24/09: estado
+  `CLAVE_PERDIDA`, el token se conserva, nada conecta con una credencial
+  ilegible y el arranque avisa (ver `core/credential_store.py`).
 - 🔴 **La retención poda con los defaults si `preferences.json` está
   ilegible**; `_write` no es atómico (`core/app_prefs.py:22-35`).
 - 🟠 Lockout sin tope si el reloj retrocede, re-bloqueo tras el primer
@@ -171,6 +172,22 @@ reprodujeron están en [`sesiones/2026-09-23.md`](../sesiones/2026-09-23.md).
 - `face_gallery.py:179-196` recorta el frame **actual** con el bbox de otro.
 - El login corre PBKDF2 en el hilo de Qt: el primer login con un hash legado
   congela la UI ~1 s.
+- **Clave de credenciales perdida (Fase 3, 24/09)** — el backend ya la
+  maneja, falta la UI:
+  - `device_management.py:378,400`: `add_device`/`update_device` pueden
+    levantar `credential_store.ClavePerdidaError` al guardar una contraseña
+    nueva sin clave válida, y hoy no se captura (sube al slot de Qt). Hay
+    que mostrarlo ("restaurá camera_key o regenerala desde el aviso del
+    arranque").
+  - Una credencial ilegible llega como el token `enc1:…` (ver
+    `credential_store.es_ilegible`). El diálogo la muestra enmascarada en el
+    campo contraseña; guardarla sin tocar la conserva, que es lo buscado.
+    Estaría bien avisar al lado del campo ("la contraseña guardada no se
+    puede leer, volvé a cargarla").
+  - PTZ (`ptz_control_panel.py:105,115`) y ONVIF (`device_management.py:412`)
+    usan `device.password` sin mirar `es_ilegible`: con la clave perdida
+    mandan el token como contraseña. Es un intento por acción del usuario,
+    no un loop como el del stream, pero conviene cortarlo con un mensaje.
 
 ## Analíticas — para Nahuel
 

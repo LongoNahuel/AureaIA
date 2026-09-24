@@ -9,10 +9,11 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import MetaData, create_engine, event, inspect
+from sqlalchemy import MetaData, create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from aurea_vms.config.settings import settings
+from aurea_vms.core import credential_store
 from aurea_vms.migrations import BASELINE_REVISION, MIGRATIONS_DIR
 from aurea_vms.migrations.adopcion import adoptar
 from aurea_vms.migrations.resguardo import (
@@ -150,6 +151,7 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
     importar_modelos()
     try:
         migrar(engine, path)
+        _verificar_clave_de_credenciales(engine)
     except BaseException:
         engine.dispose()
         raise
@@ -220,6 +222,22 @@ def migrar(engine, db_path: Path) -> None:
             command.stamp(config, BASELINE_REVISION)
 
         command.upgrade(config, "head")
+
+
+def _verificar_clave_de_credenciales(engine) -> None:
+    """Evalua `camera_key` contra las credenciales cifradas de la base
+    (ver core/credential_store.py). SQL de texto a proposito: un select por
+    el modelo pasa por el TypeDecorator y devuelve los valores ya
+    descifrados, que es justo lo que no se sabe si se puede."""
+    with engine.connect() as connection:
+        tokens = [
+            fila[0]
+            for fila in connection.execute(
+                text("SELECT password FROM devices WHERE password LIKE :prefijo"),
+                {"prefijo": f"{credential_store.PREFIJO}%"},
+            )
+        ]
+    credential_store.verificar(tokens)
 
 
 def _estado(engine) -> tuple[str | None, set[str]]:

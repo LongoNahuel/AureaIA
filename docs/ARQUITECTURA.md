@@ -125,6 +125,15 @@ Una migración no puede dejar la base inservible (Fase 2, 2026-09-24):
   vieja cortada.
 - `init_db` publica el engine solo si `migrar` terminó bien.
 
+Si falta `camera_key`, está dañada o es de otra instalación, la app arranca
+**degradada** (`core/credential_store.py`, estado `CLAVE_PERDIDA`, lo
+evalúa `init_db` contra las credenciales de la base). No crea una clave
+nueva. Las credenciales quedan como token intacto y ninguna cámara conecta
+con ellas. Guardar una contraseña nueva levanta `ClavePerdidaError`. Antes
+del login, un aviso muestra dónde va la clave y qué copias hay en
+`backups/`, con tres opciones: continuar degradada, regenerar (con segunda
+confirmación; la clave vieja se renombra, no se borra) o salir.
+
 Para restaurar a mano: cerrar la app, copiar el backup encima de
 `aurea_vms.sqlite3` (y borrar sus `-wal`/`-shm`), y copiar la `camera_key`
 que va con él.

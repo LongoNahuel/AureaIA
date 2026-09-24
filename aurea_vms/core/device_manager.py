@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 
 from aurea_vms.config import resources
+from aurea_vms.core import credential_store
 from aurea_vms.models.device import Device
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,12 @@ def grab_snapshot(
         frame = worker.get_latest_frame()
         if frame is not None:
             return frame, "OK (stream activo)"
+
+    if credential_store.es_ilegible(device.password):
+        return None, (
+            "La contraseña guardada no se puede descifrar (falta o cambió la clave de "
+            "credenciales). Volvé a cargarla antes de probar."
+        )
 
     if not _probe_slots.acquire(blocking=False):
         logger.warning(
