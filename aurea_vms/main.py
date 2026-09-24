@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
 
 # RTSP sobre TCP para el backend FFmpeg de OpenCV: en wifi/redes con perdida
@@ -205,6 +206,35 @@ def _resolver_clave_perdida(
     return True
 
 
+def _instalar_excepthooks() -> None:
+    """Una excepcion no capturada en un hilo (threading.excepthook) o en el
+    hilo principal fuera de Qt (sys.excepthook) se imprimia en stderr, y en
+    el .exe sin consola stderr no existe: el hilo moria sin dejar rastro.
+    Ahora va al log, con traza. Se conserva el hook anterior para el caso de
+    desarrollo con consola."""
+    log = logging.getLogger("aurea_vms.excepciones")
+    hook_de_hilos = threading.excepthook
+    hook_de_sys = sys.excepthook
+
+    def en_hilo(args: threading.ExceptHookArgs) -> None:
+        if args.exc_type is not SystemExit:
+            nombre = args.thread.name if args.thread is not None else "?"
+            log.critical(
+                "Excepción no capturada en el hilo %s",
+                nombre,
+                exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            )
+        hook_de_hilos(args)
+
+    def en_proceso(exc_type, exc_value, exc_traceback) -> None:
+        if not issubclass(exc_type, KeyboardInterrupt):
+            log.critical("Excepción no capturada", exc_info=(exc_type, exc_value, exc_traceback))
+        hook_de_sys(exc_type, exc_value, exc_traceback)
+
+    threading.excepthook = en_hilo
+    sys.excepthook = en_proceso
+
+
 def main() -> int:
     _ensure_linux_qt_plugin_path()
     _warn_if_missing_xcb_cursor()
@@ -214,6 +244,7 @@ def main() -> int:
 
     settings.ensure_dirs()
     setup_logging()
+    _instalar_excepthooks()
     init_db()
 
     app = QApplication(sys.argv)

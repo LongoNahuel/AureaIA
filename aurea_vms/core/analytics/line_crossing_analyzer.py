@@ -91,10 +91,12 @@ class LineCrossingAnalyzer(Analyzer):
         smart_mark_enabled: bool = False,
         enhanced_filter: bool = True,
     ) -> None:
-        self._detector = YoloxDetector()
+        # La linea se desarma ANTES de tomar la sesion del modelo: una linea
+        # mal formada levantaba despues de adquirirla y la sesion quedaba
+        # tomada para siempre (A15; no hay objeto al que cerrar).
+        (self._x1, self._y1), (self._x2, self._y2) = line
         self._classes = object_classes or ["person"]
         self._confidence_threshold = confidence_threshold
-        (self._x1, self._y1), (self._x2, self._y2) = line
         self.label_in = label_in
         self.label_out = label_out
         self._min_area_percent = max(0.0, min_area_percent)
@@ -105,6 +107,7 @@ class LineCrossingAnalyzer(Analyzer):
             max_age_s=track_max_age_s, min_hits=max(1, confirmation_frames)
         )
         self._line = ((float(self._x1), float(self._y1)), (float(self._x2), float(self._y2)))
+        self._detector = YoloxDetector()  # lo ultimo: ver arriba
         self._count_in = 0
         self._count_out = 0
         # Ultimo punto de cada track del lado estable de la linea: el

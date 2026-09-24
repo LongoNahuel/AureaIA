@@ -85,50 +85,69 @@ class AnalyticsWorker(threading.Thread):
         self.stats = WorkerStats()
 
     def run(self) -> None:
-        # Las coordenadas de ROI/linea se configuran sobre la captura del
-        # flujo principal; la analitica nunca debe consumir el sub-stream.
-        stream_manager.acquire(self._device, "main")
+        adquirido = False
         try:
-            while not self._stop_event.is_set():
-                start = time.monotonic()
-
-                worker = stream_manager.get_worker(self._device.id, "main")
-                if worker is None:
-                    frame, frame_ts = None, 0.0
-                elif hasattr(worker, "get_latest_frame_with_timestamp"):
-                    frame, frame_ts = worker.get_latest_frame_with_timestamp()
-                else:
-                    # Compatibilidad con workers mínimos usados por
-                    # integraciones/tests antiguos que solo exponen
-                    # get_latest_frame().
-                    frame, frame_ts = worker.get_latest_frame(), time.monotonic()
-                if frame is not None and frame_ts == self._last_frame_ts:
-                    self._stop_event.wait(MIN_YIELD_S)
-                    continue
-                if frame is not None:
-                    self._last_frame_ts = frame_ts
-                    self._analyze(frame)
-
-                elapsed = time.monotonic() - start
-                if not self._overrun_warned and frame is not None and elapsed > self._interval_s:
-                    # Feedback unico: antes esto degradaba en silencio (y con
-                    # wait(0.0) ademas quemaba el core).
-                    self._overrun_warned = True
-                    logger.warning(
-                        "Analizador %s (cámara %s): la inferencia tarda %.0f ms y no alcanza "
-                        "los %.1f fps configurados; corre al ritmo que da el CPU",
-                        self._analyzer_name,
-                        self._device.id,
-                        elapsed * 1000,
-                        self._fps,
-                    )
-                self._stop_event.wait(pacing_wait_s(self._interval_s, elapsed))
+            # Las coordenadas de ROI/linea se configuran sobre la captura del
+            # flujo principal; la analitica nunca debe consumir el sub-stream.
+            # Dentro del try (A14): si acquire() levantaba, el finally no
+            # corria y la sesion ONNX del analizador quedaba tomada para
+            # siempre.
+            stream_manager.acquire(self._device, "main")
+            adquirido = True
+            self._loop()
+        except Exception:
+            # process_frame ya esta protegido en _analyze; esto es lo demas
+            # (leer el frame, publicar el evento). Antes el hilo moria en
+            # silencio y la UI seguia mostrando la analitica "corriendo":
+            # ahora is_running() mira el hilo de verdad.
+            logger.exception(
+                "Analizador %s (cámara %s): el hilo de la analítica murió",
+                self._analyzer_name,
+                self._device.id,
+            )
         finally:
-            stream_manager.release(self._device.id, "main")
+            if adquirido:
+                stream_manager.release(self._device.id, "main")
             try:
                 self._analyzer.close()
             except Exception:  # liberar recursos nunca debe matar el shutdown
                 logger.exception("Fallo al cerrar el analizador (config %s)", self.config_id)
+
+    def _loop(self) -> None:
+        while not self._stop_event.is_set():
+            start = time.monotonic()
+
+            worker = stream_manager.get_worker(self._device.id, "main")
+            if worker is None:
+                frame, frame_ts = None, 0.0
+            elif hasattr(worker, "get_latest_frame_with_timestamp"):
+                frame, frame_ts = worker.get_latest_frame_with_timestamp()
+            else:
+                # Compatibilidad con workers mínimos usados por
+                # integraciones/tests antiguos que solo exponen
+                # get_latest_frame().
+                frame, frame_ts = worker.get_latest_frame(), time.monotonic()
+            if frame is not None and frame_ts == self._last_frame_ts:
+                self._stop_event.wait(MIN_YIELD_S)
+                continue
+            if frame is not None:
+                self._last_frame_ts = frame_ts
+                self._analyze(frame)
+
+            elapsed = time.monotonic() - start
+            if not self._overrun_warned and frame is not None and elapsed > self._interval_s:
+                # Feedback unico: antes esto degradaba en silencio (y con
+                # wait(0.0) ademas quemaba el core).
+                self._overrun_warned = True
+                logger.warning(
+                    "Analizador %s (cámara %s): la inferencia tarda %.0f ms y no alcanza "
+                    "los %.1f fps configurados; corre al ritmo que da el CPU",
+                    self._analyzer_name,
+                    self._device.id,
+                    elapsed * 1000,
+                    self._fps,
+                )
+            self._stop_event.wait(pacing_wait_s(self._interval_s, elapsed))
 
     def _analyze(self, frame) -> None:
         inference_start = time.monotonic()
@@ -192,7 +211,10 @@ class AnalyticsEngine:
             worker.join(timeout=2.0)
 
     def is_running(self, config_id: int) -> bool:
-        return config_id in self._workers
+        """El hilo de verdad, no solo "esta registrado": un worker que murio
+        seguia contando como corriendo y la UI lo mostraba activo."""
+        worker = self._workers.get(config_id)
+        return worker is not None and worker.is_alive()
 
     def stats(self, config_id: int) -> WorkerStats | None:
         worker = self._workers.get(config_id)

@@ -244,3 +244,12 @@ def _write_mp4(
     except media_store.MediaWriteError:
         _discard(rel_path, alarm_event_id, "el mp4 quedó vacío después de escribirlo")
         return None
+    except Exception as exc:  # noqa: BLE001 - cualquier falla al indexar deja el mp4 huerfano
+        # Un IntegrityError (se borro la camara mientras se grababa el clip,
+        # o el evento), un OperationalError (base bloqueada): el archivo ya
+        # estaba escrito y quedaba en disco sin fila en media_assets --
+        # invisible para la retencion, que nunca lo iba a borrar.
+        _discard(
+            rel_path, alarm_event_id, f"no se pudo indexar el clip ({type(exc).__name__}: {exc})"
+        )
+        return None

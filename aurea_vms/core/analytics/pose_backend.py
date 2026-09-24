@@ -109,7 +109,11 @@ class PoseEstimator:
     def __init__(self) -> None:
         self._model_path = _ensure_model()
         self._session = adquirir_sesion(self._model_path)
-        self._input_name = self._session.get_inputs()[0].name
+        try:
+            self._input_name = self._session.get_inputs()[0].name
+        except Exception:
+            soltar_sesion(self._model_path)  # A15, igual que YoloxDetector
+            raise
         self._cerrado = False
 
     def close(self) -> None:

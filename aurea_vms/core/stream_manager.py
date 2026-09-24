@@ -118,8 +118,22 @@ class StreamWorker(threading.Thread):
         self._history_interval = 1.0 / HISTORY_FPS
         self._last_history_ts = 0.0
         self._frame_times: deque[float] = deque(maxlen=FPS_WINDOW_SIZE)
+        self.murio = False
 
     def run(self) -> None:
+        # Ultima red: una excepcion que se escape de _run mataba el hilo en
+        # silencio, y el worker muerto seguia registrado en el StreamManager
+        # -- la camara quedaba negra hasta reiniciar la app. Ahora queda
+        # marcado (`murio`), se reporta offline, y el proximo acquire() lo
+        # reemplaza por uno nuevo.
+        try:
+            self._run()
+        except Exception:
+            self.murio = True
+            logger.exception("Cámara %s (%s): el hilo de captura murió", self.device_id, self.kind)
+            self._report_status(False, "El hilo de captura se cayó; se reintenta al reabrir")
+
+    def _run(self) -> None:
         if self._credencial_ilegible:
             motivo = (
                 "Sin credencial: la contraseña guardada no se puede descifrar "
@@ -132,47 +146,62 @@ class StreamWorker(threading.Thread):
             return
         attempt = 0
         while not self._stop_event.is_set():
-            cap = cv2.VideoCapture(
-                self._url,
-                cv2.CAP_FFMPEG,
-                [
-                    cv2.CAP_PROP_OPEN_TIMEOUT_MSEC,
-                    OPEN_TIMEOUT_MS,
-                    cv2.CAP_PROP_READ_TIMEOUT_MSEC,
-                    READ_TIMEOUT_MS,
-                ],
-            )
-            # Algunos backends y dobles de prueba no exponen set(); la
-            # captura sigue funcionando sin este ajuste opcional.
-            if hasattr(cap, "set"):
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, CAPTURE_BUFFER_SIZE)
-            if not cap.isOpened():
-                cap.release()
+            try:
+                cortar, attempt = self._una_conexion(attempt)
+            except Exception:
+                # Un error inesperado en una conexion (un cv2.error del
+                # backend, un frame que no se puede codificar para el
+                # historial) se trata como una conexion perdida: backoff y
+                # reintento, en vez de matar el hilo de la camara.
+                logger.exception("Cámara %s (%s): error en la captura", self.device_id, self.kind)
                 attempt += 1
-                if self._wait_before_retry(attempt, "No se pudo abrir el stream"):
-                    break
-                continue
+                cortar = self._wait_before_retry(attempt, "Error en la captura")
+            if cortar:
+                break
 
-            logger.info(
-                "Camara %s (%s): socket RTSP conectado, esperando primer frame",
-                self.device_id,
-                self.kind,
-            )
+    def _una_conexion(self, attempt: int) -> tuple[bool, int]:
+        """Abre, lee hasta que se corta, y espera el backoff. Devuelve
+        (hay que cortar el hilo, intento siguiente)."""
+        cap = cv2.VideoCapture(
+            self._url,
+            cv2.CAP_FFMPEG,
+            [
+                cv2.CAP_PROP_OPEN_TIMEOUT_MSEC,
+                OPEN_TIMEOUT_MS,
+                cv2.CAP_PROP_READ_TIMEOUT_MSEC,
+                READ_TIMEOUT_MS,
+            ],
+        )
+        # Algunos backends y dobles de prueba no exponen set(); la
+        # captura sigue funcionando sin este ajuste opcional.
+        if hasattr(cap, "set"):
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, CAPTURE_BUFFER_SIZE)
+        if not cap.isOpened():
+            cap.release()
+            attempt += 1
+            return self._wait_before_retry(attempt, "No se pudo abrir el stream"), attempt
+
+        logger.info(
+            "Camara %s (%s): socket RTSP conectado, esperando primer frame",
+            self.device_id,
+            self.kind,
+        )
+        try:
             delivered_frames, frozen = self._capture_loop(cap)
+        finally:
             cap.release()
 
-            if self._stop_event.is_set():
-                break
+        if self._stop_event.is_set():
+            return True, attempt
 
-            # El backoff se resetea solo si la conexion ENTREGO frames. Con
-            # resetear ante isOpened() alcanzaria para el caso feliz, pero
-            # una camara que abre el socket y se muere al instante (firmware
-            # colgado, NVR saturado) nunca saldria del delay minimo y
-            # seguiriamos con los 3s fijos de antes.
-            attempt = 1 if delivered_frames else attempt + 1
-            reason = "El stream quedó congelado" if frozen else "Se perdió la conexión"
-            if self._wait_before_retry(attempt, reason):
-                break
+        # El backoff se resetea solo si la conexion ENTREGO frames. Con
+        # resetear ante isOpened() alcanzaria para el caso feliz, pero
+        # una camara que abre el socket y se muere al instante (firmware
+        # colgado, NVR saturado) nunca saldria del delay minimo y
+        # seguiriamos con los 3s fijos de antes.
+        attempt = 1 if delivered_frames else attempt + 1
+        reason = "El stream quedó congelado" if frozen else "Se perdió la conexión"
+        return self._wait_before_retry(attempt, reason), attempt
 
     def _wait_before_retry(self, attempt: int, reason: str) -> bool:
         """Reporta el estado y espera el backoff. True si hay que cortar el
@@ -249,6 +278,12 @@ class StreamWorker(threading.Thread):
             self._history.popleft()
 
     def _report_status(self, online: bool, detail: str) -> None:
+        # Despues de stop() no se informa nada: el worker se va porque se
+        # cerro la vista o se borro la camara, y escribir "offline" ahi
+        # pisaba el estado que ya habia puesto el worker nuevo (o escribia
+        # sobre una fila borrada).
+        if self._stop_event.is_set():
+            return
         event_bus.device_status.emit(
             DeviceStatusEvent(device_id=self.device_id, online=online, detail=detail)
         )
@@ -333,6 +368,14 @@ class StreamManager:
         key = (device.id, self._effective_kind(device, kind))
         with self._lock:
             worker = self._workers.get(key)
+            if worker is not None and getattr(worker, "murio", False):
+                # No devolver el cadaver: se reemplaza conservando las
+                # referencias que ya tenia (los que leen via get_worker()
+                # pasan a ver el nuevo en el siguiente cuadro).
+                logger.warning("Cámara %s: reemplazando un StreamWorker que murió", key[0])
+                worker = StreamWorker(device, key[1])
+                self._workers[key] = worker
+                worker.start()
             if worker is None:
                 logger.info("Cámara %s: arrancando StreamWorker (%s)", key[0], key[1])
                 worker = StreamWorker(device, key[1])

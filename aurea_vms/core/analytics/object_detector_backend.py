@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -303,6 +304,12 @@ def _crear_sesion(ruta_modelo: str) -> onnxruntime.InferenceSession:
     )
 
 
+def _clave(ruta_modelo: str) -> str:
+    """La misma sesion para el mismo ARCHIVO: una ruta relativa y una
+    absoluta (o con `..`) eran dos claves y dos copias del modelo en RAM."""
+    return str(Path(ruta_modelo).resolve())
+
+
 def adquirir_sesion(ruta_modelo: str) -> onnxruntime.InferenceSession:
     """Devuelve la sesion de ese modelo, creandola si es la primera vez.
 
@@ -310,6 +317,7 @@ def adquirir_sesion(ruta_modelo: str) -> onnxruntime.InferenceSession:
     (AnalyticsWorker), y dos adquisiciones simultaneas sin proteger crearian
     dos sesiones para el mismo archivo y romperian el conteo.
     """
+    ruta_modelo = _clave(ruta_modelo)
     with _lock:
         compartida = _sesiones.get(ruta_modelo)
         if compartida is None:
@@ -322,6 +330,7 @@ def adquirir_sesion(ruta_modelo: str) -> onnxruntime.InferenceSession:
 
 def soltar_sesion(ruta_modelo: str) -> None:
     """Libera la sesion cuando se va el ultimo usuario."""
+    ruta_modelo = _clave(ruta_modelo)
     with _lock:
         compartida = _sesiones.get(ruta_modelo)
         if compartida is None:
@@ -354,7 +363,13 @@ class YoloxDetector:
     def __init__(self) -> None:
         self._model_path = _ensure_model()
         self._session = adquirir_sesion(self._model_path)
-        self._input_name = self._session.get_inputs()[0].name
+        try:
+            self._input_name = self._session.get_inputs()[0].name
+        except Exception:
+            # Sin esto (A15) la sesion quedaba contada como en uso y nunca
+            # se liberaba: no hay objeto al que llamarle close().
+            soltar_sesion(self._model_path)
+            raise
         self._cerrado = False
 
     def close(self) -> None:

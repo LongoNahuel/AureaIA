@@ -30,9 +30,11 @@ que se trabajan ese mismo día:
   bloqueo, enumeración de usuarios por tiempo~~ — Fase 4 del 24/09. Además:
   hash corrupto = contraseña incorrecta, tope de iteraciones, contador
   atómico.
-- 🟠 Hilos muertos que quedan registrados como vivos, sesión ONNX que se fuga
+- ~~🟠 Hilos muertos que quedan registrados como vivos, sesión ONNX que se fuga
   si `acquire()` falla, mp4 huérfano ante `IntegrityError`, `alarm_engine` en
-  el hilo de la GUI sin mirar `_active`.
+  el hilo de la GUI sin mirar `_active`~~ — Fase 5 del 24/09. Queda abierto si
+  `alarm_engine` se muda del hilo de la GUI (medido: ~1 ms por evento, ~41 ms
+  por disparo; ver `sesiones/2026-09-24.md`).
 - 🟠 Falsos positivos del watchdog de congelado con cámaras "smart codec" en
   escenas quietas (`stream_manager.py:82-90`).
 
@@ -131,9 +133,8 @@ que se trabajan ese mismo día:
   detecciones (`tracker.py:67-91`) — puede hacer swaps de identidad con
   objetos cercanos. Evaluar asignación óptima o ByteTrack-lite si el conteo
   en escenas densas lo pide.
-- El cooldown de las reglas vive en un dict en memoria
-  (`alarm_engine.py:31,56-58`): se resetea en cada reinicio, y se lee/escribe
-  sin lock entre hilos.
+- El cooldown de las reglas vive en un dict en memoria: se resetea en cada
+  reinicio. (El lock entre hilos ya está, Fase 5 del 24/09.)
 - Reconocimiento facial real (hoy solo detección; la galería usa una
   firma de similitud, no un embedding).
 

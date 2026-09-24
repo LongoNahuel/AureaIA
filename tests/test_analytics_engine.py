@@ -22,6 +22,9 @@ class FakeAnalyticsWorker:
     def join(self, timeout: float | None = None) -> None:
         pass
 
+    def is_alive(self) -> bool:
+        return not self.stopped
+
 
 @pytest.fixture()
 def engine(monkeypatch) -> AnalyticsEngine:

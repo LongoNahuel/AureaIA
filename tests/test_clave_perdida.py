@@ -294,6 +294,11 @@ class TestNadaConectaConUnaCredencialIlegible:
         worker = sm_module.StreamWorker(_device_con_password(_token_con_otra_clave()))
 
         worker.start()
+        # Se espera el reporte antes del stop(): despues de stop() el worker
+        # ya no informa estado (Fase 5), y un stop inmediato le ganaba.
+        limite = time.monotonic() + 2
+        while not estados and time.monotonic() < limite:
+            time.sleep(0.01)
         worker.stop()
         worker.join(2)
 

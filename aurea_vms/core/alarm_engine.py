@@ -3,21 +3,32 @@ publicado por los analizadores activos, y dispara AlarmEvent respetando un
 cooldown por regla (evita spam de alarmas por detecciones repetidas del
 mismo evento sostenido en el tiempo).
 
-No es un QObject: se conecta directamente a la signal `detection` del
-EventBus, asi que corre en el mismo thread que emite ese evento (el
-AnalyticsWorker correspondiente) -- el trabajo que hace (un insert en la
-DB + re-emitir un evento) es liviano, no hace falta marshalear a otro hilo.
-Como contrapartida, `_on_detection` es la frontera del hilo: nada puede
-escaparse de ahi sin capturar, o se cae el AnalyticsWorker que lo llamo. Y
-por el mismo motivo este modulo no construye ni toca un solo widget: las
-acciones de una regla que llegan al escritorio (`play_sound`,
-`notify_desktop`) viajan como flags del AlarmEvent y las ejecuta la UI.
+**En que hilo corre** (verificado el 2026-09-24,
+tests/test_hilos.py::TestAlarmEngineEnQueHilo). No es un QObject, y
+PySide6 entrega un signal a un callable comun a traves de un receptor que
+vive en el hilo principal: como los AnalyticsWorker emiten desde su hilo, la
+conexion queda ENCOLADA y `_on_detection` corre en el **hilo de la GUI**, no
+en el del worker. Este docstring decia lo contrario hasta esa fecha. Costo
+medido por evento en ese hilo: ~0.7-1.4 ms sin disparo (la consulta de
+reglas), ~41 ms con disparo (insert + snapshot JPEG 1080p). Si se muda a
+otro hilo es una decision abierta (ver sesiones/2026-09-24.md, Fase 5).
+
+Consecuencias:
+- Una excepcion que se escape de `_on_detection` sube por el event loop de
+  Qt; igual se captura todo (el patron de stream_manager y retention).
+- Despues de stop() pueden quedar eventos encolados: `_on_detection` corta
+  si el motor no esta activo.
+- Este modulo no construye widgets aunque pudiera: las acciones que llegan
+  al escritorio (`play_sound`, `notify_desktop`) viajan como flags del
+  AlarmEvent y las ejecuta la UI, que es lo que sigue valiendo si el motor
+  se muda de hilo.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import logging
+import threading
 import time
 
 from aurea_vms.core import clip_recorder, media_store
@@ -34,21 +45,32 @@ logger = logging.getLogger(__name__)
 class AlarmEngine:
     def __init__(self) -> None:
         self._last_triggered: dict[int, float] = {}
+        # El cooldown se lee y escribe bajo lock: hoy todo corre en el hilo
+        # de la GUI (ver el docstring), pero no depende de eso.
+        self._cooldown_lock = threading.Lock()
         self._active = False
+        self._detenido = False
 
     def start(self) -> None:
         if self._active:
             return
         self._active = True
+        self._detenido = False
         event_bus.detection.connect(self._on_detection)
 
     def stop(self) -> None:
         if not self._active:
             return
         self._active = False
+        self._detenido = True
         event_bus.detection.disconnect(self._on_detection)
 
     def _on_detection(self, event: DetectionEvent) -> None:
+        if self._detenido:
+            # Eventos que quedaron encolados antes del stop() (logout): la
+            # conexion es encolada (ver el docstring), asi que desconectar
+            # no descarta los que ya estaban en la cola.
+            return
         candidates = event.triggers if event.triggers is not None else event.detections
         if not candidates:
             return
@@ -72,30 +94,39 @@ class AlarmEngine:
             if not self._within_schedule(rule):
                 continue
 
-            now = time.time()
-            if now - self._last_triggered.get(rule.id, 0.0) < rule.cooldown_seconds:
-                continue
-
             match = self._best_match(rule, candidates)
             if match is None:
                 continue
+
+            now = time.time()
+            # Chequear y reservar el cooldown es UNA operacion bajo el lock:
+            # separadas, dos eventos a la vez pasaban los dos el chequeo y
+            # la regla disparaba dos alarmas.
+            with self._cooldown_lock:
+                anterior = self._last_triggered.get(rule.id)
+                if now - (anterior or 0.0) < rule.cooldown_seconds:
+                    continue
+                self._last_triggered[rule.id] = now
 
             try:
                 self._trigger(rule, event, match)
             except Exception:
                 # Una regla que falla no puede cortar la evaluacion de las
-                # demas, ni matar el hilo de la analitica.
+                # demas. Y el cooldown se consume solo si se disparo bien:
+                # si el insert fallo por un lock transitorio, se devuelve la
+                # reserva y el proximo evento reintenta, en vez de quedarse
+                # mudo hasta que venza el cooldown.
+                with self._cooldown_lock:
+                    if self._last_triggered.get(rule.id) == now:
+                        if anterior is None:
+                            self._last_triggered.pop(rule.id, None)
+                        else:
+                            self._last_triggered[rule.id] = anterior
                 logger.exception(
                     "No se pudo disparar la alarma de la regla %s (cámara %s)",
                     rule.id,
                     event.device_id,
                 )
-                continue
-
-            # El cooldown se consume DESPUES de disparar bien: si el insert
-            # fallo por un lock transitorio, el proximo frame reintenta en
-            # vez de quedarse mudo hasta que venza el cooldown.
-            self._last_triggered[rule.id] = now
 
     @staticmethod
     def _within_schedule(rule: AlarmRule) -> bool:

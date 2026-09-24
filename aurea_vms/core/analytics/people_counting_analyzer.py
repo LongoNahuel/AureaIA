@@ -87,7 +87,6 @@ class PeopleCountingAnalyzer(Analyzer):
         head_shoulders_detection: bool = True,
         heatmap_enabled: bool = False,
     ) -> None:
-        self._detector = YoloxDetector()
         self._confidence_threshold = confidence_threshold
         self._roi = roi
         self._rois = zones or ([roi] if roi is not None else [None])
@@ -105,6 +104,9 @@ class PeopleCountingAnalyzer(Analyzer):
             min_hits=max(1, confirmation_frames),
             min_iou=0.12,
         )
+        # Lo ultimo: si algo de arriba levanta, la sesion del modelo no
+        # queda tomada sin dueño (A15).
+        self._detector = YoloxDetector()
 
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
         raw_detections: list[Detection] = []
