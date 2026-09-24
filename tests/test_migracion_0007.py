@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 from alembic import command
+from alembic.script import ScriptDirectory
 
 from aurea_vms.models import db as db_module
 
@@ -142,7 +143,12 @@ class TestDowngrade:
 
 
 def test_una_base_nueva_llega_a_esta_revision(tmp_path):
+    """Contra la cabeza real, no contra esta revision fija: la proxima
+    revision no tiene que romper este test."""
     ruta = tmp_path / "nueva.sqlite3"
     command.upgrade(_config(ruta), "head")
 
-    assert _consulta(ruta, "SELECT version_num FROM alembic_version") == [(REVISION,)]
+    script = ScriptDirectory.from_config(_config(ruta))
+    cabeza = script.get_current_head()
+    assert _consulta(ruta, "SELECT version_num FROM alembic_version") == [(cabeza,)]
+    assert REVISION in {r.revision for r in script.iterate_revisions(cabeza, "base")}

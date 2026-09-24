@@ -236,13 +236,15 @@ class TestAdopcionDeUnaBaseLegada:
 
     def test_renombra_el_analizador_de_movimiento(self, tmp_path):
         """movimiento -> puerta (0002) -> Detección de incidentes (0007): al final de la
-        cadena la config legada queda en la analitica vigente."""
+        cadena la config legada queda en la analitica vigente. Movimiento no
+        tenia zonas, y un monitor sin pantalla no puede arrancar: 0008 lo deja
+        apagado en vez de habilitado y roto."""
         ruta = _base_legada(tmp_path)
 
         db_module.init_db(ruta, force=True)
 
         configs = repository.list_analytics_configs()
-        assert [c.analyzer_name for c in configs] == ["monitor_tamper"]
+        assert [(c.analyzer_name, c.enabled) for c in configs] == [("monitor_tamper", False)]
 
 
 class TestIdempotencia:
