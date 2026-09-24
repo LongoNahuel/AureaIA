@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from dataclasses import dataclass
 
 from aurea_vms.config.settings import settings
 from aurea_vms.core.analytics.registry import ANALYZER_DISPLAY_NAMES, create_analyzer
@@ -33,6 +34,38 @@ def pacing_wait_s(interval_s: float, elapsed_s: float) -> float:
     return remaining if remaining > 0 else MIN_YIELD_S
 
 
+# Con un fallo persistente, loguear la traza en el 1er error y cada N.
+ERROR_LOG_EVERY = 100
+# Suavizado (EMA) de la latencia y los fps medidos.
+STATS_SMOOTHING = 0.2
+
+
+@dataclass
+class WorkerStats:
+    """Telemetria de un AnalyticsWorker para la UI: a cuantos fps corre de
+    verdad (no los configurados), cuanto tarda cada inferencia y cuantos
+    cuadros fallaron. Se escribe desde el hilo del worker y se lee desde
+    la UI: son floats/ints sueltos, una lectura apenas desfasada es
+    aceptable y no amerita un lock."""
+
+    fps: float = 0.0
+    latency_ms: float = 0.0
+    frames: int = 0
+    errors: int = 0
+    last_ok: float = 0.0  # time.monotonic() del ultimo cuadro procesado bien
+
+    def record(self, now: float, latency_ms: float) -> None:
+        if self.frames == 0:
+            self.latency_ms = latency_ms
+        else:
+            self.latency_ms += STATS_SMOOTHING * (latency_ms - self.latency_ms)
+            interval = now - self.last_ok
+            if interval > 0:
+                self.fps += STATS_SMOOTHING * (1.0 / interval - self.fps)
+        self.frames += 1
+        self.last_ok = now
+
+
 class AnalyticsWorker(threading.Thread):
     def __init__(self, config: AnalyticsConfig, device: Device) -> None:
         super().__init__(daemon=True, name=f"AnalyticsWorker-{config.id}")
@@ -49,6 +82,7 @@ class AnalyticsWorker(threading.Thread):
         self._stop_event = threading.Event()
         self._overrun_warned = False
         self._last_frame_ts = 0.0
+        self.stats = WorkerStats()
 
     def run(self) -> None:
         # Las coordenadas de ROI/linea se configuran sobre la captura del
@@ -73,16 +107,7 @@ class AnalyticsWorker(threading.Thread):
                     continue
                 if frame is not None:
                     self._last_frame_ts = frame_ts
-                    result = self._analyzer.process_frame(frame, time.time())
-                    event_bus.detection.emit(
-                        DetectionEvent(
-                            device_id=self._device.id,
-                            analyzer_name=self._analyzer_name,
-                            timestamp=time.time(),
-                            detections=result.detections,
-                            metrics=result.metrics,
-                        )
-                    )
+                    self._analyze(frame)
 
                 elapsed = time.monotonic() - start
                 if not self._overrun_warned and frame is not None and elapsed > self._interval_s:
@@ -104,6 +129,39 @@ class AnalyticsWorker(threading.Thread):
                 self._analyzer.close()
             except Exception:  # liberar recursos nunca debe matar el shutdown
                 logger.exception("Fallo al cerrar el analizador (config %s)", self.config_id)
+
+    def _analyze(self, frame) -> None:
+        inference_start = time.monotonic()
+        try:
+            result = self._analyzer.process_frame(frame, time.time())
+        except Exception:
+            # Antes una excepcion aca (frame corrupto a mitad de una
+            # reconexion, error puntual de onnxruntime) mataba el hilo en
+            # silencio: la analitica dejaba de correr pero la UI seguia
+            # mostrandola "corriendo". Se loguea con traza la primera vez y
+            # despues cada ERROR_LOG_EVERY, para no inundar el log si el
+            # fallo es persistente.
+            self.stats.errors += 1
+            if self.stats.errors == 1 or self.stats.errors % ERROR_LOG_EVERY == 0:
+                logger.exception(
+                    "Analizador %s (cámara %s): fallo procesando un cuadro (%d errores)",
+                    self._analyzer_name,
+                    self._device.id,
+                    self.stats.errors,
+                )
+            return
+        now = time.monotonic()
+        self.stats.record(now, (now - inference_start) * 1000)
+        event_bus.detection.emit(
+            DetectionEvent(
+                device_id=self._device.id,
+                analyzer_name=self._analyzer_name,
+                timestamp=time.time(),
+                detections=result.detections,
+                metrics=result.metrics,
+                triggers=result.triggers,
+            )
+        )
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -135,6 +193,10 @@ class AnalyticsEngine:
 
     def is_running(self, config_id: int) -> bool:
         return config_id in self._workers
+
+    def stats(self, config_id: int) -> WorkerStats | None:
+        worker = self._workers.get(config_id)
+        return worker.stats if worker is not None else None
 
     def running_count(self) -> int:
         return len(self._workers)

@@ -130,8 +130,14 @@ def check_analizadores() -> list[str]:
     from aurea_vms.models.analytics_config import AnalyticsConfig
 
     frame = np.zeros((360, 640, 3), dtype=np.uint8)
+    # Los que no arrancan sin geometria: la linea de cruce y la pantalla a
+    # vigilar de Detección de incidentes (que ademas carga el modelo de pose, RTMPose).
+    geometria = {
+        "line_crossing": {"line": [[0, 180], [640, 180]]},
+        "monitor_tamper": {"zones": [[220, 90, 200, 150]]},
+    }
     for name in AVAILABLE_ANALYZERS:
-        params = {"line": [[0, 180], [640, 180]]} if name == "line_crossing" else {}
+        params = geometria.get(name, {})
         config = AnalyticsConfig(
             device_id=0, analyzer_name=name, confidence_threshold=0.5, params=params
         )

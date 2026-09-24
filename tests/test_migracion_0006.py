@@ -124,7 +124,8 @@ class TestBaseDelSistemaAdhoc:
 
         db_module.init_db(ruta, force=True)
 
-        assert _revision(ruta) == REVISION
+        # init_db lleva la base a la cabeza, que puede ser posterior a 0006.
+        assert _revision(ruta) >= REVISION
         assert {"ix_devices_assigned_site_id", "ix_devices_parent_device_id"} <= (
             _indices_de_devices(ruta)
         )

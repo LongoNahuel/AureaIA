@@ -44,9 +44,16 @@ import cv2
 import numpy as np
 
 from aurea_vms.core.analytics.base import AnalysisResult, Analyzer, crop_to_roi
+from aurea_vms.core.analytics.face_quality import (
+    context_jpeg,
+    display_crop,
+    face_patch,
+    is_face_visible,
+    quality_breakdown,
+)
 from aurea_vms.core.analytics.model_assets import ensure_model
 from aurea_vms.core.analytics.tracker import CentroidTracker
-from aurea_vms.core.events import Detection
+from aurea_vms.core.events import Detection, FaceShot
 
 MODEL_URL = (
     "https://github.com/opencv/opencv_zoo/raw/main/models/"
@@ -81,8 +88,22 @@ HEAD_MOUTH_Y_RANGE = (0.30, 1.10)
 # ancho de caja, practicamente de punta a punta); margen generoso.
 HEAD_NOSE_X_RANGE = (-0.30, 1.30)
 
+# Tomas para la galeria (ver _collect_shots): cuanto tiene que mejorar una
+# toma para reemplazar a la anterior del mismo track, y cada cuanto como
+# maximo se publica una toma por track. Que una toma sirva (rostro visible)
+# lo decide face_quality.is_face_visible.
+QUALITY_IMPROVEMENT = 0.05
+MIN_SHOT_INTERVAL_S = 0.4
+
 NMS_THRESHOLD = 0.3
 TOP_K = 500
+# Lado mayor de la imagen que ve YuNet. Medido sobre el clip 2048x1536 de
+# la demo (2026-09-23): a resolucion completa 545 ms por cuadro; a 1280 px,
+# 58 ms en promedio, y en un cuadro de prueba encontro 2 caras en vez de 1
+# (YuNet anda mejor con caras de tamaño medio). Costo: en el clip bajaron
+# las capturas de 8 a 6 (todas caras reales) y en otro clip de 2 a 1.
+MAX_DETECTION_SIDE = 1280
+
 # Tamaño inicial dummy: se pisa con el tamaño real del crop en el primer
 # process_frame (setInputSize es obligatorio antes de detect()).
 _INIT_INPUT_SIZE = (320, 320)
@@ -90,6 +111,38 @@ _INIT_INPUT_SIZE = (320, 320)
 
 def _ensure_model() -> str:
     return ensure_model(MODEL_FILENAME, MODEL_URL)
+
+
+def _create_detector(confidence_threshold: float) -> cv2.FaceDetectorYN:
+    """OpenCV 5 avisa en cada create() "setPreferableTarget Targets are not
+    supported by the new graph engine": YuNet no pide ningun target y el
+    aviso solo ensuciaba la terminal, asi que se calla nada mas que aca."""
+    previous = cv2.utils.logging.getLogLevel()
+    cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
+    try:
+        return cv2.FaceDetectorYN.create(
+            _ensure_model(),
+            "",
+            _INIT_INPUT_SIZE,
+            score_threshold=confidence_threshold,
+            nms_threshold=NMS_THRESHOLD,
+            top_k=TOP_K,
+        )
+    finally:
+        cv2.utils.logging.setLogLevel(previous)
+
+
+def downscale(image: np.ndarray, max_side: int) -> tuple[np.ndarray, float]:
+    """(imagen reducida, escala aplicada); escala 1.0 si ya entraba."""
+    height, width = image.shape[:2]
+    largest = max(height, width)
+    if largest <= max_side:
+        return image, 1.0
+    scale = max_side / largest
+    reduced = cv2.resize(
+        image, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA
+    )
+    return reduced, scale
 
 
 class FaceDetectionAnalyzer(Analyzer):
@@ -104,14 +157,7 @@ class FaceDetectionAnalyzer(Analyzer):
         track_max_age_s: float = 0.6,
         tilted_faces_filter: bool = True,
     ) -> None:
-        self._detector = cv2.FaceDetectorYN.create(
-            _ensure_model(),
-            "",
-            _INIT_INPUT_SIZE,
-            score_threshold=confidence_threshold,
-            nms_threshold=NMS_THRESHOLD,
-            top_k=TOP_K,
-        )
+        self._detector = _create_detector(confidence_threshold)
         self._roi = roi
         self._min_pupillary_distance_px = max(0, min_pupillary_distance_px)
         self._tilted_faces_filter = tilted_faces_filter
@@ -119,20 +165,29 @@ class FaceDetectionAnalyzer(Analyzer):
             max_age_s=track_max_age_s, min_hits=max(1, confirmation_frames)
         )
         self._input_size: tuple[int, int] | None = None
+        self._best_quality: dict[int, float] = {}
+        self._last_shot_at: dict[int, float] = {}
 
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
         crop, offset_x, offset_y = crop_to_roi(frame, self._roi)
-        crop_h, crop_w = crop.shape[:2]
-        size = (crop_w, crop_h)
+        # Se detecta sobre una copia reducida y las coordenadas vuelven a la
+        # resolucion original: todo lo demas (filtros, calidad, recortes de
+        # las capturas y evidencia forense) trabaja en pixeles nativos.
+        detect_image, scale = downscale(crop, MAX_DETECTION_SIDE)
+        size = (detect_image.shape[1], detect_image.shape[0])
         if size != self._input_size:
             self._detector.setInputSize(size)
             self._input_size = size
 
         # YuNet espera BGR (el formato nativo de OpenCV) -- a diferencia
         # de MediaPipe, no hace falta convertir a RGB.
-        _, faces = self._detector.detect(crop)
+        _, faces = self._detector.detect(detect_image)
+        if faces is not None and scale != 1.0:
+            faces = faces.copy()
+            faces[:, :SCORE] /= scale
 
         raw_detections: list[Detection] = []
+        rows_by_bbox: dict[tuple[int, int, int, int], np.ndarray] = {}
         for face in faces if faces is not None else []:
             if not self._passes_box_shape_filter(face):
                 continue
@@ -151,21 +206,19 @@ class FaceDetectionAnalyzer(Analyzer):
                 (face[MOUTH_R_X] + offset_x, face[MOUTH_R_Y] + offset_y),
                 (face[MOUTH_L_X] + offset_x, face[MOUTH_L_Y] + offset_y),
             )
+            bbox = (round(x) + offset_x, round(y) + offset_y, round(w), round(h))
+            rows_by_bbox[bbox] = face
             raw_detections.append(
                 Detection(
                     label="cara",
                     confidence=float(face[SCORE]),
-                    bbox=(
-                        round(x) + offset_x,
-                        round(y) + offset_y,
-                        round(w),
-                        round(h),
-                    ),
+                    bbox=bbox,
                     keypoints=pixel_keypoints,
                 )
             )
 
         self._tracker.update(raw_detections, timestamp)
+        confirmed = self._tracker.confirmed_tracks()
         detections = [
             Detection(
                 label=track.label,
@@ -173,10 +226,71 @@ class FaceDetectionAnalyzer(Analyzer):
                 bbox=track.bbox,
                 keypoints=track.keypoints,
             )
-            for track in self._tracker.confirmed_tracks()
+            for track in confirmed
         ]
 
-        return AnalysisResult(detections=tuple(detections), metrics={"caras": len(detections)})
+        metrics: dict = {"caras": len(detections)}
+        shots = self._collect_shots(frame, crop, confirmed, rows_by_bbox, timestamp)
+        if shots:
+            metrics["face_shots"] = shots
+        return AnalysisResult(detections=tuple(detections), metrics=metrics)
+
+    def _collect_shots(self, frame, crop, tracks, rows_by_bbox, timestamp):
+        """La mejor captura de cada paso de una cara por la camara (un track).
+
+        Solo entran tomas donde el rostro se ve bien (`is_face_visible`), y
+        de un mismo track solo se publica una toma nueva si MEJORA a la
+        anterior: la galeria reemplaza la captura del track por la nueva, asi
+        que al final queda una sola, la mejor. No hay identidad entre pasos:
+        la misma persona que sale y vuelve a entrar es otra captura."""
+        live = set(self._tracker.tracks)
+        for stale in set(self._best_quality) - live:
+            self._best_quality.pop(stale, None)
+            self._last_shot_at.pop(stale, None)
+
+        shots: list[FaceShot] = []
+        for track in tracks:
+            if track.last_seen != timestamp:
+                continue  # sostenido por oclusion: no hay cara nueva que recortar
+            face = rows_by_bbox.get(track.bbox)
+            if face is None:
+                continue
+            if timestamp - self._last_shot_at.get(track.track_id, -1e9) < MIN_SHOT_INTERVAL_S:
+                continue
+            patch = face_patch(crop, face)
+            if patch is None:
+                continue
+            details = quality_breakdown(face, patch)
+            if not is_face_visible(details):
+                continue
+            quality = details["total"]
+            best = self._best_quality.get(track.track_id)
+            if best is not None and quality < best + QUALITY_IMPROVEMENT:
+                continue
+            image = display_crop(crop, tuple(float(v) for v in face[:4]))
+            if image is None:
+                continue
+            # Evidencia forense sobre el cuadro COMPLETO (coordenadas de
+            # track.bbox): recorte nativo con margen amplio y la escena.
+            forensic = display_crop(frame, tuple(float(v) for v in track.bbox), margin=1.0)
+            jpeg, scale = context_jpeg(frame)
+            self._best_quality[track.track_id] = quality
+            self._last_shot_at[track.track_id] = timestamp
+            shots.append(
+                FaceShot(
+                    track_id=track.track_id,
+                    image=image,
+                    quality=quality,
+                    confidence=track.confidence,
+                    bbox=track.bbox,
+                    forensic=forensic,
+                    context_jpeg=jpeg,
+                    context_scale=scale,
+                    frame_size=(frame.shape[1], frame.shape[0]),
+                    details=details,
+                )
+            )
+        return shots
 
     @staticmethod
     def _passes_box_shape_filter(face) -> bool:

@@ -123,15 +123,15 @@ class TestPeopleCounting:
         primero = analyzer.process_frame(FRAME, 0.0)
         segundo = analyzer.process_frame(FRAME, 0.2)
 
-        assert primero.metrics == {"occupancy": 0}  # hit 1: aun no cuenta
-        assert segundo.metrics == {"occupancy": 1}
+        assert primero.metrics["occupancy"] == 0  # hit 1: aun no cuenta
+        assert segundo.metrics["occupancy"] == 1
 
     def test_dos_personas_separadas(self, fake_backend):
         analyzer = PeopleCountingAnalyzer(confirmation_frames=1)
         fake_backend.script = [[_det(30, 30), _det(170, 170)]]
         result = analyzer.process_frame(FRAME, 0.0)
 
-        assert result.metrics == {"occupancy": 2}
+        assert result.metrics["occupancy"] == 2
         assert all(d.label == "person" for d in result.detections)
 
     def test_persona_que_se_va_expira(self, fake_backend):
@@ -140,7 +140,7 @@ class TestPeopleCounting:
         analyzer.process_frame(FRAME, 0.0)
         result = analyzer.process_frame(FRAME, 5.0)  # mucho despues
 
-        assert result.metrics == {"occupancy": 0}
+        assert result.metrics["occupancy"] == 0
 
     def test_dos_cajas_superpuestas_de_la_misma_persona_cuentan_una_vez(self, fake_backend):
         """El detector a veces deja pasar dos cajas casi iguales sobre el
@@ -150,7 +150,7 @@ class TestPeopleCounting:
         fake_backend.script = [[_det(50, 50), _det(52, 51)]]
         result = analyzer.process_frame(FRAME, 0.0)
 
-        assert result.metrics == {"occupancy": 1}
+        assert result.metrics["occupancy"] == 1
 
     def test_caja_con_forma_de_persona_imposible_se_descarta(self, fake_backend):
         analyzer = PeopleCountingAnalyzer(confirmation_frames=1)
@@ -158,4 +158,4 @@ class TestPeopleCounting:
         fake_backend.script = [[wide_box]]
         result = analyzer.process_frame(FRAME, 0.0)
 
-        assert result.metrics == {"occupancy": 0}
+        assert result.metrics["occupancy"] == 0

@@ -58,9 +58,9 @@ def test_analizador_desconocido_falla():
 
 
 # Configs de los analizadores que cargan modelo real, para los tests de
-# integracion. line_crossing es el unico que no arranca sin params.
+# integracion. line_crossing y monitor_tamper no arrancan sin geometria.
 _CONFIGS_REALES = [
-    ("door_state", {}),
+    ("monitor_tamper", {"zones": [[220, 90, 200, 150]]}),
     ("people_counting", {}),
     ("face_detection", {}),
     ("line_crossing", {"line": [[0, 180], [640, 180]]}),

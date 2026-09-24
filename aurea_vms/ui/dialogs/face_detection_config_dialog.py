@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTime
-from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QTimeEdit
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFormLayout, QHBoxLayout
 from qfluentwidgets import (
     BodyLabel,
     CaptionLabel,
     CheckBox,
-    DoubleSpinBox,
     Slider,
     SpinBox,
     StrongBodyLabel,
@@ -19,7 +18,6 @@ from aurea_vms.ui.dialogs.analytics_config_dialog_base import AnalyticsConfigDia
 FPS_RANGE = (1, 30)
 CONFIRMATION_RANGE = (1, 10)
 DEFAULT_CONFIRMATION_FRAMES = 2
-MAX_CAPTURES_RANGE = (1, 5)
 FIELD_WIDTH = 130
 
 
@@ -105,16 +103,16 @@ class FaceDetectionConfigDialog(AnalyticsConfigDialogBase):
         form.addRow("Confirmación (frames):", self.confirmation_spin)
         form.addRow(_caption("Más alto = menos falsos disparos, pero tarda un poco más en marcar."))
 
-        # ======================= Captura y conteo =========================
-        _section_header(form, "Captura y conteo")
-
-        self.counting_check = CheckBox("Contador de capturas habilitado")
-        self.counting_check.setChecked(bool(params.get("counting_enabled", True)))
-        form.addRow(self.counting_check)
-
-        self.best_capture_check = CheckBox("Conservar la mejor captura")
-        self.best_capture_check.setChecked(bool(params.get("best_capture_enabled", True)))
-        form.addRow(self.best_capture_check)
+        # ============================ Captura =============================
+        _section_header(form, "Captura")
+        form.addRow(
+            _caption(
+                "Se guarda una sola captura por cada paso de una cara por la cámara: la mejor "
+                "toma, y solo si el rostro se ve bien (de frente, nítido, con al menos "
+                "18 px entre ojos y detección segura). La sensibilidad de arriba decide qué se "
+                "marca en el video; esta regla, qué se guarda."
+            )
+        )
 
         self.attribute_checks = {
             "gafas": CheckBox("Gafas"),
@@ -125,43 +123,6 @@ class FaceDetectionConfigDialog(AnalyticsConfigDialogBase):
         for name, check in self.attribute_checks.items():
             check.setChecked(name in selected_attributes)
             form.addRow(check)
-
-        self.reset_time_edit = QTimeEdit()
-        self.reset_time_edit.setDisplayFormat("HH:mm")
-        self.reset_time_edit.setMaximumWidth(FIELD_WIDTH)
-        reset_time = params.get("counting_reset_time", "00:00")
-        hh, mm = (reset_time.split(":") + ["0", "0"])[:2]
-        self.reset_time_edit.setTime(QTime(int(hh), int(mm)))
-        form.addRow("Reiniciar contador a las:", self.reset_time_edit)
-
-        self.capture_threshold_spin = DoubleSpinBox()
-        self.capture_threshold_spin.setRange(5.0, 90.0)
-        self.capture_threshold_spin.setSingleStep(5.0)
-        self.capture_threshold_spin.setSuffix(" %")
-        self.capture_threshold_spin.setMaximumWidth(FIELD_WIDTH)
-        self.capture_threshold_spin.setValue(params.get("capture_diff_threshold", 0.35) * 100)
-        self.capture_threshold_spin.setToolTip(
-            "Qué tan distinto debe verse un rostro para catalogarlo como un ID nuevo en vez de "
-            "sumarlo/actualizarlo dentro de las capturas ya guardadas de ese ID."
-        )
-        form.addRow("Umbral de ID nuevo:", self.capture_threshold_spin)
-        form.addRow(
-            _caption("Más alto = más estricto (menos IDs nuevos); más bajo = más sensible.")
-        )
-
-        self.max_captures_spin = SpinBox()
-        self.max_captures_spin.setRange(*MAX_CAPTURES_RANGE)
-        self.max_captures_spin.setMaximumWidth(FIELD_WIDTH)
-        self.max_captures_spin.setValue(params.get("max_captures_per_face", 1))
-        form.addRow("Capturas por rostro:", self.max_captures_spin)
-        form.addRow(
-            _caption(
-                'La galería guarda como mucho "Capturas por rostro" fotos por ID (1 = una sola '
-                "toma, siempre la mejor vista hasta ahora). Con un tope mayor, cada ID acumula "
-                "varias tomas hasta llegar al tope; despues, la mas chica se reemplaza por una "
-                "mejor."
-            )
-        )
 
         self.fps_spin = SpinBox()
         self.fps_spin.setRange(*FPS_RANGE)
@@ -180,14 +141,9 @@ class FaceDetectionConfigDialog(AnalyticsConfigDialogBase):
         return {
             "min_pupillary_distance_px": self.min_pupillary_spin.value(),
             "confirmation_frames": self.confirmation_spin.value(),
-            "counting_enabled": self.counting_check.isChecked(),
-            "best_capture_enabled": self.best_capture_check.isChecked(),
             "tilted_faces_filter": self.tilt_filter_check.isChecked(),
             "face_attributes": [
                 name for name, check in self.attribute_checks.items() if check.isChecked()
             ],
-            "counting_reset_time": self.reset_time_edit.time().toString("HH:mm"),
-            "capture_diff_threshold": self.capture_threshold_spin.value() / 100.0,
-            "max_captures_per_face": self.max_captures_spin.value(),
             "fps": self.fps_spin.value(),
         }

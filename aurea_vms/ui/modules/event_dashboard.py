@@ -42,7 +42,7 @@ ROW_LIMIT = 200
 SEVERITY_LABELS = {"critico": "Crítico", "alto": "Alto", "medio": "Medio", "info": "Info"}
 COLUMNS = ["Hora", "Cámara", "Analítica", "Incidente", "Severidad", "Estado", "Clip"]
 ANALYTIC_COLORS = {
-    "door_state": "#f59e0b",
+    "monitor_tamper": "#f59e0b",
     "people_counting": "#22c55e",
     "line_crossing": "#38bdf8",
     "face_detection": "#c084fc",

@@ -96,8 +96,13 @@ def _update(model: type, row_id: int, fields: dict) -> None:
                 setattr(row, key, value)
 
 
+# Analiticas retiradas -> la que ocupa su lugar. Movimiento paso a ser
+# "estado de puerta" (0002) y puerta paso a ser "Detección de incidentes" (0007).
+_RETIRED_ANALYZERS = {"motion_detection": "monitor_tamper", "door_state": "monitor_tamper"}
+
+
 def _normalize_analyzer_name(name: str) -> str:
-    return "door_state" if name == "motion_detection" else name
+    return _RETIRED_ANALYZERS.get(name, name)
 
 
 def add_site(**fields: object) -> Site:

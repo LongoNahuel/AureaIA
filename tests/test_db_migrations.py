@@ -235,12 +235,14 @@ class TestAdopcionDeUnaBaseLegada:
         assert "ix_devices_site_id" not in _indices(ruta, "devices")
 
     def test_renombra_el_analizador_de_movimiento(self, tmp_path):
+        """movimiento -> puerta (0002) -> Detección de incidentes (0007): al final de la
+        cadena la config legada queda en la analitica vigente."""
         ruta = _base_legada(tmp_path)
 
         db_module.init_db(ruta, force=True)
 
         configs = repository.list_analytics_configs()
-        assert [c.analyzer_name for c in configs] == ["door_state"]
+        assert [c.analyzer_name for c in configs] == ["monitor_tamper"]
 
 
 class TestIdempotencia:

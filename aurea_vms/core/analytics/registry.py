@@ -4,15 +4,15 @@ persistido en la base."""
 from __future__ import annotations
 
 from aurea_vms.core.analytics.base import Analyzer
-from aurea_vms.core.analytics.door_state_analyzer import DoorStateAnalyzer
 from aurea_vms.core.analytics.face_detection_analyzer import FaceDetectionAnalyzer
 from aurea_vms.core.analytics.line_crossing_analyzer import LineCrossingAnalyzer
+from aurea_vms.core.analytics.monitor_tamper_analyzer import MonitorTamperAnalyzer
 from aurea_vms.core.analytics.motion_detection_analyzer import MotionDetectionAnalyzer
 from aurea_vms.core.analytics.people_counting_analyzer import PeopleCountingAnalyzer
 from aurea_vms.models.analytics_config import AnalyticsConfig
 
 ANALYZER_DISPLAY_NAMES: dict[str, str] = {
-    "door_state": "Puerta Abierta/Cerrada",
+    "monitor_tamper": "Detección de incidentes",
     "people_counting": "Conteo de Personas",
     "line_crossing": "Cruce de Línea",
     "face_detection": "Detección Facial",
@@ -30,8 +30,7 @@ def _roi_from_config(config: AnalyticsConfig) -> tuple[int, int, int, int] | Non
 def create_analyzer(config: AnalyticsConfig) -> Analyzer:
     params = config.params or {}
 
-    # Compatibilidad de API para configuraciones antiguas. Las nuevas
-    # configuraciones se registran como door_state y la UI ya no expone
+    # Compatibilidad de API para configuraciones antiguas: la UI ya no expone
     # movimiento, pero integraciones/tests que aún construyen el nombre
     # legado siguen pudiendo crear su analizador explícitamente.
     if config.analyzer_name == "motion_detection":
@@ -42,19 +41,24 @@ def create_analyzer(config: AnalyticsConfig) -> Analyzer:
             confirmation_frames=params.get("confirmation_frames", 2),
         )
 
-    if config.analyzer_name == "door_state":
+    if config.analyzer_name == "monitor_tamper":
+        # Cada zona es una pantalla. Sin zonas se usa el ROI simple, si hay.
         zones = [
             tuple(zone)
             for zone in params.get("zones", [])
             if isinstance(zone, (list, tuple)) and len(zone) == 4
         ]
-        return DoorStateAnalyzer(
-            change_threshold=params.get("change_threshold", 0.10),
-            confirmation_frames=params.get("confirmation_frames", 3),
-            roi=_roi_from_config(config),
-            zones=zones or None,
-            opening_percent=params.get("opening_percent", 10.0),
-            threshold_seconds=params.get("threshold_seconds"),
+        roi = _roi_from_config(config)
+        if not zones and roi is not None:
+            zones = [roi]
+        return MonitorTamperAnalyzer(
+            zones=zones,
+            crop_expansion=params.get("crop_expansion", 2.2),
+            keypoint_min_score=params.get("keypoint_min_score", 0.30),
+            hand_strikes_enabled=params.get("hand_strikes_enabled", True),
+            hand_strike_speed=params.get("hand_strike_speed", 2.0),
+            confirmation_frames=params.get("confirmation_frames", 1),
+            alert_hold_s=params.get("alert_hold_s", 4.0),
         )
 
     if config.analyzer_name == "people_counting":

@@ -30,6 +30,8 @@ class AnalysisResult:
     detections: tuple[Detection, ...] = ()
     # Metricas tipo dashboard, ej. {"occupancy": 4} o {"count_in": 12, "count_out": 9}
     metrics: dict = field(default_factory=dict)
+    # Ver DetectionEvent.triggers: None = alarmar sobre `detections`.
+    triggers: tuple[Detection, ...] | None = None
 
 
 class Analyzer(ABC):

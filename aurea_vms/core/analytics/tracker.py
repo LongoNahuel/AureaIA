@@ -50,6 +50,12 @@ class TrackedObject:
     # de Movimiento) -- mismo motivo que keypoints: sin esto, un track
     # recien confirmado dibujaria un rectangulo en vez de la silueta real.
     polygon: tuple[tuple[int, int], ...] | None = None
+    # Velocidad estimada del centroide en px/s (ver CentroidTracker.update).
+    velocity: tuple[float, float] = (0.0, 0.0)
+
+
+# Peso de la ultima medicion al actualizar la velocidad (EMA).
+VELOCITY_SMOOTHING = 0.5
 
 
 class CentroidTracker:
@@ -67,6 +73,23 @@ class CentroidTracker:
         self._next_id = 1
         self.tracks: dict[int, TrackedObject] = {}
 
+    def _gate(self, track: TrackedObject) -> float:
+        """Distancia maxima de asociacion para ESTE track: el piso fijo
+        (`max_distance`) o, si el objeto es grande en cuadro, una vez su
+        lado mayor. Con un piso fijo en pixeles, una persona cerca de una
+        camara 1080p muestreada a 2-5 fps se desplaza mas que el piso entre
+        muestras: el track se perdia, nacia otro sin historial y el cruce
+        de linea no se contaba."""
+        return max(self.max_distance, float(max(track.bbox[2], track.bbox[3])))
+
+    @staticmethod
+    def _predicted_centroid(track: TrackedObject, timestamp: float) -> tuple[float, float]:
+        dt = max(0.0, timestamp - track.last_seen)
+        return (
+            track.centroid[0] + track.velocity[0] * dt,
+            track.centroid[1] + track.velocity[1] * dt,
+        )
+
     def update(self, detections: list[Detection], timestamp: float) -> dict[int, TrackedObject]:
         expired = [
             tid
@@ -76,32 +99,56 @@ class CentroidTracker:
         for tid in expired:
             del self.tracks[tid]
 
-        unmatched_ids = set(self.tracks.keys())
-        assigned: dict[int, TrackedObject] = {}
+        centroids = [(d.bbox[0] + d.bbox[2] / 2, d.bbox[1] + d.bbox[3] / 2) for d in detections]
 
-        for det in detections:
-            x, y, w, h = det.bbox
-            centroid = (x + w / 2, y + h / 2)
-
-            best_id = None
-            best_dist = self.max_distance
-            for tid in unmatched_ids:
-                track = self.tracks[tid]
+        # Asociacion GLOBAL y greedy por costo: se arman todos los pares
+        # (track, deteccion) validos y se asignan de mejor a peor. Antes se
+        # recorria deteccion por deteccion y la primera de la lista se
+        # quedaba con el track mas cercano aunque otra deteccion le quedara
+        # mucho mas cerca -- swaps de identidad dependientes del orden en
+        # que el detector devolviera las cajas. Los pares con solapamiento
+        # (IoU) van primero; despues, por distancia al centroide predicho.
+        candidates: list[tuple[tuple[int, float], int, int]] = []
+        for tid, track in self.tracks.items():
+            predicted = self._predicted_centroid(track, timestamp)
+            gate = self._gate(track)
+            for index, det in enumerate(detections):
                 if track.label != det.label:
                     continue
                 iou = _bbox_iou(track.bbox, det.bbox)
-                if iou >= self.min_iou and iou > 0:
-                    if best_id is None or iou > _bbox_iou(self.tracks[best_id].bbox, det.bbox):
-                        best_id = tid
-                        best_dist = math.dist(track.centroid, centroid)
+                if iou > 0 and iou >= self.min_iou:
+                    candidates.append(((0, -iou), tid, index))
                     continue
-                dist = math.dist(track.centroid, centroid)
-                if dist < best_dist:
-                    best_dist = dist
-                    best_id = tid
+                dist = math.dist(predicted, centroids[index])
+                if dist < gate:
+                    candidates.append(((1, dist), tid, index))
+        candidates.sort(key=lambda item: item[0])
 
-            if best_id is not None:
-                track = self.tracks[best_id]
+        matched: dict[int, int] = {}  # indice de deteccion -> track id
+        used_tracks: set[int] = set()
+        for _, tid, index in candidates:
+            if tid in used_tracks or index in matched:
+                continue
+            matched[index] = tid
+            used_tracks.add(tid)
+
+        assigned: dict[int, TrackedObject] = {}
+        for index, det in enumerate(detections):
+            centroid = centroids[index]
+            tid = matched.get(index)
+            if tid is not None:
+                track = self.tracks[tid]
+                dt = timestamp - track.last_seen
+                if dt > 0:
+                    # Velocidad suavizada (px/s) para predecir la posicion en
+                    # la proxima muestra; el suavizado evita que el jitter de
+                    # la caja se amplifique en la prediccion.
+                    vx = (centroid[0] - track.centroid[0]) / dt
+                    vy = (centroid[1] - track.centroid[1]) / dt
+                    track.velocity = (
+                        VELOCITY_SMOOTHING * vx + (1 - VELOCITY_SMOOTHING) * track.velocity[0],
+                        VELOCITY_SMOOTHING * vy + (1 - VELOCITY_SMOOTHING) * track.velocity[1],
+                    )
                 track.centroid = centroid
                 track.bbox = det.bbox
                 track.confidence = det.confidence
@@ -109,8 +156,6 @@ class CentroidTracker:
                 track.hits += 1
                 track.keypoints = det.keypoints
                 track.polygon = det.polygon
-                unmatched_ids.discard(best_id)
-                assigned[best_id] = track
             else:
                 tid = self._next_id
                 self._next_id += 1
@@ -126,7 +171,7 @@ class CentroidTracker:
                     polygon=det.polygon,
                 )
                 self.tracks[tid] = track
-                assigned[tid] = track
+            assigned[tid] = track
 
         return assigned
 

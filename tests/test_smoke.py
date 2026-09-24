@@ -16,6 +16,15 @@ from aurea_vms.core import credential_store
 from aurea_vms.models import db as db_module
 
 
+def _cabeza(tmp_path) -> str:
+    """La ultima revision de Alembic: no un nombre fijo, que se rompe con
+    cada revision nueva."""
+    from alembic.script import ScriptDirectory
+
+    config = db_module._config_de_alembic(tmp_path / "cualquiera.sqlite3")
+    return ScriptDirectory.from_config(config).get_current_head()
+
+
 @pytest.fixture()
 def data_dir(tmp_path, monkeypatch):
     """Clave de cifrado aislada: nunca la del desarrollador."""
@@ -26,8 +35,8 @@ def data_dir(tmp_path, monkeypatch):
 
 
 class TestMigraciones:
-    def test_pasa_con_la_base_en_la_cabeza(self, temp_db):
-        assert smoke.check_migraciones(base_nueva=True).startswith("0006_")
+    def test_pasa_con_la_base_en_la_cabeza(self, temp_db, tmp_path):
+        assert smoke.check_migraciones(base_nueva=True).startswith(_cabeza(tmp_path))
 
     def test_falla_si_la_base_quedo_atras(self, temp_db, monkeypatch):
         monkeypatch.setattr(db_module, "revision_actual", lambda _engine: "0005_seguridad")
@@ -113,7 +122,7 @@ class TestConfigDeAlembic:
 
         db_module.init_db(ruta, force=True)
 
-        assert db_module.revision_actual(db_module._engine).startswith("0006_")
+        assert db_module.revision_actual(db_module._engine) == _cabeza(tmp_path)
         db_module._engine.dispose()
         db_module._engine = None
         db_module._SessionLocal = None

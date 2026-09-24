@@ -25,6 +25,9 @@ class FakeAnalyticsEngine:
     def is_running(self, config_id: int) -> bool:
         return False
 
+    def stats(self, config_id: int):
+        return None
+
 
 @pytest.fixture()
 def fake_engine(monkeypatch):

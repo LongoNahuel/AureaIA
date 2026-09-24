@@ -1,225 +1,269 @@
-"""Panel de la Vista Inteligente: galeria en vivo de rostros detectados,
-recortados del frame en el momento de la deteccion. Es efimera (solo en
-memoria durante la sesion, no se persiste a disco) -- para eso ya existen
-los snapshots de alarma cuando hay una regla de Deteccion Facial activa.
+"""Panel de la Vista Inteligente: rostros detectados en la camara enfocada.
 
-Quien es quien, cuantos van y que toma se guarda de cada identidad lo
-decide core/face_catalog.py: este widget solo refleja en su QListWidget lo
-que el catalogo le devuelve. Las dos listas van en el mismo orden (mas
-reciente primero) y por eso los indices coinciden. Configurable por camara
-desde Analizadores > Detección Facial.
+Diseño: dos cifras (capturas y caras en cuadro), la captura seleccionada en
+grande con su ficha (hora, calidad) y una grilla compacta del resto. Sin
+sellos quemados sobre la foto: la metadata va en la ficha y en el tooltip,
+la imagen queda limpia.
 
-Cada captura lleva quemada una franja inferior con hora y porcentaje de
-certeza de la deteccion -- igual que un sello de metadata en video de
-seguridad -- para que la miniatura sea autocontenida al exportarla o
-inspeccionarla sin depender del tooltip/texto de la lista."""
+Cada captura es la mejor toma de un paso de una cara por la camara, solo
+si el rostro se ve bien (ver core/analytics/face_quality.py). No hay
+identidad ni conteo de personas unicas. Es efimera (solo en memoria durante
+la sesion): para evidencia persistida estan los snapshots de alarma.
+
+Este widget es un espejo de ui/face_registry.py, compartido con la tira del
+dashboard y el visor forense.
+"""
 
 from __future__ import annotations
 
-import datetime as dt
+import time
 
-import cv2
-from PySide6.QtCore import QRect, QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap
-from PySide6.QtWidgets import QHBoxLayout, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, FluentIcon, HeaderCardWidget, TransparentToolButton
-
-from aurea_vms.core.event_bus import event_bus
-from aurea_vms.core.events import DetectionEvent
-from aurea_vms.core.face_catalog import (
-    FaceCapture,
-    FaceCatalog,
-    FaceCatalogSettings,
-    clamp_bbox,
-    face_signature,
-    geometry_signature,
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
-from aurea_vms.core.stream_manager import stream_manager
-from aurea_vms.models import repository
+from qfluentwidgets import FluentIcon, TransparentToolButton
 
-THUMB_SIZE = QSize(220, 220)
+from aurea_vms.core.events import DetectionEvent
+from aurea_vms.ui.face_registry import FaceRecord, face_registry
+from aurea_vms.ui.widgets.analytics_panel_base import AnalyticsPanelBase, big_number, caption
+from aurea_vms.ui.widgets.analytics_visuals import (
+    GRID_LINE,
+    SURFACE,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+    format_elapsed,
+)
+from aurea_vms.ui.widgets.face_forensics import open_forensics
+from aurea_vms.ui.widgets.face_visuals import (  # noqa: F401 - reexportados
+    _bgr_to_pixmap,
+    _cover_scaled,
+    _rounded,
+    quality_label,
+    record_pixmap,
+)
 
-
-def _cover_scaled(pixmap: QPixmap, size: QSize) -> QPixmap:
-    """Escala tipo "cover" (llena el cuadro sin deformar) y recorta el
-    centro al tamaño exacto pedido. Un recorte de cara casi nunca es
-    cuadrado -- si solo se escala con KeepAspectRatioByExpanding sin
-    recortar, el pixmap resultante queda mas ancho o mas alto que
-    `size`, y el icono del ListWidget lo vuelve a achicar para que entre
-    en el iconSize cuadrado: el resultado visual es una tira angosta y
-    deformada en vez de una cara reconocible."""
-    scaled = pixmap.scaled(
-        size,
-        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-        Qt.TransformationMode.SmoothTransformation,
-    )
-    x = max(0, (scaled.width() - size.width()) // 2)
-    y = max(0, (scaled.height() - size.height()) // 2)
-    return scaled.copy(x, y, size.width(), size.height())
-
-
-def _with_metadata_overlay(pixmap: QPixmap, when: str, confidence: float) -> QPixmap:
-    """Quema una franja inferior semitransparente con hora y % de certeza
-    sobre la miniatura, tipo sello de metadata de video de seguridad."""
-    stamped = QPixmap(pixmap)
-    bar_height = max(20, stamped.height() // 6)
-    bar_rect = QRect(0, stamped.height() - bar_height, stamped.width(), bar_height)
-
-    painter = QPainter(stamped)
-    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-    painter.fillRect(bar_rect, QColor(0, 0, 0, 170))
-    font = painter.font()
-    font.setPixelSize(max(11, bar_height - 8))
-    font.setBold(True)
-    painter.setFont(font)
-    painter.setPen(QColor(255, 255, 255))
-    text = f"{when}  ·  {confidence:.0%}"
-    painter.drawText(
-        bar_rect.adjusted(6, 0, -6, 0),
-        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-        text,
-    )
-    painter.end()
-    return stamped
+THUMB_SIZE = QSize(66, 66)
+HERO_SIZE = QSize(104, 104)
+THUMB_RADIUS = 10
+# Datos de cada miniatura guardados en el item de la lista.
+CAPTURE_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
-class FaceGallery(HeaderCardWidget):
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setTitle("Detecciones Faciales")
-        self._device_id: int | None = None
-        self._catalog = FaceCatalog()
-        self._settings: FaceCatalogSettings | None = None
+class FaceGallery(AnalyticsPanelBase):
+    analyzer_name = "face_detection"
+    panel_title = "Rostros"
+    fills_height = True
 
-        content = QWidget(self)
-        self.viewLayout.addWidget(content)
+    def build(self, content: QWidget) -> None:
+        face_registry.connect_bus()
+        self._pinned_id: int | None = None
 
-        counter_row = QHBoxLayout()
-        self.counter_label = CaptionLabel("IDs catalogados: 0")
-        counter_row.addWidget(self.counter_label)
-        counter_row.addStretch(1)
-        clear_button = TransparentToolButton(FluentIcon.BROOM)
-        clear_button.setToolTip("Limpiar contador")
-        clear_button.clicked.connect(self._clear_counter)
-        counter_row.addWidget(clear_button)
+        # --- cifras -------------------------------------------------------
+        stats = QHBoxLayout()
+        stats.setSpacing(18)
+        unique_column = QVBoxLayout()
+        unique_column.setSpacing(0)
+        self.counter_label = big_number(content, 30)
+        self.counter_label.setText("0")
+        unique_column.addWidget(self.counter_label)
+        unique_column.addWidget(caption("capturas", content))
+        stats.addLayout(unique_column)
 
+        in_frame_column = QVBoxLayout()
+        in_frame_column.setSpacing(0)
+        self.in_frame_label = big_number(content, 30)
+        in_frame_column.addWidget(self.in_frame_label)
+        in_frame_column.addWidget(caption("en cuadro", content))
+        stats.addLayout(in_frame_column)
+        stats.addStretch(1)
+
+        clear_button = TransparentToolButton(FluentIcon.BROOM, content)
+        clear_button.setToolTip("Vaciar las capturas de esta cámara")
+        clear_button.clicked.connect(self._clear_captures)
+        stats.addWidget(clear_button, alignment=Qt.AlignmentFlag.AlignTop)
+        self.body.addLayout(stats)
+
+        # --- ficha de la captura destacada --------------------------------
+        self.hero = QWidget(content)
+        self.hero.setObjectName("faceHero")
+        self.hero.setStyleSheet(
+            f"#faceHero {{ background: {SURFACE}; border: 1px solid {GRID_LINE};"
+            " border-radius: 12px; }"
+        )
+        hero_layout = QHBoxLayout(self.hero)
+        hero_layout.setContentsMargins(8, 8, 10, 8)
+        hero_layout.setSpacing(12)
+        self.hero.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.hero.mouseReleaseEvent = lambda _event: self._open_hero_forensics()
+        self.hero_image = QLabel(self.hero)
+        self.hero_image.setFixedSize(HERO_SIZE)
+        self.hero_image.setStyleSheet("background: transparent;")
+        hero_layout.addWidget(self.hero_image)
+        info = QVBoxLayout()
+        info.setSpacing(2)
+        self.hero_title = QLabel("", self.hero)
+        self.hero_title.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: 17px; font-weight: 700; background: transparent;"
+        )
+        self.hero_time = caption("", self.hero)
+        self.hero_quality = caption("", self.hero)
+        self.hero_seen = caption("Clic para ampliar", self.hero, TEXT_MUTED)
+        for label in (self.hero_title, self.hero_time, self.hero_quality, self.hero_seen):
+            info.addWidget(label)
+        info.addStretch(1)
+        hero_layout.addLayout(info, stretch=1)
+        self.body.addWidget(self.hero)
+
+        self.empty_label = caption(
+            "Todavía no hay capturas.\nSe guarda la mejor toma de cada rostro que se vea bien.",
+            content,
+            TEXT_MUTED,
+        )
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.body.addWidget(self.empty_label)
+
+        # --- grilla ---------------------------------------------------------
         # QListWidget liso, NO el ListWidget de qfluentwidgets: ese trae una
         # hoja de estilo propia que fija "height: 35px" en cada item (pensada
         # para filas de menu compactas, no para una grilla de fotos), y
-        # pisaba el iconSize sin importar que tan grande se pidiera --
-        # resultado, miniaturas achatadas en una tira angosta.
+        # pisaba el iconSize sin importar que tan grande se pidiera.
         self.list_widget = QListWidget(content)
         self.list_widget.setViewMode(QListWidget.ViewMode.IconMode)
         self.list_widget.setIconSize(THUMB_SIZE)
+        self.list_widget.setGridSize(QSize(THUMB_SIZE.width() + 8, THUMB_SIZE.height() + 24))
         self.list_widget.setResizeMode(QListWidget.ResizeMode.Adjust)
         self.list_widget.setMovement(QListWidget.Movement.Static)
-        self.list_widget.setSpacing(6)
-        self.list_widget.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self.list_widget.setUniformItemSizes(True)
+        self.list_widget.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list_widget.setStyleSheet(
-            "QListWidget { background: transparent; border: none; }"
-            "QListWidget::item { border: none; }"
+            f"QListWidget {{ background: transparent; border: none; color: {TEXT_SECONDARY};"
+            " font-size: 11px; outline: none; }"
+            "QListWidget::item { border: none; border-radius: 10px; padding: 2px; }"
+            "QListWidget::item:hover { background: rgba(255,255,255,0.05); }"
+            "QListWidget::item:selected { background: rgba(255,255,255,0.10);"
+            f" color: {TEXT_PRIMARY}; }}"
+            "QScrollBar:vertical { width: 6px; background: transparent; margin: 0; }"
+            "QScrollBar::handle:vertical { background: rgba(255,255,255,0.16);"
+            " border-radius: 3px; min-height: 24px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical"
+            " { background: transparent; }"
         )
+        self.list_widget.itemClicked.connect(self._on_item_clicked)
+        self.list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self.body.addWidget(self.list_widget, stretch=1)
 
-        layout = QVBoxLayout(content)
-        layout.addLayout(counter_row)
-        layout.addWidget(self.list_widget)
+        face_registry.captures_changed.connect(self._on_captures_changed)
 
-        event_bus.detection.connect(self._on_detection, Qt.ConnectionType.QueuedConnection)
-        event_bus.analytics_config_changed.connect(
-            self._on_analytics_config_changed, Qt.ConnectionType.QueuedConnection
-        )
+    # --- ciclo de vida -------------------------------------------------------
 
-    def set_device(self, device_id: int | None) -> None:
-        self._device_id = device_id
-        self._settings = None
-        self.list_widget.clear()
-        self._catalog.reset()
-        self._refresh_counter()
+    def reset(self) -> None:
+        self._pinned_id = None
+        self.in_frame_label.setText("—")
+        self._rebuild()
 
-    def _on_analytics_config_changed(self, device_id: int) -> None:
-        if device_id == self._device_id:
-            self._settings = None
-
-    def _clear_counter(self) -> None:
-        self._catalog.clear_counter()
-        self._refresh_counter()
+    def _clear_captures(self) -> None:
+        if self._device_id is not None:
+            face_registry.clear(self._device_id)
 
     def _refresh_counter(self) -> None:
-        self.counter_label.setText(f"IDs catalogados: {self._catalog.total_count}")
+        count = face_registry.capture_count(self._device_id) if self._device_id is not None else 0
+        self.counter_label.setText(str(count))
 
-    def _face_settings(self) -> FaceCatalogSettings:
-        """Cacheado hasta que la configuración de esta cámara cambie.
+    def _on_captures_changed(self, device_id: int) -> None:
+        if device_id == self._device_id:
+            self._rebuild()
 
-        Leerlo de la DB en cada evento costaba 768 us **en el hilo de la
-        GUI**, o sea ~25 consultas por segundo y por cámara contra la misma
-        base que escriben los hilos de analítica: era el costo más grande
-        del panel, más que todo el cómputo de firmas junto. La invalidación
-        llega por `analytics_config_changed`, que ya emite el módulo de
-        Analizadores al guardar."""
-        if self._settings is None:
-            config = (
-                repository.get_analytics_config_for(self._device_id, "face_detection")
-                if self._device_id is not None
-                else None
-            )
-            self._settings = FaceCatalogSettings.from_params(config.params if config else None)
-        return self._settings
+    # --- eventos ---------------------------------------------------------------
 
     def _on_detection(self, event: DetectionEvent) -> None:
-        """Slot con QueuedConnection: corre en el hilo de la GUI. Acá solo
-        queda recortar el frame y pintar; quién es quién lo decide el
-        catálogo."""
-        if event.device_id != self._device_id or event.analyzer_name != "face_detection":
+        """Entrada directa (tests, integraciones): procesa el evento en el
+        registro y actualiza el panel. En la app el registro ya escucha el
+        bus por su cuenta."""
+        face_registry.process(event)
+        self._on_detection_event(event)
+
+    def on_event(self, event: DetectionEvent) -> None:
+        self.in_frame_label.setText(str(event.metrics.get("caras", len(event.detections))))
+
+    # --- grilla --------------------------------------------------------------------
+
+    def _rebuild(self) -> None:
+        """Espejo de las capturas del registro para esta camara (la mas
+        reciente primero)."""
+        self.list_widget.clear()
+        for record in face_registry.records(self._device_id):
+            self.list_widget.addItem(self._make_item(record))
+        self._refresh_counter()
+        self._refresh_hero()
+
+    @staticmethod
+    def _make_item(record: FaceRecord) -> QListWidgetItem:
+        item = QListWidgetItem(QIcon(record_pixmap(record, THUMB_SIZE, THUMB_RADIUS)), "")
+        item.setText(record.when)
+        item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
+        item.setData(CAPTURE_ROLE, record)
+        item.setToolTip(
+            f"{record.when} · {quality_label(record.quality)}"
+            f" · detección {record.confidence:.0%}\nDoble clic: análisis forense"
+        )
+        return item
+
+    # --- ficha destacada ---------------------------------------------------------
+
+    def _on_item_clicked(self, item: QListWidgetItem) -> None:
+        record = item.data(CAPTURE_ROLE)
+        capture_id = record.capture_id if record is not None else None
+        # Segundo clic sobre la misma: vuelve a seguir la mas reciente.
+        self._pinned_id = None if capture_id == self._pinned_id else capture_id
+        if self._pinned_id is None:
+            self.list_widget.clearSelection()
+        self._refresh_hero()
+
+    def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
+        record = item.data(CAPTURE_ROLE)
+        if record is not None:
+            open_forensics(record, self)
+
+    def _open_hero_forensics(self) -> None:
+        record = self._hero_record()
+        if record is not None:
+            open_forensics(record, self)
+
+    def _hero_record(self) -> FaceRecord | None:
+        records = face_registry.records(self._device_id)
+        for record in records:
+            if self._pinned_id is None or record.capture_id == self._pinned_id:
+                return record
+        self._pinned_id = None
+        return records[0] if records else None
+
+    def _refresh_hero(self) -> None:
+        record = self._hero_record()
+        has_any = record is not None
+        self.hero.setVisible(has_any)
+        self.empty_label.setVisible(not has_any and self._device_id is not None)
+        if not has_any:
             return
+        self.hero_image.setPixmap(record_pixmap(record, HERO_SIZE, THUMB_RADIUS + 2))
+        self.hero_title.setText("Fijada" if self._pinned_id is not None else "Última captura")
+        self._refresh_hero_time(record, time.time())
+        self.hero_quality.setText(quality_label(record.quality))
 
-        faces = [d for d in event.detections if d.label == "cara"]
-        if not faces:
-            return
+    def _refresh_hero_time(self, record: FaceRecord, now: float) -> None:
+        self.hero_time.setText(f"{record.when} · hace {format_elapsed(now - record.timestamp)}")
 
-        worker = stream_manager.get_worker(event.device_id)
-        frame = worker.get_latest_frame() if worker else None
-        if frame is None:
-            return
-
-        settings = self._face_settings()
-        if self._catalog.apply_daily_reset(settings):
-            self._refresh_counter()
-
-        height, width = frame.shape[:2]
-        when = dt.datetime.fromtimestamp(event.timestamp).strftime("%H:%M:%S")
-
-        for det in faces:
-            box = clamp_bbox(det.bbox, width, height)
-            if box is None:
-                continue
-            x0, y0, x1, y1 = box
-            crop = frame[y0:y1, x0:x1]
-
-            update = self._catalog.observe(
-                signature=face_signature(crop),
-                geometry=geometry_signature(det.keypoints),
-                area=(x1 - x0) * (y1 - y0),
-                confidence=det.confidence,
-                settings=settings,
-            )
-            # El orden importa: el catálogo saca la fila vieja ANTES de
-            # insertar la nueva en la posición 0, y las dos listas tienen
-            # que quedar con los mismos índices.
-            if update.removed_index is not None:
-                self.list_widget.takeItem(update.removed_index)
-            if update.capture is None:
-                continue
-            self._insert_capture(crop, update.capture, when)
-            if update.is_new_identity:
-                self._refresh_counter()
-
-        for _ in range(self._catalog.prune()):
-            self.list_widget.takeItem(self.list_widget.count() - 1)
-
-    def _insert_capture(self, crop, capture: FaceCapture, when: str) -> None:
-        rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-        ch, cw = rgb.shape[:2]
-        image = QImage(rgb.data, cw, ch, 3 * cw, QImage.Format.Format_RGB888)
-        pixmap = _cover_scaled(QPixmap.fromImage(image), THUMB_SIZE)
-        pixmap = _with_metadata_overlay(pixmap, when, capture.confidence)
-        self.list_widget.insertItem(0, QListWidgetItem(QIcon(pixmap), f"ID #{capture.track_id}"))
+    def on_tick(self, now: float) -> None:
+        if self.hero.isVisible():
+            record = self._hero_record()
+            if record is not None:
+                self._refresh_hero_time(record, now)

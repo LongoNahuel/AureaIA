@@ -25,7 +25,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from aurea_vms.core.analytics.base import AnalysisResult, Analyzer, crop_to_roi
+from aurea_vms.core.analytics.base import (
+    AnalysisResult,
+    Analyzer,
+    bbox_center_in_roi,
+    crop_to_roi,
+)
+from aurea_vms.core.analytics.heatmap import OccupancyHeatmap
 from aurea_vms.core.analytics.object_detector_backend import (
     YoloxDetector,
     deduplicate_by_iou,
@@ -53,6 +59,10 @@ def _head_shoulders_bbox(
     if anchor_width < 8 or anchor_height < 8:
         return None
     return (x + (width - anchor_width) // 2, y, anchor_width, anchor_height)
+
+
+def _bottom_center(bbox: tuple[int, int, int, int]) -> tuple[int, int]:
+    return (bbox[0] + bbox[2] // 2, bbox[1] + bbox[3])
 
 
 def _passes_person_shape_filter(box_w: float, box_h: float) -> bool:
@@ -85,8 +95,9 @@ class PeopleCountingAnalyzer(Analyzer):
         # El conteo siempre usa el ancla cabeza-hombros; no se permite volver
         # a una identidad basada en la caja corporal completa.
         self._head_shoulders_detection = True
-        self._heatmap_enabled = heatmap_enabled
-        self._heatmap_points: list[tuple[int, int]] = []
+        self._heatmap = OccupancyHeatmap() if heatmap_enabled else None
+        self._peak = 0
+        self._was_over = False
         self._min_area_percent = max(0.0, min_area_percent)
         self._tracker = CentroidTracker(
             max_distance=140.0,
@@ -97,6 +108,10 @@ class PeopleCountingAnalyzer(Analyzer):
 
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
         raw_detections: list[Detection] = []
+        # Pie (base de la caja CORPORAL) de cada deteccion, por bbox de
+        # tracking: el mapa de calor marca donde se para la gente, no donde
+        # tiene el pecho (la base del ancla cabeza-hombros).
+        feet: dict[tuple[int, int, int, int], tuple[int, int]] = {}
         for roi in self._rois:
             crop, offset_x, offset_y = crop_to_roi(frame, roi)
             crop_area = crop.shape[0] * crop.shape[1]
@@ -113,35 +128,62 @@ class PeopleCountingAnalyzer(Analyzer):
                 tracking_bbox = _head_shoulders_bbox((x, y, w, h))
                 if tracking_bbox is None:
                     continue
+                bbox = (
+                    tracking_bbox[0] + offset_x,
+                    tracking_bbox[1] + offset_y,
+                    tracking_bbox[2],
+                    tracking_bbox[3],
+                )
+                feet[bbox] = (x + w // 2 + offset_x, y + h + offset_y)
                 raw_detections.append(
-                    Detection(
-                        label=det.label,
-                        confidence=det.confidence,
-                        bbox=(
-                            tracking_bbox[0] + offset_x,
-                            tracking_bbox[1] + offset_y,
-                            tracking_bbox[2],
-                            tracking_bbox[3],
-                        ),
-                    )
+                    Detection(label=det.label, confidence=det.confidence, bbox=bbox)
                 )
 
         self._tracker.update(deduplicate_by_iou(raw_detections), timestamp)
+        tracks = self._tracker.confirmed_tracks()
         confirmed = [
             Detection(label=track.label, confidence=track.confidence, bbox=track.bbox)
-            for track in self._tracker.confirmed_tracks()
+            for track in tracks
         ]
+        occupancy = len(confirmed)
+        self._peak = max(self._peak, occupancy)
 
-        metrics = {"occupancy": len(confirmed)}
+        metrics: dict = {"occupancy": occupancy, "peak": self._peak}
+        triggers: tuple[Detection, ...] | None = None
+        if len(self._rois) > 1:
+            metrics["zones"] = [
+                sum(1 for det in confirmed if roi is None or bbox_center_in_roi(det.bbox, roi))
+                for roi in self._rois
+            ]
         if self._max_people_alert:
-            metrics["alerta_maxima"] = len(confirmed) >= self._max_people_alert
-        if self._heatmap_enabled:
-            self._heatmap_points.extend(
-                (det.bbox[0] + det.bbox[2] // 2, det.bbox[1] + det.bbox[3]) for det in confirmed
+            over = occupancy >= self._max_people_alert
+            metrics["alerta_maxima"] = over
+            metrics["max_people"] = self._max_people_alert
+            # Con aforo configurado, las reglas de alarma se evaluan contra
+            # el EXCESO de aforo y solo en el flanco (al pasar de debajo a
+            # encima del maximo). Antes cualquier persona visible disparaba
+            # la regla y el "Maximo de personas" no hacia nada. Sin aforo
+            # (0), una persona presente sigue alarmando: es el caso de
+            # intrusion en zona fuera de horario.
+            triggers = ()
+            if over and not self._was_over:
+                best = max(confirmed, key=lambda det: det.confidence)
+                triggers = (best,)
+            self._was_over = over
+        if self._heatmap is not None:
+            self._heatmap.set_frame_size(frame.shape[1], frame.shape[0])
+            # Solo los tracks vistos EN esta muestra: uno sostenido por
+            # oclusion no esta realmente ahi, no suma calor.
+            self._heatmap.add(
+                (
+                    feet.get(track.bbox) or _bottom_center(track.bbox)
+                    for track in tracks
+                    if track.last_seen == timestamp
+                ),
+                timestamp,
             )
-            self._heatmap_points = self._heatmap_points[-200:]
-            metrics["heatmap"] = self._heatmap_points
-        return AnalysisResult(detections=tuple(confirmed), metrics=metrics)
+            metrics["heatmap"] = self._heatmap.snapshot()
+        return AnalysisResult(detections=tuple(confirmed), metrics=metrics, triggers=triggers)
 
     def close(self) -> None:
         """Suelta la sesion ONNX compartida. Sin esto el contrato de

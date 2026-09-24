@@ -49,7 +49,8 @@ class AlarmEngine:
         event_bus.detection.disconnect(self._on_detection)
 
     def _on_detection(self, event: DetectionEvent) -> None:
-        if not event.detections:
+        candidates = event.triggers if event.triggers is not None else event.detections
+        if not candidates:
             return
         if event.analyzer_name == "door_state" and not event.metrics.get("transicion"):
             return
@@ -77,7 +78,7 @@ class AlarmEngine:
             if now - self._last_triggered.get(rule.id, 0.0) < rule.cooldown_seconds:
                 continue
 
-            match = self._best_match(rule, event.detections)
+            match = self._best_match(rule, candidates)
             if match is None:
                 continue
 

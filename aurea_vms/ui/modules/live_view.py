@@ -40,6 +40,7 @@ from qfluentwidgets import (
     CaptionLabel,
     FluentIcon,
     SegmentedWidget,
+    TogglePushButton,
     TransparentToolButton,
 )
 
@@ -48,11 +49,13 @@ from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.models import repository
 from aurea_vms.ui import icons
+from aurea_vms.ui.widgets.analytics_dashboard import AnalyticsDashboard
 from aurea_vms.ui.widgets.branded_background import BrandedBackground
 from aurea_vms.ui.widgets.device_tree import DeviceTreeWidget
-from aurea_vms.ui.widgets.door_state_panel import DoorStatePanel
 from aurea_vms.ui.widgets.face_gallery import FaceGallery
+from aurea_vms.ui.widgets.face_strip import FaceStrip
 from aurea_vms.ui.widgets.line_crossing_panel import LineCrossingPanel
+from aurea_vms.ui.widgets.monitor_tamper_panel import MonitorTamperPanel
 from aurea_vms.ui.widgets.people_count_panel import PeopleCountPanel
 from aurea_vms.ui.widgets.video_tile import VideoTile
 
@@ -118,7 +121,7 @@ class LiveViewModule(QWidget):
         self.grid_layout.setSpacing(3)
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.door_state_panel = DoorStatePanel(self)
+        self.monitor_panel = MonitorTamperPanel(self)
         self.people_count_panel = PeopleCountPanel(self)
         self.line_crossing_panel = LineCrossingPanel(self)
         self.face_gallery = FaceGallery(self)
@@ -151,9 +154,42 @@ class LiveViewModule(QWidget):
             right_layout.addLayout(title_row)
             self.insight_cards = self._build_insight_cards(right_side)
             right_layout.addLayout(self.insight_cards)
+            # Rostros de TODAS las camaras, siempre a la vista: antes las
+            # capturas solo existian dentro del panel lateral, detras de
+            # seleccionar un recuadro y abrir la pestaña de rostros.
+            self.face_strip = FaceStrip(right_side)
+            self.face_strip.face_selected.connect(self._focus_device_faces)
+            right_layout.addWidget(self.face_strip)
         right_layout.addLayout(mode_row)
-        right_layout.addLayout(content_row, stretch=1)
-        right_layout.addLayout(toolbar)
+        if smart_only:
+            # Dos paginas: el video con su panel lateral, o el dashboard con
+            # una seccion y un grafico por analitica para todas las camaras.
+            video_page = QWidget(right_side)
+            video_page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+            video_layout = QVBoxLayout(video_page)
+            video_layout.setContentsMargins(0, 0, 0, 0)
+            video_layout.addLayout(content_row, stretch=1)
+            video_layout.addLayout(toolbar)
+            self.dashboard = AnalyticsDashboard(right_side)
+            self.page_stack = QStackedWidget(right_side)
+            self.page_stack.addWidget(video_page)
+            self.page_stack.addWidget(self.dashboard)
+            self.page_selector = SegmentedWidget(right_side)
+            self.page_selector.addItem(
+                "video", "Video en vivo", lambda: self.page_stack.setCurrentIndex(0)
+            )
+            self.page_selector.addItem(
+                "dashboard", "Dashboard analítico", lambda: self.page_stack.setCurrentIndex(1)
+            )
+            self.page_selector.setCurrentItem("video")
+            selector_row = QHBoxLayout()
+            selector_row.addWidget(self.page_selector)
+            selector_row.addStretch(1)
+            right_layout.addLayout(selector_row)
+            right_layout.addWidget(self.page_stack, stretch=1)
+        else:
+            right_layout.addLayout(content_row, stretch=1)
+            right_layout.addLayout(toolbar)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.splitter.addWidget(self.device_tree)
@@ -221,7 +257,7 @@ class LiveViewModule(QWidget):
         # Orden fijo de submenu: mismo orden en el que aparecen las pestañas del
         # pivot sea cual sea el orden en que la DB devuelva las configs.
         self._analyzer_panels: dict[str, tuple[str, QWidget]] = {
-            "door_state": ("Puerta", self.door_state_panel),
+            "monitor_tamper": ("Incidentes", self.monitor_panel),
             "people_counting": ("Conteo de Personas", self.people_count_panel),
             "line_crossing": ("Cruce de Línea", self.line_crossing_panel),
             "face_detection": ("Detección Facial", self.face_gallery),
@@ -311,6 +347,20 @@ class LiveViewModule(QWidget):
 
         toolbar.addStretch(1)
 
+        # Marcas inteligentes de las analiticas sobre el video (zonas,
+        # lineas, cajas, incidentes). Prendidas por defecto; apagarlas deja
+        # el video limpio sin detener las analiticas.
+        self.smart_marks_button = TogglePushButton(
+            icons.icon_ai_brain("#62d8ff", 18), "Marcas inteligentes", self
+        )
+        self.smart_marks_button.setChecked(True)
+        self.smart_marks_button.setToolTip(
+            "Muestra u oculta sobre el video las marcas de las analíticas: zonas, líneas, "
+            "detecciones e incidentes"
+        )
+        self.smart_marks_button.toggled.connect(self._set_smart_marks)
+        toolbar.addWidget(self.smart_marks_button)
+
         self.fullscreen_button = TransparentToolButton(FluentIcon.FULL_SCREEN, self)
         self.fullscreen_button.setToolTip("Pantalla completa")
         self.fullscreen_button.clicked.connect(self._toggle_fullscreen)
@@ -324,6 +374,10 @@ class LiveViewModule(QWidget):
 
     def _on_site_filter_changed(self, site_id: object) -> None:
         self.device_tree.set_site_filter(site_id)
+
+    def _set_smart_marks(self, enabled: bool) -> None:
+        for tile in self.tiles:
+            tile.set_smart_marks(enabled)
 
     def _on_analytics_config_changed(self, device_id: int) -> None:
         for tile in self.tiles:
@@ -360,6 +414,31 @@ class LiveViewModule(QWidget):
     def _on_tile_device_changed(self, tile: VideoTile) -> None:
         if tile is self._selected_tile:
             self._refresh_side_panel()
+        elif tile.has_device() and (
+            self._selected_tile is None or not self._selected_tile.has_device()
+        ):
+            # Sin esto el panel lateral arrancaba vacio ("Seleccioná una
+            # cámara") aunque la grilla ya mostrara camaras: el primer
+            # recuadro con camara queda seleccionado solo.
+            self._on_tile_clicked(tile)
+
+    def _focus_device_faces(self, device_id: int) -> None:
+        """Clic en la tira de rostros: selecciona el recuadro de esa camara
+        (si esta en la grilla) y abre su pestaña de rostros."""
+        if hasattr(self, "page_selector"):
+            self.page_selector.setCurrentItem("video")
+            self.page_stack.setCurrentIndex(0)
+        for tile in self.tiles:
+            if tile.device_id == device_id:
+                self._on_tile_clicked(tile)
+                break
+        else:
+            return
+        if "face_detection" in self._analyzer_panels:
+            _, panel = self._analyzer_panels["face_detection"]
+            if self.analyzer_stack.indexOf(panel) >= 0:
+                self.analyzer_pivot.setCurrentItem("face_detection")
+                self.analyzer_stack.setCurrentWidget(panel)
 
     def _refresh_side_panel(self) -> None:
         device_id = self._selected_tile.device_id if self._selected_tile is not None else None
