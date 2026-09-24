@@ -8,7 +8,7 @@ alembic.ini de la raiz, para generar revisiones nuevas en desarrollo.
 from __future__ import annotations
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, event, pool
 
 from aurea_vms.models.db import NAMING_CONVENTION, Base, importar_modelos
 
@@ -55,10 +55,51 @@ def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+    if engine.dialect.name == "sqlite":
+        _migracion_atomica_en_sqlite(engine)
     with engine.connect() as connection:
-        context.configure(connection=connection, **_opciones_comunes())
+        context.configure(
+            connection=connection,
+            # SQLiteImpl declara transactional_ddl=False y Alembic no abre
+            # transaccion alrededor de las revisiones. Con el listener de
+            # abajo el DDL de SQLite SI es transaccional: se le avisa, y el
+            # upgrade entero corre en UNA transaccion (o llega a la cabeza,
+            # o la base queda en la revision de la que salio).
+            transactional_ddl=True,
+            **_opciones_comunes(),
+        )
         with context.begin_transaction():
             context.run_migrations()
+
+
+def _migracion_atomica_en_sqlite(engine) -> None:
+    """Receta oficial de SQLAlchemy para pysqlite ("Serializable isolation /
+    Savepoints / Transactional DDL").
+
+    - pysqlite, en su modo por defecto, no abre transaccion antes de un DDL:
+      cada CREATE/DROP/ALTER se aplicaba solo, y una revision que moria a
+      mitad dejaba la base con media revision puesta (un batch cortado deja
+      la tabla original borrada y un `_alembic_tmp_*` en su lugar).
+      `isolation_level=None` apaga la gestion propia del driver, y el
+      `BEGIN IMMEDIATE` la reemplaza: toma el lock de escritura de entrada,
+      en vez de descubrir a mitad de la migracion que otro esta escribiendo.
+
+    - `PRAGMA foreign_keys=OFF` es un INVARIANTE de las migraciones: el
+      batch recrea la tabla (CREATE nueva, copia, DROP vieja, RENAME), y con
+      FKs activas el DROP borra en cascada a los hijos (verificado). Hoy ya
+      quedaba OFF porque este engine no tiene el listener de models/db.py,
+      pero eso era un accidente; ahora es explicito. Se setea al conectar,
+      antes del BEGIN: dentro de una transaccion SQLite lo ignora.
+    """
+
+    @event.listens_for(engine, "connect")
+    def _al_conectar(dbapi_connection, _record) -> None:
+        dbapi_connection.isolation_level = None
+        dbapi_connection.execute("PRAGMA foreign_keys=OFF")
+
+    @event.listens_for(engine, "begin")
+    def _al_empezar(connection) -> None:
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
 
 
 if context.is_offline_mode():

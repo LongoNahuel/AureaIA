@@ -107,6 +107,28 @@ ya versionada (aplica lo que falte, y si no falta nada corta temprano), y
 base **anterior** a Alembic, que se adopta una sola vez
 (`migrations/adopcion.py`) y se marca en la baseline.
 
+Una migración no puede dejar la base inservible (Fase 2, 2026-09-24):
+
+- **Atómica.** El engine de migración de `migrations/env.py` corre con
+  `isolation_level=None` + `BEGIN IMMEDIATE` y `transactional_ddl=True`: el
+  upgrade entero es una transacción, o llega a la cabeza o la base queda en
+  la revisión de la que salió. También fuerza `PRAGMA foreign_keys=OFF`,
+  porque con FKs activas el batch borra hijos en cascada.
+- **Con lock entre procesos** (`migrations/resguardo.py`, `fcntl`/`msvcrt`
+  sobre `<data-dir>/migracion.lock`). Se toma antes de la primera lectura:
+  la primera conexión pasa la base a WAL, y eso choca con otro proceso que
+  esté migrando.
+- **Con backup previo**, solo cuando hay algo que aplicar sobre una base con
+  datos: `<data-dir>/backups/<base>-<revisión>-<timestamp>.sqlite3` más su
+  `camera_key`, los dos en `0600`. Se conservan los últimos 3.
+- Antes de migrar se borran los `_alembic_tmp_*` que haya dejado una corrida
+  vieja cortada.
+- `init_db` publica el engine solo si `migrar` terminó bien.
+
+Para restaurar a mano: cerrar la app, copiar el backup encima de
+`aurea_vms.sqlite3` (y borrar sus `-wal`/`-shm`), y copiar la `camera_key`
+que va con él.
+
 Las revisiones viven **dentro del paquete**, no en la raíz del repo, para
 que PyInstaller las empaquete: sin ellas el `.exe` no puede migrar la base
 del cliente. `Base.metadata` lleva una `naming_convention` porque SQLite no

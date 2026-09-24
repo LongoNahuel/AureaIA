@@ -15,6 +15,11 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from aurea_vms.config.settings import settings
 from aurea_vms.migrations import BASELINE_REVISION, MIGRATIONS_DIR
 from aurea_vms.migrations.adopcion import adoptar
+from aurea_vms.migrations.resguardo import (
+    limpiar_tablas_temporales,
+    lock_de_migracion,
+    respaldar,
+)
 
 # Nombres deterministas para indices y constraints. SQLite no sabe alterar
 # una tabla: Alembic emula ALTER con batch_alter_table, que copia la tabla
@@ -120,6 +125,12 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
 
     db_path permite apuntar a una base distinta a la de settings (usado en
     tests para aislar cada corrida en un sqlite temporal).
+
+    Las globales se publican recien cuando `migrar` termino bien: antes
+    quedaban puestas aunque la migracion fallara, y el siguiente
+    `get_session()` trabajaba contra una base a medio migrar sin volver a
+    intentarlo (init_db corta si ya hay engine). Si falla, el engine nuevo
+    se descarta y las globales quedan como estaban.
     """
     global _engine, _SessionLocal
 
@@ -129,16 +140,25 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
     settings.ensure_dirs()
     path = db_path or settings.db_path
 
-    _engine = create_engine(
+    engine = create_engine(
         f"sqlite:///{path}",
         connect_args={"check_same_thread": False},
     )
-    if _engine.dialect.name == "sqlite":
-        event.listen(_engine, "connect", _apply_sqlite_pragmas)
-    _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
+    if engine.dialect.name == "sqlite":
+        event.listen(engine, "connect", _apply_sqlite_pragmas)
 
     importar_modelos()
-    migrar(_engine, path)
+    try:
+        migrar(engine, path)
+    except BaseException:
+        engine.dispose()
+        raise
+
+    anterior = _engine
+    _engine = engine
+    _SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+    if anterior is not None:
+        anterior.dispose()
 
 
 def _config_de_alembic(db_path: Path) -> Config:
@@ -165,26 +185,48 @@ def migrar(engine, db_path: Path) -> None:
 
     La app migra sola al arrancar porque en una instalacion de cliente no
     hay nadie que corra `alembic upgrade` a mano.
+
+    Todo pasa con el lock entre procesos tomado (ver
+    migrations/resguardo.py); cuando hay algo que aplicar, despues de un
+    backup de la base y con cada upgrade atomico (ver migrations/env.py).
     """
     config = _config_de_alembic(db_path)
     cabeza = ScriptDirectory.from_config(config).get_current_head()
 
+    # El lock va ANTES de la primera lectura, no solo alrededor del upgrade:
+    # la primera conexion a una base que todavia no esta en WAL la pasa a
+    # WAL (_apply_sqlite_pragmas), y eso pide un lock exclusivo que SQLite
+    # niega SIN esperar si otro proceso esta migrando (su caso de evitar
+    # deadlock: busy_timeout no aplica). Reproducido con dos procesos sobre
+    # una base legada, ~1 de cada 20 corridas. Tomarlo cuesta ~50us.
+    with lock_de_migracion(Path(db_path).parent):
+        revision, tablas = _estado(engine)
+        if revision == cabeza:
+            # El caso normal de todos los arranques a partir del segundo. Se
+            # corta aca para no cargar env.py ni armar la maquinaria de
+            # upgrade solo para descubrir que no hay nada que aplicar.
+            return
+
+        tiene_datos = bool(tablas - {"alembic_version"})
+        if tiene_datos:
+            respaldar(Path(db_path), revision)
+            limpiar_tablas_temporales(engine)
+
+        if revision is None and tiene_datos:
+            adoptar(engine, Base.metadata)
+            logger.info(
+                "Base de datos sin versionar: adoptada en la revisión %s", BASELINE_REVISION
+            )
+            command.stamp(config, BASELINE_REVISION)
+
+        command.upgrade(config, "head")
+
+
+def _estado(engine) -> tuple[str | None, set[str]]:
     with engine.connect() as connection:
         revision = MigrationContext.configure(connection).get_current_revision()
         tablas = set(inspect(connection).get_table_names())
-
-    if revision == cabeza:
-        # El caso normal de todos los arranques a partir del segundo. Se
-        # corta aca para no cargar env.py ni armar la maquinaria de upgrade
-        # solo para descubrir que no hay nada que aplicar (73ms -> <1ms).
-        return
-
-    if revision is None and tablas - {"alembic_version"}:
-        adoptar(engine, Base.metadata)
-        logger.info("Base de datos sin versionar: adoptada en la revisión %s", BASELINE_REVISION)
-        command.stamp(config, BASELINE_REVISION)
-
-    command.upgrade(config, "head")
+    return revision, tablas
 
 
 def revision_actual(engine) -> str | None:

@@ -16,6 +16,9 @@ La base de desarrollo no tiene ni NULLs ni duplicados (verificado el
 2026-09-22), pero una de campo puede: si el saneo no corriera, la migracion
 fallaria a mitad y dejaria la base en un estado raro.
 
+Corregida en el lugar el 2026-09-24 (no hay bases de cliente migradas): las
+reglas saneadas quedan deshabilitadas en vez de activarse.
+
 Revision ID: 0004_constraints
 Revises: 0003_drop_site_id
 Create Date: 2026-09-22
@@ -40,7 +43,11 @@ depends_on: str | Sequence[str] | None = None
 logger = logging.getLogger("alembic.0004_constraints")
 
 # Defaults del modelo, para las filas que quedaron con NULL antes de que las
-# columnas fueran NOT NULL.
+# columnas fueran NOT NULL. Salvo `enabled`: el default del modelo es 1, pero
+# una regla que llega aca con el analizador o el propio `enabled` en NULL es
+# una regla que nadie termino de configurar -- rellenarla con el default la
+# ACTIVABA (con analizador inventado) sin que nadie lo pidiera. Se apaga, y
+# queda visible en la UI para que alguien la revise.
 DEFAULTS_DE_ALARM_RULES = {
     "analyzer_name": "'door_state'",
     "object_classes": "'[]'",
@@ -49,11 +56,19 @@ DEFAULTS_DE_ALARM_RULES = {
     "severity": "'medio'",
     "schedule_days": "'[]'",
     "actions": "'{}'",
-    "enabled": "1",
+    "enabled": "0",
 }
 
 
 def _rellenar_nulls_de_alarm_rules(conn) -> None:
+    # Antes de rellenar analyzer_name: despues ya no se sabe cual venia NULL.
+    apagadas = conn.execute(
+        sa.text("UPDATE alarm_rules SET enabled = 0 WHERE analyzer_name IS NULL")
+    )
+    if apagadas.rowcount:
+        logger.info(
+            "alarm_rules: %d reglas sin analizador quedan deshabilitadas", apagadas.rowcount
+        )
     for columna, valor in DEFAULTS_DE_ALARM_RULES.items():
         resultado = conn.execute(
             sa.text(
