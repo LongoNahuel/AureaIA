@@ -49,7 +49,10 @@ class Settings:
     log_path: Path = LOG_PATH
 
     # Vista en vivo
-    display_fps: int = 25
+    # Cada cuanto se fija el tile si hay cuadro nuevo; solo redibuja si hay
+    # cuadro o marcas nuevas, asi que mirar seguido no cuesta. Con 25 un
+    # stream (y sus marcas) de 60 fps se veia a 25.
+    display_fps: int = 60
 
     # Analiticas
     analytics_fps: float = 5.0

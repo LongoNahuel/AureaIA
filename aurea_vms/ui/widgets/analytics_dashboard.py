@@ -4,8 +4,12 @@ separadas y con su propio grafico, para TODAS las camaras del sitio.
 - Personas: ocupacion total de la ultima hora + barras por camara contra
   su aforo (en rojo, con la palabra "excedido", la que lo supera).
 - Cruce de linea: entradas y salidas cada 5 minutos + totales por camara.
-- Incidentes: golpes a las pantallas (patadas y golpes con la
-  mano) y la linea de tiempo alerta/normal de cada pantalla en la ultima hora.
+- Incidentes en casinos: la linea de tiempo de cada zona en la ultima hora
+  (pantallas en golpes, puestos en consumo, zonas de fichas en ruleta) y los
+  ultimos incidentes y alertas previas.
+
+Desde el 30/09 la interfaz ofrece una sola analitica (Incidentes en
+casinos): las secciones de las demas quedan armadas pero ocultas.
 - Rostros: grilla con la mejor captura de cada rostro que se vio bien, de
   todas las camaras (clic = visor forense). Sin identidad ni conteo de
   personas unicas.
@@ -35,6 +39,7 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import FluentIcon, PushButton
 
 from aurea_vms.core import app_state
+from aurea_vms.core.analytics.registry import VISIBLE_ANALYZERS
 from aurea_vms.models import repository
 from aurea_vms.ui.analytics_hub import WINDOW_S, analytics_hub
 from aurea_vms.ui.face_registry import face_registry
@@ -43,6 +48,7 @@ from aurea_vms.ui.widgets.analytics_visuals import (
     ANALYTIC_ACCENTS,
     STATUS_CRITICAL,
     STATUS_OK,
+    STATUS_WARNING,
     TEXT_MUTED,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
@@ -62,7 +68,11 @@ from aurea_vms.ui.widgets.face_visuals import quality_label, record_pixmap
 from aurea_vms.ui.widgets.monitor_tamper_panel import motive_label
 
 REFRESH_MS = 2000
-# Incidentes (golpes a pantallas) listados bajo la linea de tiempo.
+# Ruleta: manos en una zona de fichas (mismo celeste que en el video).
+ROULETTE_ACTIVITY = "#38bdf8"
+# Como se nombra la zona de cada modo en la linea de tiempo y la lista.
+ZONE_NOUNS = {"puesto": ("Pu", "puesto"), "zona": ("Z", "zona")}
+# Incidentes y alertas previas listados bajo la linea de tiempo.
 MAX_INCIDENT_LINES = 6
 # Capturas en la grilla del dashboard (las mas recientes) y su tamaño.
 MAX_DASHBOARD_CAPTURES = 48
@@ -193,17 +203,23 @@ class AnalyticsDashboard(QWidget):
 
         # --- Incidentes --------------------------------------------------------------
         self.monitors = _Section(
-            "Detección de incidentes",
-            "Golpes a las pantallas · última hora",
+            "Incidentes en casinos",
+            "Ruleta, monitores y consumo · última hora",
             ANALYTIC_ACCENTS["monitor_tamper"],
         )
-        self.monitors_alert = self.monitors.add_kpi("pantallas en alerta ahora")
+        self.monitors_alert = self.monitors.add_kpi("zonas en alerta ahora")
         self.monitors_incidents = self.monitors.add_kpi("incidentes")
-        self.monitors_last = self.monitors.add_kpi("último golpe")
+        self.monitors_pre_alerts = self.monitors.add_kpi("alertas previas")
+        self.monitors_last = self.monitors.add_kpi("último incidente")
         self.monitors.finish_kpis()
         self.monitors_timeline = StateTimeline(
-            states=(("normal", "Normal", NEUTRAL_STATE), ("alerta", "Golpe", STATUS_CRITICAL)),
-            empty_text="Sin pantallas vigiladas",
+            states=(
+                ("normal", "Normal", NEUTRAL_STATE),
+                ("actividad", "Manos en zona de fichas", ROULETTE_ACTIVITY),
+                ("previa", "Alerta previa", STATUS_WARNING),
+                ("alerta", "Incidente", STATUS_CRITICAL),
+            ),
+            empty_text="Sin zonas vigiladas",
         )
         self.monitors.body.addWidget(self.monitors_timeline)
         self.monitors.body.addWidget(self.monitors.label("Últimos incidentes"))
@@ -274,6 +290,14 @@ class AnalyticsDashboard(QWidget):
         grid.addWidget(self.faces, 2, 0, 1, 2)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
+        # Una sola analitica visible (30/09): las secciones de las ocultas
+        # quedan armadas pero no se muestran.
+        for name, section in (
+            ("people_counting", self.people),
+            ("line_crossing", self.crossing),
+            ("face_detection", self.faces),
+        ):
+            section.setVisible(name in VISIBLE_ANALYZERS)
 
         inner = QWidget()
         inner.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -386,29 +410,40 @@ class AnalyticsDashboard(QWidget):
 
     def _refresh_monitors(self, devices: dict[int, str], now: float) -> None:
         states = {d: s for d, s in analytics_hub.monitors.items() if d in devices}
-        in_alert = sum(
-            1 for s in states.values() for screen in s.screens.values() if screen.state == "alerta"
-        )
-        self.monitors_alert.set(
-            str(in_alert) if states else "—",
-            ((STATUS_CRITICAL, "") if in_alert else (STATUS_OK, "")) if states else None,
-        )
+        zone_states = [screen.state for s in states.values() for screen in s.screens.values()]
+        in_alert = sum(1 for state in zone_states if state == "alerta")
+        in_pre_alert = sum(1 for state in zone_states if state == "previa")
+        if not states:
+            status = None
+        elif in_alert:
+            status = (STATUS_CRITICAL, "")
+        elif in_pre_alert:
+            status = (STATUS_WARNING, "")
+        else:
+            status = (STATUS_OK, "")
+        self.monitors_alert.set(str(in_alert + in_pre_alert) if states else "—", status)
         self.monitors_incidents.set(
             str(sum(s.incidents for s in states.values())) if states else "—"
+        )
+        self.monitors_pre_alerts.set(
+            str(sum(s.pre_alerts for s in states.values())) if states else "—"
         )
         events = sorted(
             ((t, d, zone, motive) for d, s in states.items() for t, zone, motive in s.events),
             reverse=True,
         )
-        self.monitors_last.set(f"hace {format_elapsed(now - events[0][0])}" if events else "—")
+        incidents = [event for event in events if event[3] != "preparacion"]
+        self.monitors_last.set(
+            f"hace {format_elapsed(now - incidents[0][0])}" if incidents else "—"
+        )
         self.monitors_last.value.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 18px; font-weight: 700; background: transparent;"
         )
         self.monitors_timeline.set_rows(
             [
                 (
-                    # la pantalla primero: si el nombre se corta, el numero queda
-                    f"P{index + 1} · {devices[d]}",
+                    # la zona primero: si el nombre se corta, el numero queda
+                    f"{ZONE_NOUNS.get(s.zone_kind, ('P', ''))[0]}{index + 1} · {devices[d]}",
                     analytics_hub.screen_segments(screen, now),
                 )
                 for d, s in sorted(states.items())
@@ -419,11 +454,14 @@ class AnalyticsDashboard(QWidget):
         lines = []
         for t, d, zone, motive in events[:MAX_INCIDENT_LINES]:
             clock = dt.datetime.fromtimestamp(t).strftime("%H:%M:%S")
+            color = STATUS_WARNING if motive == "preparacion" else STATUS_CRITICAL
+            noun = ZONE_NOUNS.get(states[d].zone_kind, ("P", "pantalla"))[1]
+            prefix = "alerta previa · " if motive == "preparacion" else ""
             lines.append(
-                f"<span style='color:{STATUS_CRITICAL}'>●</span>&nbsp;"
+                f"<span style='color:{color}'>●</span>&nbsp;"
                 f"<span style='color:{TEXT_PRIMARY}; font-weight:600'>{clock}</span>"
-                f"<span style='color:{TEXT_SECONDARY}'> · {devices[d]} · pantalla {zone + 1}"
-                f" · {motive_label(motive)}</span>"
+                f"<span style='color:{TEXT_SECONDARY}'> · {devices[d]} · {noun} {zone + 1}"
+                f" · {prefix}{motive_label(motive)}</span>"
             )
         self.monitors_detail.setText(
             "<br>".join(lines)

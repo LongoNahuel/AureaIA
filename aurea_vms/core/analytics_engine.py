@@ -179,6 +179,7 @@ class AnalyticsWorker(threading.Thread):
                 detections=result.detections,
                 metrics=result.metrics,
                 triggers=result.triggers,
+                frame_ts=self._last_frame_ts,
             )
         )
 

@@ -70,6 +70,11 @@ class DetectionEvent:
     # con aforo configurado alarma recien al superarlo. None = usar
     # `detections` (comportamiento historico del resto de las analiticas).
     triggers: tuple[Detection, ...] | None = None
+    # El `captured_at` del cuadro sobre el que se calculo (el mismo que da
+    # StreamWorker.get_latest_frame_with_timestamp). El tile lo usa para
+    # dibujar las marcas sobre ESE cuadro y no sobre el siguiente, que en una
+    # mano que se mueve rapido las dejaba un cuadro atras. 0.0 = desconocido.
+    frame_ts: float = 0.0
 
 
 @dataclass(frozen=True)

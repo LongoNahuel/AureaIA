@@ -31,7 +31,7 @@ empezar (`triggers`) y el incidente se cierra tras `release_s` sin golpes.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -201,10 +201,16 @@ class MonitorTamperAnalyzer(Analyzer):
                     state.motive = motive
                     if not state.in_incident:
                         # Inicio de incidente: la unica muestra que alarma.
+                        # Sale con confianza 1: el incidente ya lo decidio la
+                        # regla (con la sensibilidad del dialogo). Con la del
+                        # keypoint (desde 0,30), una regla de alarma con
+                        # min_confidence 0,5 lo descartaba y, como el trigger
+                        # sale una sola vez, el incidente no alarmaba nunca
+                        # (hallazgo de Daniel, sesiones/2026-09-24.md).
                         state.in_incident = True
                         state.incidents += 1
                         state.incident_started_at = timestamp
-                        triggers.append(detection)
+                        triggers.append(replace(detection, confidence=1.0))
             else:
                 state.streak = 0
                 if (
@@ -234,13 +240,17 @@ class MonitorTamperAnalyzer(Analyzer):
             ),
             default=None,
         )
+        last_hit = {"t": last[0], "zona": last[1], "motivo": last[2]} if last is not None else None
         metrics = {
+            "modo": "golpes",
+            "zona_tipo": "pantalla",
             "estado": "alerta" if in_alert else "normal",
             "zonas": zone_metrics,
             "incidentes": sum(state.incidents for state in self._states),
-            "ultimo_golpe": (
-                {"t": last[0], "zona": last[1], "motivo": last[2]} if last is not None else None
-            ),
+            # "ultimo_incidente" es la clave comun con el modo consumo;
+            # "ultimo_golpe" queda por compatibilidad.
+            "ultimo_incidente": last_hit,
+            "ultimo_golpe": last_hit,
             "contacto": touching,
         }
         return AnalysisResult(

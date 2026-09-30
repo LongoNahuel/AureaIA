@@ -4,21 +4,39 @@ persistido en la base."""
 from __future__ import annotations
 
 from aurea_vms.core.analytics.base import Analyzer
+from aurea_vms.core.analytics.consumption_analyzer import ConsumptionAnalyzer
 from aurea_vms.core.analytics.face_detection_analyzer import FaceDetectionAnalyzer
 from aurea_vms.core.analytics.line_crossing_analyzer import LineCrossingAnalyzer
 from aurea_vms.core.analytics.monitor_tamper_analyzer import MonitorTamperAnalyzer
 from aurea_vms.core.analytics.motion_detection_analyzer import MotionDetectionAnalyzer
 from aurea_vms.core.analytics.people_counting_analyzer import PeopleCountingAnalyzer
+from aurea_vms.core.analytics.roulette_analyzer import (
+    DEFAULT_HANDS_FPS,
+    RouletteAnalyzer,
+    WheelEllipse,
+)
+from aurea_vms.core.analytics.roulette_round import DEFAULT_NO_MORE_BETS_DEG_S
 from aurea_vms.models.analytics_config import AnalyticsConfig
 
 ANALYZER_DISPLAY_NAMES: dict[str, str] = {
-    "monitor_tamper": "Detección de incidentes",
+    "monitor_tamper": "Incidentes en casinos",
     "people_counting": "Conteo de Personas",
     "line_crossing": "Cruce de Línea",
     "face_detection": "Detección Facial",
 }
 
 AVAILABLE_ANALYZERS: list[str] = list(ANALYZER_DISPLAY_NAMES.keys())
+
+# Las que ofrece la interfaz (2026-09-30: una sola analitica, Incidentes en
+# casinos). Las demas siguen implementadas -- el smoke las carga todas --
+# pero no se muestran, y la revision 0009 apago sus configuraciones.
+VISIBLE_ANALYZERS: list[str] = ["monitor_tamper"]
+
+# Modos de Incidentes en casinos (params["modo"]); sin modo es "golpes".
+ROULETTE_MODE = "ruleta"
+BLACKJACK_MODE = "blackjack"
+STRIKES_MODE = "golpes"
+CONSUMPTION_MODE = "consumo"
 
 
 def _roi_from_config(config: AnalyticsConfig) -> tuple[int, int, int, int] | None:
@@ -42,7 +60,8 @@ def create_analyzer(config: AnalyticsConfig) -> Analyzer:
         )
 
     if config.analyzer_name == "monitor_tamper":
-        # Cada zona es una pantalla. Sin zonas se usa el ROI simple, si hay.
+        # Cada zona es una pantalla (modo golpes) o un puesto con su jugador
+        # (modo consumo). Sin zonas se usa el ROI simple, si hay.
         zones = [
             tuple(zone)
             for zone in params.get("zones", [])
@@ -51,6 +70,27 @@ def create_analyzer(config: AnalyticsConfig) -> Analyzer:
         roi = _roi_from_config(config)
         if not zones and roi is not None:
             zones = [roi]
+        if params.get("modo") == ROULETTE_MODE:
+            wheel = WheelEllipse.from_list(params.get("rueda")) if params.get("rueda") else None
+            region = params.get("rueda_zona")
+            return RouletteAnalyzer(
+                wheel_region=tuple(region) if region and len(region) == 4 else None,
+                zones=zones,
+                wheel=wheel,
+                hands_enabled=params.get("manos", True),
+                no_more_bets_deg_s=params.get("no_va_mas_deg_s", DEFAULT_NO_MORE_BETS_DEG_S),
+                alert_hold_s=params.get("alert_hold_s", 5.0),
+                hands_fps=params.get("manos_fps", DEFAULT_HANDS_FPS),
+            )
+        if params.get("modo") == BLACKJACK_MODE:
+            raise ValueError("BlackJack todavía no está disponible: falta calibrarlo sobre video")
+        if params.get("modo") == CONSUMPTION_MODE:
+            return ConsumptionAnalyzer(
+                zones=zones,
+                require_preparation=params.get("require_preparation", True),
+                preparation_min_s=params.get("preparation_min_s", 5.0),
+                alert_hold_s=params.get("alert_hold_s", 6.0),
+            )
         return MonitorTamperAnalyzer(
             zones=zones,
             crop_expansion=params.get("crop_expansion", 2.2),

@@ -9,8 +9,9 @@ camara:
 - Conteo de Personas: ocupacion (pico por minuto), aforo y si esta excedido;
 - Cruce de Linea: entradas y salidas por minuto (derivadas de los
   acumulados del analizador, tolerando que se reinicie);
-- Detección de incidentes: por pantalla, los tramos alerta/normal de la ultima hora,
-  los incidentes (patadas y golpes) y su historial;
+- Detección de incidentes: por zona (pantalla o puesto), los tramos
+  normal/previa/alerta de la ultima hora, los incidentes (patadas, golpes,
+  consumo), las alertas previas y su historial;
 - Deteccion Facial: caras en cuadro (pico por minuto) y tomas nuevas.
 
 Vive en el hilo de la GUI (el bus entrega con QueuedConnection).
@@ -70,9 +71,13 @@ class ScreenState:
 class MonitorState:
     screens: dict[int, ScreenState] = field(default_factory=dict)
     incidents: int = 0
+    pre_alerts: int = 0
     in_alert: bool = False
+    in_pre_alert: bool = False
+    zone_kind: str = "pantalla"  # "pantalla" (golpes) o "puesto" (consumo)
     updated: float = 0.0
-    # (momento, pantalla, motivo) de cada incidente, el mas reciente al final.
+    # (momento, zona, motivo) de cada incidente y alerta previa, el mas
+    # reciente al final.
     events: deque = field(default_factory=lambda: deque(maxlen=50))
 
 
@@ -170,11 +175,18 @@ class AnalyticsHub(QObject):
                 screen.segments.append((now, None, current))
                 screen.state = current
         incidents = int(metrics.get("incidentes", state.incidents))
-        last = metrics.get("ultimo_golpe")
+        last = metrics.get("ultimo_incidente") or metrics.get("ultimo_golpe")
         if incidents > state.incidents and last:
             state.events.append((float(last["t"]), int(last.get("zona", 0)), last.get("motivo")))
         state.incidents = incidents
+        pre_alerts = int(metrics.get("previas", state.pre_alerts))
+        last_pre = metrics.get("ultima_previa")
+        if pre_alerts > state.pre_alerts and last_pre:
+            state.events.append((float(last_pre["t"]), int(last_pre.get("zona", 0)), "preparacion"))
+        state.pre_alerts = pre_alerts
         state.in_alert = metrics.get("estado") == "alerta"
+        state.in_pre_alert = metrics.get("estado") == "previa"
+        state.zone_kind = str(metrics.get("zona_tipo", "pantalla"))
         state.updated = now
 
     def _face(self, event: DetectionEvent) -> None:

@@ -7,14 +7,13 @@ primer golpe sale con 0.30-0.49, la regla lo descarta y los golpes
 siguientes del mismo incidente ya no generan triggers: el incidente no
 alarma nunca.
 
-Encontrado en la revision del 24/09 (sesiones/2026-09-24.md). La semantica
-de confianza es de la analitica (Nahuel): el test queda xfail(strict) para
-que el CI avise cuando se arregle.
+Encontrado en la revision del 24/09 (sesiones/2026-09-24.md). Arreglado en
+la analitica: el inicio del incidente sale como trigger con confianza 1 (lo
+decidio la regla), asi que el test dejo de ser xfail.
 """
 
 from __future__ import annotations
 
-import pytest
 from test_monitor_tamper import FRAME, _analyzer, _patada
 
 import aurea_vms.core.alarm_engine as alarm_engine_mod
@@ -71,10 +70,7 @@ def test_un_incidente_con_golpes_firmes_alarma_una_vez(monkeypatch):
     assert _alarmas(monkeypatch, [0.9, 0.9, 0.9]) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Detección de incidentes: el trigger sale solo en la primera muestra, y si su "
-    "confianza queda bajo min_confidence de la regla el incidente no alarma (para Nahuel)",
-)
 def test_un_primer_golpe_debil_no_puede_silenciar_el_incidente(monkeypatch):
+    """Arreglado en la analitica (2026-09-24, Nahuel): el trigger del inicio
+    del incidente sale con confianza 1; la deteccion conserva la del keypoint."""
     assert _alarmas(monkeypatch, [0.40, 0.9, 0.9]) == 1

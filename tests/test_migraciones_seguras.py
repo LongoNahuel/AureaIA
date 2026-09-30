@@ -20,13 +20,16 @@ from pathlib import Path
 
 import pytest
 from alembic import command
+from alembic.script import ScriptDirectory
 from test_db_migrations import ESQUEMA_VIEJO
 
 from aurea_vms.core.credential_store import KEY_FILENAME
 from aurea_vms.migrations import MIGRATIONS_DIR, resguardo
 from aurea_vms.models import db as db_module
 
-CABEZA_REAL = "0008_normaliza_adoptadas"
+# La cabeza real de Alembic y no una revision fija: cada revision nueva
+# (0009_una_sola_analitica, 30/09) dejaba dos cabezas con la 0099 de prueba.
+CABEZA_REAL = ScriptDirectory(str(MIGRATIONS_DIR)).get_current_head()
 
 REVISION_QUE_FALLA = '''
 """Revision de prueba: toca esquema y datos y despues, si se lo piden, muere.
