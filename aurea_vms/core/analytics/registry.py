@@ -29,7 +29,9 @@ AVAILABLE_ANALYZERS: list[str] = list(ANALYZER_DISPLAY_NAMES.keys())
 
 # Las que ofrece la interfaz (2026-09-30: una sola analitica, Incidentes en
 # casinos). Las demas siguen implementadas -- el smoke las carga todas --
-# pero no se muestran, y la revision 0009 apago sus configuraciones.
+# pero no se muestran. Las configuraciones que ya estaban prendidas en una
+# base vieja siguen corriendo: apagarlas es una revision de datos que queda
+# propuesta a Daniel (ver sesiones/2026-10-02.md).
 VISIBLE_ANALYZERS: list[str] = ["monitor_tamper"]
 
 # Modos de Incidentes en casinos (params["modo"]); sin modo es "golpes".

@@ -28,7 +28,7 @@ from aurea_vms.migrations import MIGRATIONS_DIR, resguardo
 from aurea_vms.models import db as db_module
 
 # La cabeza real de Alembic y no una revision fija: cada revision nueva
-# (0009_una_sola_analitica, 30/09) dejaba dos cabezas con la 0099 de prueba.
+# (como la que se propuso el 30/09) dejaba dos cabezas con la 0099 de prueba.
 CABEZA_REAL = ScriptDirectory(str(MIGRATIONS_DIR)).get_current_head()
 
 REVISION_QUE_FALLA = '''
