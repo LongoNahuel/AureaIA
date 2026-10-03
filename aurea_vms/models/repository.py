@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session
 
 from aurea_vms.core.credential_store import ClavePerdidaError
-from aurea_vms.models.alarm_event import STATUS_RESOLVED
+from aurea_vms.models.alarm_event import STATUS_ACKNOWLEDGED, STATUS_NEW, STATUS_RESOLVED
 from aurea_vms.models.alarm_event import AlarmEvent as AlarmEventRow
 from aurea_vms.models.alarm_rule import AlarmRule
 from aurea_vms.models.analytics_config import AnalyticsConfig
@@ -403,15 +403,55 @@ def _filtrar_eventos(query, device_id: int | None, site_id: int | None):
 
 
 def list_alarm_events(
-    limit: int = 200, *, device_id: int | None = None, site_id: int | None = None
+    limit: int = 200,
+    *,
+    device_id: int | None = None,
+    site_id: int | None = None,
+    object_class: str | None = None,
+    status: str | None = None,
+    offset: int = 0,
 ) -> list[AlarmEventRow]:
     """Los mas recientes primero. Sin los filtros, el dashboard traia los
     ultimos 200 GLOBALES y despues descartaba en Python los de otros sitios:
     con el filtro de sitio activo mostraba un subconjunto arbitrario en vez
-    de los ultimos 200 de ese sitio."""
+    de los ultimos 200 de ese sitio. `offset` pagina el historico completo
+    (modulo Alarmas, "Cargar mas")."""
     with get_session() as session:
         query = _filtrar_eventos(session.query(AlarmEventRow), device_id, site_id)
-        return list(query.order_by(AlarmEventRow.id.desc()).limit(limit).all())
+        if object_class is not None:
+            query = query.filter(AlarmEventRow.object_class == object_class)
+        if status is not None:
+            query = query.filter(AlarmEventRow.status == status)
+        return list(query.order_by(AlarmEventRow.id.desc()).offset(offset).limit(limit).all())
+
+
+def count_alarm_events_by_device(site_id: int | None = None) -> dict[int, int]:
+    """{device_id: cantidad de alarmas} en UNA consulta agrupada (el filtro
+    por canal del modulo Alarmas muestra cuantas tiene cada camara)."""
+    with get_session() as session:
+        query = _filtrar_eventos(
+            session.query(AlarmEventRow.device_id, func.count(AlarmEventRow.id)), None, site_id
+        )
+        return dict(query.group_by(AlarmEventRow.device_id).all())
+
+
+def list_alarm_event_classes() -> list[str]:
+    """Las clases (tipos de incidente) que aparecen en el historico."""
+    with get_session() as session:
+        rows = session.query(AlarmEventRow.object_class).distinct().all()
+        return sorted(row[0] for row in rows)
+
+
+def acknowledge_pending_alarm_events(device_id: int) -> int:
+    """Marca como reconocidas las alarmas nuevas de una camara ("Limpiar
+    incidentes"). Siguen en el historico. Devuelve cuantas cambio."""
+    with get_session() as session:
+        result = session.execute(
+            update(AlarmEventRow)
+            .where(AlarmEventRow.device_id == device_id, AlarmEventRow.status == STATUS_NEW)
+            .values(status=STATUS_ACKNOWLEDGED)
+        )
+        return result.rowcount or 0
 
 
 def count_alarm_events(
@@ -421,6 +461,7 @@ def count_alarm_events(
     severity: str | None = None,
     status: str | None = None,
     status_not: str | None = None,
+    object_class: str | None = None,
 ) -> int:
     """COUNT agregado sobre los indices. Los contadores del dashboard se
     calculaban en Python sobre la pagina de 200, asi que la tarjeta de
@@ -433,6 +474,8 @@ def count_alarm_events(
             query = query.filter(AlarmEventRow.status == status)
         if status_not is not None:
             query = query.filter(AlarmEventRow.status != status_not)
+        if object_class is not None:
+            query = query.filter(AlarmEventRow.object_class == object_class)
         return query.scalar() or 0
 
 

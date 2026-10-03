@@ -40,6 +40,13 @@ class Analyzer(ABC):
     @abstractmethod
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult: ...
 
+    def reset_counters(self) -> None:  # noqa: B027 - hook opcional, no abstracto a proposito
+        """Pone en cero los contadores de incidentes y saca las alertas en
+        curso ("Limpiar incidentes" de la Vista Inteligente). Lo llama el
+        AnalyticsWorker en su propio hilo, entre dos cuadros. El historico
+        (las alarmas guardadas) no se toca. Los analizadores sin contadores
+        no necesitan implementarlo."""
+
     def close(self) -> None:  # noqa: B027 - hook opcional, no abstracto a proposito
         """Libera recursos nativos (sesion de onnxruntime). Se llama al
         detener el analizador: sin esto el modelo (~20MB el de YOLOX)

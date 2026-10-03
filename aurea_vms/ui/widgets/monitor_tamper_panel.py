@@ -10,9 +10,15 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from qfluentwidgets import FluentIcon, PushButton
 
+from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.core.events import DetectionEvent
+from aurea_vms.core.permissions import Perm, can
+from aurea_vms.models import repository
+from aurea_vms.models.alarm_event import STATUS_NEW
 from aurea_vms.ui.labels import display_rotor_event
+from aurea_vms.ui.notify import confirm, notify
 from aurea_vms.ui.widgets.analytics_panel_base import (
     AnalyticsPanelBase,
     StatusPill,
@@ -99,6 +105,13 @@ class MonitorTamperPanel(AnalyticsPanelBase):
         self.body.addWidget(self.zones_label)
         self.contact_label = caption("", content, TEXT_MUTED)
         self.body.addWidget(self.contact_label)
+
+        # Para mostrar limpio el proximo incidente: contadores y alertas en
+        # vivo en cero, y las alarmas pendientes reconocidas. El historico
+        # sigue en Alarmas.
+        self.clear_button = PushButton(FluentIcon.BROOM, "Limpiar incidentes", content)
+        self.clear_button.clicked.connect(self._on_clear)
+        self.body.addWidget(self.clear_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
         self.trend_title = caption("Alertas · últimos 10 min", content)
         self.body.addWidget(self.trend_title)
@@ -227,6 +240,31 @@ class MonitorTamperPanel(AnalyticsPanelBase):
             )
         self.zones_label.setText("<br>".join(lines))
         self._noun = "Zona"
+
+    def _on_clear(self) -> None:
+        device_id = self._device_id
+        if device_id is None:
+            return
+        device = repository.get_device(device_id)
+        name = device.name if device is not None else f"la cámara #{device_id}"
+        manage = can(Perm.ALARM_MANAGE)
+        pending = repository.count_alarm_events(device_id=device_id, status=STATUS_NEW)
+        what = f"Se ponen en cero los contadores y las alertas en vivo de {name}"
+        if manage and pending:
+            what += f", y se reconocen sus {pending} alarmas pendientes"
+        if not confirm(
+            self.window(), "Limpiar incidentes", f"{what}. El histórico queda en Alarmas."
+        ):
+            return
+        if self._config_id is not None:
+            analytics_engine.reset_counters(self._config_id)
+        acknowledged = repository.acknowledge_pending_alarm_events(device_id) if manage else 0
+        self._history.clear()
+        self.reset()
+        done = "Contadores en cero."
+        if acknowledged:
+            done += f" {acknowledged} alarmas reconocidas."
+        notify(self.window(), "Limpiar incidentes", done)
 
     def _set_pre_alerts_visible(self, visible: bool) -> None:
         self.pre_alerts_label.setVisible(visible)

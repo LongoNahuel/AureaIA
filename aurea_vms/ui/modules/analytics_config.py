@@ -26,6 +26,7 @@ from qfluentwidgets import (
     TableWidget,
 )
 
+from aurea_vms.core import incident_rules
 from aurea_vms.core.analytics.registry import ANALYZER_DISPLAY_NAMES, VISIBLE_ANALYZERS
 from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.core.event_bus import event_bus
@@ -362,6 +363,7 @@ class AnalyticsConfigModule(QWidget):
             if device is not None:
                 config = repository.get_analytics_config_for(device_id, analyzer_name)
                 try:
+                    incident_rules.ensure_incident_rule(config)
                     analytics_engine.start(config, device)
                 except Exception as exc:  # noqa: BLE001 - config inválido o modelo no descargable
                     # Si quedara enabled=True en la DB, el próximo arranque
@@ -390,6 +392,7 @@ class AnalyticsConfigModule(QWidget):
         if dialog.exec():
             config = dialog.save()
             if config.enabled:
+                incident_rules.ensure_incident_rule(config)
                 analytics_engine.start(config, device)
             else:
                 analytics_engine.stop(config.id)

@@ -80,6 +80,7 @@ class AnalyticsWorker(threading.Thread):
         self._fps = max(0.1, float(fps))
         self._interval_s = 1.0 / self._fps
         self._stop_event = threading.Event()
+        self._reset_requested = threading.Event()
         self._overrun_warned = False
         self._last_frame_ts = 0.0
         self.stats = WorkerStats()
@@ -149,7 +150,18 @@ class AnalyticsWorker(threading.Thread):
                 )
             self._stop_event.wait(pacing_wait_s(self._interval_s, elapsed))
 
+    def request_reset(self) -> None:
+        """Pide poner en cero los contadores del analizador: lo hace este
+        hilo antes del proximo cuadro (el analizador no es thread-safe)."""
+        self._reset_requested.set()
+
     def _analyze(self, frame) -> None:
+        if self._reset_requested.is_set():
+            self._reset_requested.clear()
+            try:
+                self._analyzer.reset_counters()
+            except Exception:
+                logger.exception("Analizador %s: no se pudo limpiar", self._analyzer_name)
         inference_start = time.monotonic()
         try:
             result = self._analyzer.process_frame(frame, time.time())
@@ -210,6 +222,15 @@ class AnalyticsEngine:
             # interprete ("cannot schedule new futures after shutdown"),
             # visto en pruebas E2E.
             worker.join(timeout=2.0)
+
+    def reset_counters(self, config_id: int) -> bool:
+        """ "Limpiar incidentes": el worker pone en cero los contadores de su
+        analizador antes del proximo cuadro. False si no esta corriendo."""
+        worker = self._workers.get(config_id)
+        if worker is None or not worker.is_alive():
+            return False
+        worker.request_reset()
+        return True
 
     def is_running(self, config_id: int) -> bool:
         """El hilo de verdad, no solo "esta registrado": un worker que murio

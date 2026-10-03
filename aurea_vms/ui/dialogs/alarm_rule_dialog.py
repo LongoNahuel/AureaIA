@@ -22,19 +22,14 @@ from aurea_vms.core.analytics.registry import (
     AVAILABLE_ANALYZERS,
     VISIBLE_ANALYZERS,
 )
+from aurea_vms.core.incident_rules import INCIDENT_CLASSES
 from aurea_vms.models import repository
 from aurea_vms.models.alarm_rule import SEVERITIES, SEVERITY_MEDIUM, AlarmRule
 from aurea_vms.ui.labels import display_class
 from aurea_vms.ui.notify import warn
 
 ANALYZER_CLASSES: dict[str, list[str]] = {
-    "monitor_tamper": [
-        "patada_monitor",
-        "golpe_monitor",
-        "consumo_sustancias",
-        "preparacion_consumo",
-        "fichas_tras_no_va_mas",
-    ],
+    "monitor_tamper": INCIDENT_CLASSES,
     "people_counting": ["person"],
     "line_crossing": ["person", "car", "motorcycle", "bicycle", "bus", "truck"],
     "face_detection": ["cara"],

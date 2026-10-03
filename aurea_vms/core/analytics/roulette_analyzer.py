@@ -903,6 +903,14 @@ class RouletteAnalyzer(Analyzer):
             detections=tuple(detections), metrics=metrics, triggers=tuple(triggers)
         )
 
+    def reset_counters(self) -> None:
+        """Contadores y marcas en cero; la ronda en curso sigue (si el paño
+        esta armado, sigue armado)."""
+        self._incidents, self._last_incident, self._alerts = 0, None, {}
+        for zone in self._zones:
+            zone.changes, zone.last_change_at, zone.last_spots = 0, None, []
+        self._round.rounds, self._round.games, self._round.last_game = 0, 0, None
+
     @staticmethod
     def _is_past_post(zone: ChipZone) -> bool:
         """Fichas que cambiaron en un toque que empezo con el paño armado (una

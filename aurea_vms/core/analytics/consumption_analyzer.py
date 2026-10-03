@@ -258,6 +258,9 @@ class ConsumptionAnalyzer(Analyzer):
 
     # --- analisis -----------------------------------------------------------
 
+    def reset_counters(self) -> None:
+        self._states = [_SeatState() for _ in self._states]
+
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult:
         height, width = frame.shape[:2]
         detections: list[Detection] = []
