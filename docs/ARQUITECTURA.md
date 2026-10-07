@@ -23,6 +23,7 @@ y jamás tocan widgets.
 |---|---|---|
 | `StreamWorker` (1 por cámara+calidad) | decodifica RTSP, guarda "último frame" + pre-buffer JPEG | `core/stream_manager.py` |
 | `AnalyticsWorker` (1 por analítica activa) | muestrea a `analytics_fps` (5), corre el analizador, publica `DetectionEvent` | `core/analytics_engine.py` |
+| `AlarmTrigger` | consume la cola de disparos de `AlarmEngine`: insert del incidente + snapshot + clip + emit de `AlarmEvent` (la evaluación de reglas queda en el hilo principal) | `core/alarm_engine.py` |
 | `ClipWriter` (efímero) | pre-buffer + post-captura → mp4 + registro en `media_assets` | `core/clip_recorder.py` |
 | `RetentionWorker` | purga media por edad/tamaño cada 30 min | `core/retention.py` |
 | `FunctionWorker` (QThread) | I/O de red disparado desde la UI (probe RTSP, ONVIF) | `ui/workers.py` |
@@ -37,8 +38,9 @@ Puntos finos ya resueltos (no romper):
   `OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp` (seteado en
   `main.py` antes de cualquier captura): un `read()` colgado devuelve
   False y el loop de reconexión actúa de watchdog.
-- Apagado ordenado (`main._stop_background_engines`):
-  `clip_recorder.wait_for_pending()` **antes** de cortar streams (el
+- Apagado ordenado (`main._stop_background_engines`): primero
+  `alarm_engine.stop()`, que vacía la cola de disparos (uno con `save_clip`
+  lanza un clip); después `clip_recorder.wait_for_pending()` **antes** de cortar streams (el
   post-buffer necesita el stream vivo); `AnalyticsEngine.stop()` hace
   join para que el `close()` del analizador libere su sesión de
   onnxruntime antes del teardown del intérprete; `stop_all()` de streams

@@ -32,9 +32,11 @@ que se trabajan ese mismo día:
   atómico.
 - ~~🟠 Hilos muertos que quedan registrados como vivos, sesión ONNX que se fuga
   si `acquire()` falla, mp4 huérfano ante `IntegrityError`, `alarm_engine` en
-  el hilo de la GUI sin mirar `_active`~~ — Fase 5 del 24/09. Queda abierto si
-  `alarm_engine` se muda del hilo de la GUI (medido: ~1 ms por evento, ~41 ms
-  por disparo; ver `sesiones/2026-09-24.md`).
+  el hilo de la GUI sin mirar `_active`~~ — Fase 5 del 24/09.
+- ~~🟠 El disparo de `alarm_engine` (insert + snapshot + clip) congela la GUI
+  ~35-41 ms~~ — Fase 6b del 07/10: la evaluación queda en la GUI y el disparo
+  corre en el hilo `AlarmTrigger` con una cola acotada (32). Medido: 35 ms → 0,8
+  ms de mediana por disparo en la GUI (`sesiones/2026-10-07.md`).
 - ~~🟠 Falsos positivos del watchdog de congelado con cámaras "smart codec" en
   escenas quietas~~ — Fase 6 del 24/09: congelado = PTS quieto **y** misma
   firma (medido con el rig: 19,9 s de cuadros idénticos con el PTS avanzando);

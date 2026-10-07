@@ -107,12 +107,15 @@ def _start_background_engines() -> None:
 
 
 def _stop_background_engines() -> None:
-    # Orden importa: los clips en curso necesitan el stream vivo para su
-    # post-buffer, asi que se espera ANTES de cortar streams/analiticas.
+    # Orden importa:
+    # 1. alarm_engine primero: vacia su cola de disparos, y un disparo con
+    #    save_clip lanza un clip que el paso 2 tiene que esperar.
+    # 2. Los clips en curso necesitan el stream vivo para su post-buffer,
+    #    asi que se espera ANTES de cortar streams/analiticas.
+    alarm_engine.stop()
     clip_recorder.wait_for_pending()
     stream_manager.stop_all()
     analytics_engine.stop_all()
-    alarm_engine.stop()
     if _retention_worker is not None:
         _retention_worker.stop()
         _retention_worker.join(timeout=2.0)

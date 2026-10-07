@@ -48,6 +48,23 @@ def _rule(**fields) -> AlarmRule:
     return AlarmRule(**defaults)
 
 
+@pytest.fixture()
+def engine():
+    """El disparo corre en el hilo AlarmTrigger (Fase 6b): el fixture lo
+    apaga al final para no dejar hilos colgados entre tests."""
+    motor = AlarmEngine()
+    yield motor
+    motor._detener_hilo(2.0)
+
+
+def _evaluar(engine: AlarmEngine, event: DetectionEvent) -> None:
+    """Evalua un evento y espera a que su disparo (si hubo) se procese: el
+    orden "evento, disparo, evento, disparo" de un stream real con
+    cuadros separados por mas que el tiempo de un insert."""
+    engine._on_detection(event)
+    assert engine.esperar_disparos(2.0)
+
+
 def _detection(label: str = "cara", confidence: float = 0.9) -> Detection:
     return Detection(label=label, confidence=confidence, bbox=(0, 0, 10, 10))
 
@@ -131,8 +148,7 @@ class TestCooldown:
             detections=(_detection(),),
         )
 
-    def test_no_redispara_dentro_del_cooldown(self, monkeypatch):
-        engine = AlarmEngine()
+    def test_no_redispara_dentro_del_cooldown(self, engine, monkeypatch):
         rule = _rule(cooldown_seconds=30)
         rule.id = 99
 
@@ -140,12 +156,11 @@ class TestCooldown:
         triggered: list[tuple] = []
         monkeypatch.setattr(engine, "_trigger", lambda *args: triggered.append(args))
 
-        engine._on_detection(self._event(1000.0))
-        engine._on_detection(self._event(1001.0))
+        _evaluar(engine, self._event(1000.0))
+        _evaluar(engine, self._event(1001.0))
         assert len(triggered) == 1
 
-    def test_redispara_pasado_el_cooldown(self, monkeypatch):
-        engine = AlarmEngine()
+    def test_redispara_pasado_el_cooldown(self, engine, monkeypatch):
         rule = _rule(cooldown_seconds=30)
         rule.id = 99
 
@@ -155,31 +170,28 @@ class TestCooldown:
 
         _fake_clock(monkeypatch, 1000.0, 1040.0)
 
-        engine._on_detection(self._event(1000.0))
-        engine._on_detection(self._event(1040.0))
+        _evaluar(engine, self._event(1000.0))
+        _evaluar(engine, self._event(1040.0))
         assert len(triggered) == 2
 
-    def test_evento_sin_detecciones_no_hace_nada(self, monkeypatch):
-        engine = AlarmEngine()
+    def test_evento_sin_detecciones_no_hace_nada(self, engine, monkeypatch):
         called = []
         monkeypatch.setattr(
             alarm_engine_mod.repository,
             "list_alarm_rules_for",
             lambda *_: called.append(True) or [],
         )
-        engine._on_detection(
-            DetectionEvent(device_id=1, analyzer_name="face_detection", timestamp=0.0)
-        )
+        _evaluar(engine, DetectionEvent(device_id=1, analyzer_name="face_detection", timestamp=0.0))
         assert called == []
 
 
 class TestResilienciaDeHilo:
-    """`_on_detection` es un slot conectado a una signal que emiten los
-    AnalyticsWorker, y AlarmEngine no es un QObject: no hay marshaleo, corre
-    en el hilo de la analitica. Una excepcion que se escape de ahi sube cruda
-    por el slot de Qt y se lleva puesto ese hilo -- la camara deja de analizar
-    hasta que alguien reinicie la app. Estos tests fijan que ninguna falla de
-    DB (el caso realista: un lock transitorio de SQLite) llegue tan lejos.
+    """`_on_detection` corre en el hilo de la GUI (ver el docstring del
+    motor) y el disparo en el hilo AlarmTrigger. Una excepcion que se escape
+    de cualquiera de los dos se lleva puesto el hilo: la GUI por el event
+    loop, o la cola de disparos sin consumidor. Estos tests fijan que
+    ninguna falla de DB (el caso realista: un lock transitorio de SQLite)
+    llegue tan lejos.
     """
 
     def _event(self, ts: float = 1000.0) -> DetectionEvent:
@@ -190,8 +202,7 @@ class TestResilienciaDeHilo:
             detections=(_detection(),),
         )
 
-    def test_leer_las_reglas_puede_fallar_sin_matar_el_hilo(self, monkeypatch, caplog):
-        engine = AlarmEngine()
+    def test_leer_las_reglas_puede_fallar_sin_matar_el_hilo(self, engine, monkeypatch, caplog):
 
         def explota(*_):
             raise OperationalError("SELECT", {}, Exception("database is locked"))
@@ -199,16 +210,15 @@ class TestResilienciaDeHilo:
         monkeypatch.setattr(alarm_engine_mod.repository, "list_alarm_rules_for", explota)
 
         with caplog.at_level(logging.ERROR, logger=alarm_engine_mod.__name__):
-            engine._on_detection(self._event())
+            _evaluar(engine, self._event())
 
         assert "reglas de alarma" in caplog.text
         assert "database is locked" in caplog.text
 
-    def test_una_regla_que_falla_no_frena_a_las_demas(self, monkeypatch, caplog):
+    def test_una_regla_que_falla_no_frena_a_las_demas(self, engine, monkeypatch, caplog):
         """Las reglas de una camara son independientes: que el insert de la
         primera choque contra un lock no puede dejar sin evaluar a la
         segunda, que quiza es la critica."""
-        engine = AlarmEngine()
         rota, sana = _rule(cooldown_seconds=0), _rule(cooldown_seconds=0)
         rota.id, sana.id = 1, 2
 
@@ -225,23 +235,22 @@ class TestResilienciaDeHilo:
         monkeypatch.setattr(engine, "_trigger", trigger)
 
         with caplog.at_level(logging.ERROR, logger=alarm_engine_mod.__name__):
-            engine._on_detection(self._event())
+            _evaluar(engine, self._event())
 
         assert disparadas == [sana.id]
         assert "regla 1" in caplog.text
 
-    def test_un_disparo_fallido_no_consume_el_cooldown(self, monkeypatch):
+    def test_un_disparo_fallido_no_consume_el_cooldown(self, engine, monkeypatch):
         """El punto fino del fix: si el cooldown se marcara antes de disparar,
         un lock transitorio dejaria la regla MUDA hasta que venza (30s por
         defecto). Marcandolo despues, el proximo frame reintenta."""
-        engine = AlarmEngine()
         rule = _rule(cooldown_seconds=30)
         rule.id = 7
 
         monkeypatch.setattr(alarm_engine_mod.repository, "list_alarm_rules_for", lambda *_: [rule])
         intentos: list[float] = []
 
-        def trigger(_rule, event, _detection):
+        def trigger(_rule, event, _detection, _frame):
             intentos.append(event.timestamp)
             if len(intentos) == 1:
                 raise OperationalError("INSERT", {}, Exception("database is locked"))
@@ -251,26 +260,25 @@ class TestResilienciaDeHilo:
         # Dos frames consecutivos, MUY dentro del cooldown de 30s.
         _fake_clock(monkeypatch, 1000.0, 1000.2)
 
-        engine._on_detection(self._event(1000.0))
-        engine._on_detection(self._event(1000.2))
+        _evaluar(engine, self._event(1000.0))
+        _evaluar(engine, self._event(1000.2))
 
         assert intentos == [1000.0, 1000.2], "el fallo consumio el cooldown y silencio la regla"
         assert engine._last_triggered[rule.id] == 1000.2
 
-    def test_un_disparo_exitoso_si_consume_el_cooldown(self, monkeypatch):
+    def test_un_disparo_exitoso_si_consume_el_cooldown(self, engine, monkeypatch):
         """La contracara del test anterior: el reintento no puede volverse
         spam una vez que la alarma entro bien."""
-        engine = AlarmEngine()
         rule = _rule(cooldown_seconds=30)
         rule.id = 7
 
         monkeypatch.setattr(alarm_engine_mod.repository, "list_alarm_rules_for", lambda *_: [rule])
         intentos: list[float] = []
-        monkeypatch.setattr(engine, "_trigger", lambda _r, e, _d: intentos.append(e.timestamp))
+        monkeypatch.setattr(engine, "_trigger", lambda _r, e, _d, _f: intentos.append(e.timestamp))
 
         _fake_clock(monkeypatch, 1000.0, 1000.2)
 
-        engine._on_detection(self._event(1000.0))
-        engine._on_detection(self._event(1000.2))
+        _evaluar(engine, self._event(1000.0))
+        _evaluar(engine, self._event(1000.2))
 
         assert intentos == [1000.0]

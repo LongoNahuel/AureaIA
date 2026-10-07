@@ -436,6 +436,8 @@ class TestCooldownAtomico:
             hilo.start()
         for hilo in hilos:
             hilo.join()
+        assert motor.esperar_disparos(2.0)
+        motor._detener_hilo(2.0)
 
         assert len(disparos) == 1
 
@@ -455,10 +457,139 @@ class TestCooldownAtomico:
         monkeypatch.setattr(motor, "_trigger", disparo_que_falla_una_vez)
 
         motor._on_detection(_evento())
+        assert motor.esperar_disparos(2.0)  # la falla ya devolvio la reserva
         motor._on_detection(_evento())
+        assert motor.esperar_disparos(2.0)
+        motor._detener_hilo(2.0)
 
         assert len(intentos) == 2  # el segundo no quedo frenado por el cooldown
         assert 1 in motor._last_triggered
+
+
+class TestDisparoFueraDeLaGui:
+    """Fase 6b (2026-10-07): evaluar queda en la GUI, disparar (insert +
+    snapshot + clip + emit, ~35-41 ms medidos) corre en el hilo AlarmTrigger."""
+
+    @pytest.fixture()
+    def motor(self, monkeypatch):
+        monkeypatch.setattr(
+            alarm_engine_mod.repository, "list_alarm_rules_for", lambda *_a: [_regla(cooldown=0)]
+        )
+        motor = AlarmEngine()
+        yield motor
+        motor._detener_hilo(2.0)
+
+    def test_el_disparo_no_corre_en_el_hilo_que_evalua(self, motor, monkeypatch):
+        hilos: list[str] = []
+        monkeypatch.setattr(
+            motor, "_trigger", lambda *_a: hilos.append(threading.current_thread().name)
+        )
+        motor._on_detection(_evento())
+        assert motor.esperar_disparos(2.0)
+
+        assert hilos == ["AlarmTrigger"]
+
+    def test_evaluar_no_espera_al_disparo(self, motor, monkeypatch):
+        """Un disparo lento (un insert trabado por un lock) no congela a
+        quien evalua: _on_detection vuelve enseguida."""
+        suelto = threading.Event()
+        monkeypatch.setattr(motor, "_trigger", lambda *_a: suelto.wait(2.0))
+
+        inicio = time.perf_counter()
+        motor._on_detection(_evento())
+        demora = time.perf_counter() - inicio
+        suelto.set()
+        assert motor.esperar_disparos(2.0)
+
+        assert demora < 0.5
+
+    def test_el_snapshot_es_el_cuadro_de_la_deteccion(self, motor, monkeypatch):
+        """El cuadro se toma al encolar: si la cola esta atrasada, el
+        snapshot no puede ser un cuadro de varios segundos despues."""
+        cuadro_deteccion = np.zeros((4, 4, 3), np.uint8)
+        cuadro_posterior = np.ones((4, 4, 3), np.uint8)
+        actual = {"cuadro": cuadro_deteccion}
+        monkeypatch.setattr(
+            alarm_engine_mod.stream_manager,
+            "get_worker",
+            lambda *_a: SimpleNamespace(get_latest_frame=lambda: actual["cuadro"]),
+        )
+        bloqueo = threading.Event()
+        usados: list = []
+
+        def trigger(_r, _e, _d, frame):
+            bloqueo.wait(2.0)
+            usados.append(frame)
+
+        monkeypatch.setattr(motor, "_trigger", trigger)
+        motor._on_detection(_evento())
+        actual["cuadro"] = cuadro_posterior  # el stream sigue avanzando
+        bloqueo.set()
+        assert motor.esperar_disparos(2.0)
+
+        assert usados[0] is cuadro_deteccion
+
+    def test_stop_procesa_los_disparos_pendientes(self, motor, monkeypatch):
+        """Los disparos encolados son alarmas reales con el cooldown ya
+        reservado: el logout no puede tirarlos."""
+        hechos: list = []
+
+        def lento(*args):
+            time.sleep(0.05)
+            hechos.append(args)
+
+        monkeypatch.setattr(motor, "_trigger", lento)
+        motor.start()
+        for _ in range(3):
+            motor._on_detection(_evento())
+        motor.stop()
+
+        assert len(hechos) == 3
+        assert motor._hilo is None
+
+    def test_cola_llena_descarta_y_devuelve_la_reserva(self, motor, monkeypatch, caplog):
+        monkeypatch.setattr(alarm_engine_mod, "MAX_DISPAROS_EN_COLA", 1)
+        motor._cola = alarm_engine_mod.queue.Queue(maxsize=1)
+        monkeypatch.setattr(
+            alarm_engine_mod.repository, "list_alarm_rules_for", lambda *_a: [_regla(cooldown=30)]
+        )
+        trabado = threading.Event()
+        monkeypatch.setattr(motor, "_trigger", lambda *_a: trabado.wait(2.0))
+
+        motor._on_detection(_evento())  # lo toma el hilo y se traba
+        assert _espera(lambda: motor._cola.qsize() == 0)
+        motor._last_triggered.clear()  # otra regla con el mismo id, sin cooldown
+        motor._on_detection(_evento())  # ocupa el unico lugar de la cola
+        motor._last_triggered.clear()
+        with caplog.at_level(logging.ERROR, logger=alarm_engine_mod.__name__):
+            motor._on_detection(_evento())  # no entra
+        trabado.set()
+        assert motor.esperar_disparos(2.0)
+
+        assert "Cola de disparos llena" in caplog.text
+        assert 1 not in motor._last_triggered  # reserva devuelta: el proximo reintenta
+
+    def test_un_hilo_muerto_se_reemplaza(self, motor, monkeypatch):
+        hechos: list = []
+        monkeypatch.setattr(motor, "_trigger", lambda *a: hechos.append(a))
+        motor._asegurar_hilo()
+        motor._cola.put(alarm_engine_mod._FIN)  # el hilo sale como si hubiera muerto
+        motor._hilo.join(2.0)
+        assert not motor._hilo.is_alive()
+
+        motor._on_detection(_evento())
+        assert motor.esperar_disparos(2.0)
+
+        assert len(hechos) == 1
+
+
+def _espera(condicion, timeout: float = 2.0) -> bool:
+    limite = time.monotonic() + timeout
+    while time.monotonic() < limite:
+        if condicion():
+            return True
+        time.sleep(0.005)
+    return False
 
 
 class TestExcepthooks:

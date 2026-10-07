@@ -8,28 +8,45 @@ tests/test_hilos.py::TestAlarmEngineEnQueHilo). No es un QObject, y
 PySide6 entrega un signal a un callable comun a traves de un receptor que
 vive en el hilo principal: como los AnalyticsWorker emiten desde su hilo, la
 conexion queda ENCOLADA y `_on_detection` corre en el **hilo de la GUI**, no
-en el del worker. Este docstring decia lo contrario hasta esa fecha. Costo
-medido por evento en ese hilo: ~0.7-1.4 ms sin disparo (la consulta de
-reglas), ~41 ms con disparo (insert + snapshot JPEG 1080p). Si se muda a
-otro hilo es una decision abierta (ver sesiones/2026-09-24.md, Fase 5).
+en el del worker.
+
+Por eso el trabajo se parte en dos (Fase 6b, 2026-10-07):
+- **Evaluar** (reglas, horario, mejor deteccion, cooldown) queda en
+  `_on_detection`, en la GUI: ~0.7-1.4 ms por evento, medido.
+- **Disparar** (insert, snapshot JPEG, clip y el emit del AlarmEvent) corre
+  en el hilo `AlarmTrigger`, que consume una cola. Antes eran ~35-41 ms de
+  GUI congelada por disparo (mediana; 64 ms de maximo).
+
+El cuadro del snapshot se toma al ENCOLAR, no al disparar: es el del momento
+de la deteccion aunque la cola este atrasada. Los StreamWorker reemplazan
+el array en cada cuadro (no lo pisan), asi que retener la referencia es
+seguro.
 
 Consecuencias:
+- El cooldown se reserva al encolar. Si el disparo falla en el worker, la
+  reserva se devuelve: el proximo evento EVALUADO DESPUES de la falla
+  reintenta. Los que ya estaban en vuelo siguen frenados por la reserva.
 - Una excepcion que se escape de `_on_detection` sube por el event loop de
   Qt; igual se captura todo (el patron de stream_manager y retention).
-- Despues de stop() pueden quedar eventos encolados: `_on_detection` corta
-  si el motor no esta activo.
-- Este modulo no construye widgets aunque pudiera: las acciones que llegan
-  al escritorio (`play_sound`, `notify_desktop`) viajan como flags del
-  AlarmEvent y las ejecuta la UI, que es lo que sigue valiendo si el motor
-  se muda de hilo.
+- Despues de stop() pueden quedar eventos encolados en Qt: `_on_detection`
+  corta si el motor no esta activo. Los disparos que YA estaban en la cola
+  propia si se procesan (son alarmas reales): stop() la vacia con timeout.
+- Este modulo no construye widgets: las acciones que llegan al escritorio
+  (`play_sound`, `notify_desktop`) viajan como flags del AlarmEvent y las
+  ejecuta la UI. El emit sale del hilo AlarmTrigger y los receptores de la
+  UI estan conectados con QueuedConnection, asi que corren en la GUI.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import logging
+import queue
 import threading
 import time
+from dataclasses import dataclass
+from time import monotonic
+from typing import Any
 
 from aurea_vms.core import clip_recorder, media_store
 from aurea_vms.core.event_bus import event_bus
@@ -41,15 +58,40 @@ from aurea_vms.models.alarm_rule import AlarmRule
 
 logger = logging.getLogger(__name__)
 
+# Cada disparo encolado retiene un cuadro (1080p BGR = ~6 MB). El cooldown de
+# cada regla ya limita el ritmo; el tope es para que un insert trabado (lock
+# de SQLite) no se coma la RAM. Lleno, el disparo se descarta, se loguea y
+# se devuelve la reserva de cooldown, para que el proximo evento reintente.
+MAX_DISPAROS_EN_COLA = 32
+STOP_TIMEOUT_S = 5.0
+
+_SIN_CUADRO: Any = object()  # "no me pasaron cuadro": lo busca _trigger
+
+
+@dataclass(frozen=True)
+class _Disparo:
+    rule: AlarmRule
+    event: DetectionEvent
+    detection: Detection
+    frame: Any
+    reservado_en: float
+    anterior: float | None
+
+
+_FIN = object()  # sentinel de la cola
+
 
 class AlarmEngine:
     def __init__(self) -> None:
         self._last_triggered: dict[int, float] = {}
-        # El cooldown se lee y escribe bajo lock: hoy todo corre en el hilo
-        # de la GUI (ver el docstring), pero no depende de eso.
+        # El cooldown se toca desde la GUI (reserva) y desde AlarmTrigger
+        # (devolucion si el disparo falla): siempre bajo este lock.
         self._cooldown_lock = threading.Lock()
         self._active = False
         self._detenido = False
+        self._cola: queue.Queue = queue.Queue(maxsize=MAX_DISPAROS_EN_COLA)
+        self._hilo: threading.Thread | None = None
+        self._hilo_lock = threading.Lock()
 
     def start(self) -> None:
         if self._active:
@@ -64,6 +106,94 @@ class AlarmEngine:
         self._active = False
         self._detenido = True
         event_bus.detection.disconnect(self._on_detection)
+        self._detener_hilo(STOP_TIMEOUT_S)
+
+    def esperar_disparos(self, timeout: float = STOP_TIMEOUT_S) -> bool:
+        """Bloquea hasta que la cola de disparos quede vacia y procesada.
+        Devuelve False si vencio el timeout. Para tests y mediciones: en la
+        app, quien espera es stop(). Usa `monotonic` importado aparte: los
+        tests reemplazan el modulo `time` de aca por un reloj falso."""
+        limite = monotonic() + timeout
+        with self._cola.all_tasks_done:
+            while self._cola.unfinished_tasks:
+                restante = limite - monotonic()
+                if restante <= 0:
+                    return False
+                self._cola.all_tasks_done.wait(restante)
+        return True
+
+    def _detener_hilo(self, timeout: float) -> None:
+        with self._hilo_lock:
+            hilo, self._hilo = self._hilo, None
+        if hilo is None or not hilo.is_alive():
+            return
+        # El sentinel va DETRAS de los disparos pendientes: se procesan
+        # todos (son alarmas reales) y despues el hilo sale.
+        self._cola.put(_FIN)
+        hilo.join(timeout)
+        if hilo.is_alive():
+            logger.error(
+                "El hilo de disparos de alarmas no termino en %.0fs (quedan %d en cola)",
+                timeout,
+                self._cola.qsize(),
+            )
+
+    def _asegurar_hilo(self) -> None:
+        """Arranca AlarmTrigger si no esta vivo. Tambien lo reemplaza si
+        murio: `_procesar` captura todo, pero si algo se escapa (el patron
+        de los workers de la Fase 5) la cola no puede quedar sin consumidor."""
+        with self._hilo_lock:
+            if self._hilo is not None and self._hilo.is_alive():
+                return
+            if self._hilo is not None:
+                logger.error("El hilo de disparos de alarmas murio; se reemplaza")
+            self._hilo = threading.Thread(target=self._consumir, name="AlarmTrigger", daemon=True)
+            self._hilo.start()
+
+    def _consumir(self) -> None:
+        while True:
+            item = self._cola.get()
+            try:
+                if item is _FIN:
+                    return
+                self._procesar(item)
+            finally:
+                self._cola.task_done()
+
+    def _procesar(self, disparo: _Disparo) -> None:
+        try:
+            self._trigger(disparo.rule, disparo.event, disparo.detection, disparo.frame)
+        except Exception:
+            # Una regla que falla no puede dejar la regla muda hasta que
+            # venza el cooldown: si el insert fallo por un lock transitorio,
+            # se devuelve la reserva y el proximo evento reintenta.
+            self._devolver_reserva(disparo.rule.id, disparo.reservado_en, disparo.anterior)
+            logger.exception(
+                "No se pudo disparar la alarma de la regla %s (cámara %s)",
+                disparo.rule.id,
+                disparo.event.device_id,
+            )
+
+    def _devolver_reserva(self, rule_id: int, reservado_en: float, anterior: float | None) -> None:
+        with self._cooldown_lock:
+            if self._last_triggered.get(rule_id) == reservado_en:
+                if anterior is None:
+                    self._last_triggered.pop(rule_id, None)
+                else:
+                    self._last_triggered[rule_id] = anterior
+
+    def _encolar(self, disparo: _Disparo) -> None:
+        self._asegurar_hilo()
+        try:
+            self._cola.put_nowait(disparo)
+        except queue.Full:
+            self._devolver_reserva(disparo.rule.id, disparo.reservado_en, disparo.anterior)
+            logger.error(
+                "Cola de disparos llena (%d): se descarta la alarma de la regla %s (cámara %s)",
+                MAX_DISPAROS_EN_COLA,
+                disparo.rule.id,
+                disparo.event.device_id,
+            )
 
     def _on_detection(self, event: DetectionEvent) -> None:
         if self._detenido:
@@ -75,11 +205,10 @@ class AlarmEngine:
         if not candidates:
             return
 
-        # Este metodo es un slot conectado a una signal que emiten los
-        # AnalyticsWorker: corre en SU hilo. Una excepcion que se escape de
-        # aca sube cruda por el slot de Qt y se lleva puesto el hilo de la
-        # analitica. Todo acceso a la DB va protegido y logueado -- el mismo
-        # patron que stream_manager._report_status y retention.
+        # Corre en la GUI (ver el docstring). Una excepcion que se escape de
+        # aca sube cruda por el event loop de Qt. Todo acceso a la DB va
+        # protegido y logueado -- el mismo patron que
+        # stream_manager._report_status y retention.
         try:
             rules = repository.list_alarm_rules_for(event.device_id, event.analyzer_name)
         except Exception:
@@ -109,21 +238,15 @@ class AlarmEngine:
                 self._last_triggered[rule.id] = now
 
             try:
-                self._trigger(rule, event, match)
+                # El cuadro se toma ahora, en la GUI: es una referencia, no
+                # una copia (ver el docstring), asi que cuesta microsegundos.
+                worker = stream_manager.get_worker(event.device_id)
+                frame = worker.get_latest_frame() if worker else None
+                self._encolar(_Disparo(rule, event, match, frame, now, anterior))
             except Exception:
-                # Una regla que falla no puede cortar la evaluacion de las
-                # demas. Y el cooldown se consume solo si se disparo bien:
-                # si el insert fallo por un lock transitorio, se devuelve la
-                # reserva y el proximo evento reintenta, en vez de quedarse
-                # mudo hasta que venza el cooldown.
-                with self._cooldown_lock:
-                    if self._last_triggered.get(rule.id) == now:
-                        if anterior is None:
-                            self._last_triggered.pop(rule.id, None)
-                        else:
-                            self._last_triggered[rule.id] = anterior
+                self._devolver_reserva(rule.id, now, anterior)
                 logger.exception(
-                    "No se pudo disparar la alarma de la regla %s (cámara %s)",
+                    "No se pudo encolar la alarma de la regla %s (cámara %s)",
                     rule.id,
                     event.device_id,
                 )
@@ -157,7 +280,14 @@ class AlarmEngine:
         return max(candidates, key=lambda d: d.confidence)
 
     @staticmethod
-    def _trigger(rule: AlarmRule, event: DetectionEvent, detection: Detection) -> None:
+    def _trigger(
+        rule: AlarmRule,
+        event: DetectionEvent,
+        detection: Detection,
+        frame: Any = _SIN_CUADRO,
+    ) -> None:
+        """Corre en el hilo AlarmTrigger. `frame` es el cuadro tomado al
+        encolar; sin el, se busca el ultimo del stream (llamada directa)."""
         row = repository.add_alarm_event(
             rule_id=rule.id,
             device_id=event.device_id,
@@ -176,8 +306,9 @@ class AlarmEngine:
         )
 
         snapshot_path = None
-        worker = stream_manager.get_worker(event.device_id)
-        frame = worker.get_latest_frame() if worker else None
+        if frame is _SIN_CUADRO:
+            worker = stream_manager.get_worker(event.device_id)
+            frame = worker.get_latest_frame() if worker else None
         if frame is not None:
             # Queda registrada en media_assets (vinculada al evento); el DTO
             # lleva la ruta absoluta solo para el thumbnail del popup.
@@ -204,8 +335,8 @@ class AlarmEngine:
                 snapshot_path=snapshot_path,
                 # Las dos acciones que tocan el escritorio (beep y globo de
                 # bandeja) viajan como flags: las ejecuta la UI en su hilo.
-                # Este metodo corre en el hilo del AnalyticsWorker, donde
-                # construir un widget de Qt es comportamiento indefinido.
+                # Este metodo corre en el hilo AlarmTrigger, donde construir
+                # un widget de Qt es comportamiento indefinido.
                 play_sound=bool((rule.actions or {}).get("play_sound")),
                 notify_desktop=bool((rule.actions or {}).get("notify_desktop")),
             )

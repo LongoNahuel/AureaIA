@@ -239,11 +239,14 @@ class TestTriggersEnElMotor:
         engine._on_detection(
             DetectionEvent(1, "line_crossing", 0.0, detections=(person,), triggers=())
         )
+        assert engine.esperar_disparos(2.0)  # el disparo corre en AlarmTrigger
         assert triggered == []
 
         engine._on_detection(
             DetectionEvent(1, "line_crossing", 1.0, detections=(person,), triggers=(person,))
         )
+        assert engine.esperar_disparos(2.0)
+        engine._detener_hilo(2.0)
         assert len(triggered) == 1
 
 

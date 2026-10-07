@@ -41,6 +41,26 @@ def test_un_config_roto_no_impide_el_arranque(temp_db, monkeypatch):
     assert sano.id in engine.started
 
 
+def test_el_apagado_vacia_las_alarmas_antes_de_esperar_los_clips(monkeypatch):
+    """Fase 6b: un disparo que todavia esta en la cola de AlarmTrigger puede
+    lanzar un clip (save_clip). Si los clips se esperaran primero, ese clip
+    arrancaria con el stream ya cortado y quedaria truncado."""
+    orden: list[str] = []
+    monkeypatch.setattr(main_module.alarm_engine, "stop", lambda: orden.append("alarmas"))
+    monkeypatch.setattr(
+        main_module.clip_recorder, "wait_for_pending", lambda: orden.append("clips")
+    )
+    monkeypatch.setattr(main_module.stream_manager, "stop_all", lambda: orden.append("streams"))
+    monkeypatch.setattr(
+        main_module.analytics_engine, "stop_all", lambda: orden.append("analiticas")
+    )
+    monkeypatch.setattr(main_module, "_retention_worker", None)
+
+    main_module._stop_background_engines()
+
+    assert orden == ["alarmas", "clips", "streams", "analiticas"]
+
+
 class TestEnsureLinuxQtPluginPath:
     """El wheel Linux de cv2 deja QT_QPA_PLATFORM_PLUGIN_PATH apuntando a
     sus plugins Qt (donde el xcb no carga); el helper debe re-apuntar a los

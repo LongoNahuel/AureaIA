@@ -63,6 +63,10 @@ def _alarmas(monkeypatch, scores: list[float]) -> int:
                 triggers=result.triggers,
             )
         )
+        # El disparo corre en el hilo AlarmTrigger (Fase 6b): se espera
+        # cuadro a cuadro, como en un stream real.
+        assert motor.esperar_disparos(2.0)
+    motor._detener_hilo(2.0)
     return len(disparos)
 
 
