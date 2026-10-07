@@ -124,14 +124,20 @@ def base_adoptada(tmp_path) -> Path:
     return ruta
 
 
+# Tablas que crean revisiones POSTERIORES a la 0008: una base en 0008 no las
+# tiene, y no es deriva. Al sumar una revision que cree una tabla, va aca.
+TABLAS_POSTERIORES = {"ui_layouts"}  # 0009
+
+
 def _deriva(ruta: Path) -> list:
     importar_modelos()
     engine = create_engine(f"sqlite:///{ruta}")
     try:
         with engine.connect() as connection:
-            return compare_metadata(MigrationContext.configure(connection), Base.metadata)
+            diferencias = compare_metadata(MigrationContext.configure(connection), Base.metadata)
     finally:
         engine.dispose()
+    return [d for d in diferencias if not (d[0] == "add_table" and d[1].name in TABLAS_POSTERIORES)]
 
 
 class TestMonitoresSinPantalla:

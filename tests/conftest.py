@@ -67,6 +67,18 @@ def temp_db(tmp_path, _plantilla_migrada):
 
 
 @pytest.fixture(autouse=True)
+def _render_sincronico():
+    """Los recuadros de video arman sus cuadros en un pool de hilos (Fase
+    V1b). En los tests corre en el mismo hilo, asi el pixmap esta listo al
+    volver de _refresh_frame; el pool real tiene sus propios tests."""
+    from aurea_vms.ui import render_pool
+
+    render_pool.usar(render_pool.PoolSincronico())
+    yield
+    render_pool.detener()
+
+
+@pytest.fixture(autouse=True)
 def _reset_auth_session():
     """La sesion de usuario es una global de modulo; un test que hace login
     no debe contaminar al siguiente."""

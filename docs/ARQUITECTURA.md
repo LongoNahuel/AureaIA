@@ -9,7 +9,7 @@ aurea_vms/
 ├── config/    settings (paths, constantes de build)
 ├── models/    SQLAlchemy 2.0 + repository de funciones (sin relationship())
 ├── core/      engines en threads + lógica de negocio (sin Qt, salvo el bus)
-└── ui/        PySide6 + QFluentWidgets (ventana única con pestañas)
+└── ui/        PySide6 + QFluentWidgets (ventana principal con pestañas; cada pestaña se puede llevar a una ventana secundaria, ver `ui/window_manager.py` y `ui/pestanas.py`)
 ```
 
 ## Concurrencia y comunicación
@@ -27,7 +27,8 @@ y jamás tocan widgets.
 | `ClipWriter` (efímero) | pre-buffer + post-captura → mp4 + registro en `media_assets` | `core/clip_recorder.py` |
 | `RetentionWorker` | purga media por edad/tamaño cada 30 min | `core/retention.py` |
 | `FunctionWorker` (QThread) | I/O de red disparado desde la UI (probe RTSP, ONVIF) | `ui/workers.py` |
-| Hilo principal | Qt + render de tiles vía QTimer a 25 fps | `ui/…` |
+| `Render-N` (2) | arma el cuadro de cada recuadro: achica, convierte a `QImage` y dibuja el overlay; el último pedido de cada recuadro gana | `ui/render_pool.py` |
+| Hilo principal | Qt; cada recuadro sondea con un QTimer (`display_fps`), toma una foto del estado (`_Escena`), manda el armado al pool y pinta el `QImage` que vuelve (opaco, sin stylesheet). Los recuadros ocultos o minimizados no sondean | `ui/widgets/video_tile.py` |
 
 Puntos finos ya resueltos (no romper):
 
@@ -151,17 +152,18 @@ Para agregar un cambio de esquema: tocar el modelo y correr
 `alembic revision --autogenerate -m "lo que cambia"` (el `alembic.ini` de la
 raíz es solo para esto; la app arma su config en memoria).
 
-8 tablas: `sites`, `zones`, `devices` (credenciales de cámara cifradas en
+9 tablas: `sites`, `zones`, `devices` (credenciales de cámara cifradas en
 reposo — ver `core/credential_store.py` para el alcance real de esa
 protección), `analytics_configs`, `alarm_rules`,
-`alarm_events`, `media_assets`, `users`. La jerarquía es
-Sitio → Zona → Cámara.
+`alarm_events`, `media_assets`, `users` y `ui_layouts` (0009: la
+disposición de ventanas de cada usuario, un JSON versionado que maneja
+`ui/layout_store.py`). La jerarquía es Sitio → Zona → Cámara.
 
 Cascadas: borrar cámara → CASCADE en configs/reglas propias/eventos/media;
 borrar regla → `alarm_events.rule_id=NULL` (el historial no se pierde;
 la severidad se copia al evento al disparar); borrar sitio → CASCADE en
 sus zonas, y sus cámaras quedan "Sin zona" (`devices.zone_id` a NULL);
-borrar usuario → media queda como sistema.
+borrar usuario → media queda como sistema y su `ui_layouts` se borra (CASCADE).
 
 `repository.delete_site`/`delete_zone` además nulifican a mano lo que el
 `ondelete` ya declara: una DB migrada por `ALTER TABLE` puede tener el FK

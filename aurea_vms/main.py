@@ -19,6 +19,7 @@ os.environ.setdefault(
     "rtsp_transport;tcp|fflags;discardcorrupt|flags;low_delay|max_delay;1500000|reorder_queue_size;4",
 )
 
+from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 from qfluentwidgets import setThemeColor
@@ -39,6 +40,7 @@ from aurea_vms.core.stream_manager import stream_manager
 from aurea_vms.migrations.resguardo import BACKUPS_DIRNAME
 from aurea_vms.models import repository
 from aurea_vms.models.db import init_db
+from aurea_vms.ui import render_pool
 from aurea_vms.ui.dialogs.login_dialog import LoginDialog
 from aurea_vms.ui.dialogs.setup_wizard_dialog import SetupWizardDialog
 from aurea_vms.ui.main_window import MainWindow
@@ -281,7 +283,15 @@ def main() -> int:
         _start_background_engines()
         window = MainWindow()
         window.show()
+        window.restaurar_disposicion()
         app.exec()
+        # La ventana se cerro con WA_DeleteOnClose: su borrado quedo encolado
+        # y se procesa aca, antes de apagar los motores, para que ningun
+        # timer suyo corra contra streams o una base que se estan cerrando.
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        # Los hilos de render dibujan sobre QImage: se paran antes que los
+        # streams, con la QApplication todavia viva. Se recrea al re-login.
+        render_pool.detener()
         _stop_background_engines()
 
         if not window.logout_requested:

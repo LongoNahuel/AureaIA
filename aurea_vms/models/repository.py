@@ -5,6 +5,7 @@ la sesion (sirven como DTOs de solo lectura fuera del `with`).
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import cache
@@ -25,6 +26,7 @@ from aurea_vms.models.device import Device
 from aurea_vms.models.errors import DuplicateError, RepositoryError
 from aurea_vms.models.media_asset import MediaAsset
 from aurea_vms.models.site import Site
+from aurea_vms.models.ui_layout import UiLayout
 from aurea_vms.models.user import User
 from aurea_vms.models.zone import Zone
 
@@ -610,6 +612,25 @@ def delete_user(user_id: int) -> None:
 
 def update_user(user_id: int, **fields: object) -> None:
     _update(User, user_id, fields)
+
+
+def get_ui_layout(user_id: int) -> UiLayout | None:
+    with get_session() as session:
+        return session.query(UiLayout).filter(UiLayout.user_id == user_id).one_or_none()
+
+
+def save_ui_layout(user_id: int, schema_version: int, data: dict) -> None:
+    """Guarda (o reemplaza) la disposicion de ventanas del usuario. Una fila
+    por usuario (UNIQUE): si dos instancias guardan a la vez, la segunda
+    levanta DuplicateError y la que llama lo loguea; gana la primera."""
+    with _escritura() as session:
+        fila = session.query(UiLayout).filter(UiLayout.user_id == user_id).one_or_none()
+        if fila is None:
+            fila = UiLayout(user_id=user_id)
+            session.add(fila)
+        fila.schema_version = schema_version
+        fila.data = data
+        fila.updated_at = time.time()
 
 
 def sumar_intento_fallido(user_id: int) -> int:

@@ -49,7 +49,7 @@ _SessionLocal: sessionmaker[Session] | None = None
 
 
 def importar_modelos() -> None:
-    """Registra las 8 tablas en Base.metadata.
+    """Registra las 9 tablas en Base.metadata.
 
     Los modelos no se importan en ningun lado por su valor: se importan para
     que el mapeo declarativo corra. Lo necesitan el autogenerate de Alembic
@@ -63,6 +63,7 @@ def importar_modelos() -> None:
         device,
         media_asset,
         site,
+        ui_layout,
         user,
         zone,
     )

@@ -23,7 +23,7 @@ completa de la grilla. Todas las vistas consumen el flujo principal.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -92,6 +92,10 @@ class _InsightCard(QFrame):
 
 
 class LiveViewModule(QWidget):
+    # La grilla o una camara cambiaron: la ventana principal reprograma el
+    # guardado de la disposicion (Fase V4, ui/layout_store.py).
+    estado_cambiado = Signal()
+
     def __init__(self, parent: QWidget | None = None, *, smart_only: bool = False) -> None:
         super().__init__(parent)
         self._smart_only = smart_only
@@ -105,6 +109,7 @@ class LiveViewModule(QWidget):
             tile.clicked.connect(self._on_tile_clicked)
             tile.doubleClicked.connect(self._on_tile_double_clicked)
             tile.device_assigned.connect(lambda _device_id, t=tile: self._on_tile_device_changed(t))
+            tile.device_assigned.connect(self._avisar_cambio)
 
         self.device_tree = DeviceTreeWidget(self)
         self.device_tree.device_double_clicked.connect(self._assign_to_selected)
@@ -504,7 +509,37 @@ class LiveViewModule(QWidget):
 
     # --- layout de la grilla -------------------------------------------------
 
+    def get_state(self) -> dict:
+        """Lo que se guarda de esta vista en la disposicion del usuario: la
+        grilla elegida y la camara de cada recuadro (None = vacio)."""
+        return {"grilla": self._grilla_elegida(), "camaras": [t.device_id for t in self.tiles]}
+
+    def set_state(self, estado: dict) -> None:
+        """Lo inverso de get_state. Lo que no se entiende se ignora: una
+        grilla fuera de rango deja la de siempre, y una camara que ya no
+        existe deja el recuadro vacio (assign_device no la encuentra)."""
+        grilla = estado.get("grilla")
+        if isinstance(grilla, int) and 0 <= grilla < len(GRID_LAYOUTS):
+            self.layout_buttons.buttons()[grilla].setChecked(True)
+            self._apply_grid(*GRID_LAYOUTS[grilla])
+        camaras = estado.get("camaras")
+        if isinstance(camaras, list):
+            for tile, device_id in zip(self.tiles, camaras, strict=False):
+                if isinstance(device_id, int) and not isinstance(device_id, bool):
+                    tile.assign_device(device_id)
+
+    def _avisar_cambio(self, _device_id: object = None) -> None:
+        # Metodo y no lambda: una lambda que captura self en una signal de
+        # un hijo arma un ciclo por C++ que el GC no ve (ver MainWindow).
+        self.estado_cambiado.emit()
+
+    def _grilla_elegida(self) -> int:
+        checked = self.layout_buttons.checkedButton()
+        buttons = self.layout_buttons.buttons()
+        return buttons.index(checked) if checked in buttons else DEFAULT_LAYOUT_INDEX
+
     def _apply_grid(self, rows: int, cols: int) -> None:
+        self.estado_cambiado.emit()
         while self.grid_layout.count():
             self.grid_layout.takeAt(0)
 

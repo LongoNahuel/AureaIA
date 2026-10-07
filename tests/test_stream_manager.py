@@ -19,6 +19,7 @@ class FakeWorker:
         self.kind = kind
         self.started = False
         self.stopped = False
+        self.joins: list[float | None] = []
 
     def start(self) -> None:
         self.started = True
@@ -27,7 +28,12 @@ class FakeWorker:
         self.stopped = True
 
     def join(self, timeout: float | None = None) -> None:
-        pass
+        self.joins.append(timeout)
+
+    def is_alive(self) -> bool:
+        # Un worker detenido sigue vivo hasta que alguien lo espera: es el
+        # caso que importa (cerrando su captura).
+        return not self.joins
 
 
 @pytest.fixture()
@@ -69,6 +75,41 @@ class TestRefCounting:
         manager.release(device.id)
         assert worker.stopped
         assert manager.get_worker(device.id) is None
+
+    def test_release_no_espera_al_worker(self, manager):
+        """Fase V1: release() corre en la GUI al cerrar una vista. Antes
+        hacia join(1 s) por camara: cerrar una grilla de 16 congelaba la
+        interfaz."""
+        device = _device()
+        worker = manager.acquire(device)
+
+        manager.release(device.id)
+
+        assert worker.stopped
+        assert worker.joins == []
+
+    def test_stop_all_espera_tambien_a_los_soltados(self, manager):
+        """Logout->login: el worker soltado sin join puede seguir cerrando
+        su captura; stop_all lo espera igual, si no quedan sockets de la
+        sesion anterior."""
+        soltado = manager.acquire(_device(1))
+        manager.release(1)
+        borrado = manager.acquire(_device(2))
+        manager.stop_device(2)
+        activo = manager.acquire(_device(3))
+
+        manager.stop_all()
+
+        assert soltado.joins and borrado.joins and activo.joins
+        assert manager._parando == []
+
+    def test_los_ya_terminados_no_se_acumulan(self, manager):
+        for _ in range(3):
+            worker = manager.acquire(_device())
+            manager.release(1)
+            worker.join(0)  # termino
+
+        assert len(manager._parando) == 1  # solo el ultimo, recien agregado
 
     def test_release_de_algo_no_adquirido_es_noop(self, manager):
         manager.release(99)  # no debe explotar
