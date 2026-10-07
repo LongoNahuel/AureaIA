@@ -19,6 +19,15 @@ Pre/post-procesamiento del export oficial (mmdeploy, "onnx_sdk"):
 - salida SimCC: por punto, un vector para X (384) y otro para Y (512) a
   resolucion x2; la posicion es el argmax / 2 y la confianza el menor de
   los dos maximos.
+
+Hay dos modelos con ese mismo contrato (`PoseModel`):
+- BODY_MODEL, RTMPose-s, 17 puntos (22 MB, versionado): golpes a pantallas.
+- WHOLEBODY_MODEL, RTMW-s (OpenMMLab, Apache 2.0), 133 puntos: cuerpo,
+  pies, 68 de la cara y 21 por mano (62 MB, se baja la primera vez que se
+  usa). Lo usa el consumo de sustancias: con la camara cenital, la mano
+  sobre la nariz tapa la cara y el modelo de cuerpo pierde la muñeca;
+  el whole-body sigue ubicando los dedos (medido sobre el clip de la
+  demo, ver core/analytics/consumption_analyzer.py).
 """
 
 from __future__ import annotations
@@ -36,19 +45,36 @@ from aurea_vms.core.analytics.object_detector_backend import adquirir_sesion, so
 
 logger = logging.getLogger(__name__)
 
-MODEL_FILENAME = "rtmpose-s_simcc-body7_256x192.onnx"
-# El release oficial viene zipeado (end2end.onnx adentro); solo se baja si
-# el modelo no esta en data/models ni en el bundle (ver model_assets).
-MODEL_ZIP_URL = (
+
+@dataclass(frozen=True)
+class PoseModel:
+    """Un export oficial "onnx_sdk" de OpenMMLab. El release viene zipeado
+    (end2end.onnx adentro); solo se baja si el modelo no esta en data/models
+    ni en el bundle (ver model_assets)."""
+
+    filename: str
+    zip_url: str
+
+
+BODY_MODEL = PoseModel(
+    "rtmpose-s_simcc-body7_256x192.onnx",
     "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/"
-    "rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.zip"
+    "rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.zip",
 )
+WHOLEBODY_MODEL = PoseModel(
+    "rtmw-dw-m-s_simcc-cocktail14_256x192.onnx",
+    "https://download.openmmlab.com/mmpose/v1/projects/rtmw/onnx_sdk/"
+    "rtmw-dw-m-s_simcc-cocktail14_270e-256x192_20231122.zip",
+)
+MODEL_FILENAME = BODY_MODEL.filename
 INPUT_W, INPUT_H = 192, 256
 SIMCC_SPLIT = 2.0
 MEAN = np.array([123.675, 116.28, 103.53], dtype=np.float32)  # RGB
 STD = np.array([58.395, 57.12, 57.375], dtype=np.float32)
 
-# Indices COCO-17.
+# Indices COCO-17 (los 17 primeros tambien en el whole-body).
+NOSE = 0
+LEFT_SHOULDER, RIGHT_SHOULDER = 5, 6
 LEFT_WRIST, RIGHT_WRIST = 9, 10
 LEFT_KNEE, RIGHT_KNEE = 13, 14
 LEFT_ANKLE, RIGHT_ANKLE = 15, 16
@@ -56,10 +82,20 @@ WRISTS = (LEFT_WRIST, RIGHT_WRIST)
 KNEES = (LEFT_KNEE, RIGHT_KNEE)
 ANKLES = (LEFT_ANKLE, RIGHT_ANKLE)
 LEG_JOINTS = KNEES + ANKLES
+# Indices COCO-WholeBody (133): 23-90 cara, 91-111 mano izquierda,
+# 112-132 mano derecha.
+FACE_POINTS = tuple(range(23, 91))
+LEFT_HAND = tuple(range(91, 112))
+RIGHT_HAND = tuple(range(112, 133))
 
 
 def _ensure_model() -> str:
-    path = ensure_model(MODEL_FILENAME, MODEL_ZIP_URL)
+    """El modelo de cuerpo, el de siempre (los tests lo reemplazan)."""
+    return _ensure_pose_model(BODY_MODEL)
+
+
+def _ensure_pose_model(model: PoseModel) -> str:
+    path = ensure_model(model.filename, model.zip_url)
     if zipfile.is_zipfile(path):
         # Ultimo recurso de model_assets: se bajo el zip del release con el
         # nombre del .onnx. Se extrae el modelo en el mismo lugar.
@@ -106,8 +142,8 @@ class PoseEstimator:
     """Sesion compartida entre analizadores (ver object_detector_backend:
     una sesion por archivo de modelo; `run()` es re-entrante)."""
 
-    def __init__(self) -> None:
-        self._model_path = _ensure_model()
+    def __init__(self, model: PoseModel = BODY_MODEL) -> None:
+        self._model_path = _ensure_model() if model == BODY_MODEL else _ensure_pose_model(model)
         self._session = adquirir_sesion(self._model_path)
         try:
             self._input_name = self._session.get_inputs()[0].name

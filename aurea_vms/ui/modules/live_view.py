@@ -45,6 +45,7 @@ from qfluentwidgets import (
 )
 
 from aurea_vms.core import app_state
+from aurea_vms.core.analytics.registry import VISIBLE_ANALYZERS
 from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.models import repository
@@ -160,6 +161,8 @@ class LiveViewModule(QWidget):
             self.face_strip = FaceStrip(right_side)
             self.face_strip.face_selected.connect(self._focus_device_faces)
             right_layout.addWidget(self.face_strip)
+            # Deteccion Facial esta oculta (una sola analitica visible, 30/09).
+            self.face_strip.setVisible("face_detection" in VISIBLE_ANALYZERS)
         right_layout.addLayout(mode_row)
         if smart_only:
             # Dos paginas: el video con su panel lateral, o el dashboard con
@@ -257,7 +260,7 @@ class LiveViewModule(QWidget):
         # Orden fijo de submenu: mismo orden en el que aparecen las pestañas del
         # pivot sea cual sea el orden en que la DB devuelva las configs.
         self._analyzer_panels: dict[str, tuple[str, QWidget]] = {
-            "monitor_tamper": ("Incidentes", self.monitor_panel),
+            "monitor_tamper": ("Incidentes en casinos", self.monitor_panel),
             "people_counting": ("Conteo de Personas", self.people_count_panel),
             "line_crossing": ("Cruce de Línea", self.line_crossing_panel),
             "face_detection": ("Detección Facial", self.face_gallery),
@@ -453,7 +456,9 @@ class LiveViewModule(QWidget):
                 if config.enabled
             }
         # Orden fijo del pivot (definido en self._analyzer_panels), no el de la DB.
-        enabled_names = [name for name in self._analyzer_panels if name in enabled]
+        enabled_names = [
+            name for name in self._analyzer_panels if name in enabled and name in VISIBLE_ANALYZERS
+        ]
         self._rebuild_analyzer_pivot(enabled_names)
 
     # --- expandir/colapsar (doble click) -------------------------------------------------

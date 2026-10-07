@@ -137,6 +137,21 @@ class TestIncidentes:
         assert despues["estado"] == "normal"
         assert despues["ultimo_golpe"] == {"t": 0.0, "zona": 0, "motivo": "patada"}
 
+    def test_el_inicio_del_incidente_pasa_el_filtro_de_confianza_de_la_regla(self):
+        """Hallazgo de Daniel (sesiones/2026-09-24.md): el trigger salia con la
+        confianza del keypoint y una regla con min_confidence 0,5 descartaba
+        una patada de 0,4; como sale una sola vez, no alarmaba nunca."""
+        from types import SimpleNamespace
+
+        from aurea_vms.core.alarm_engine import AlarmEngine
+
+        analyzer, _ = _analyzer([_patada(score=0.4)])
+        result = analyzer.process_frame(FRAME, 0.0)
+        rule = SimpleNamespace(object_classes=[], min_confidence=0.5)
+
+        assert result.detections[0].confidence == pytest.approx(0.4)
+        assert AlarmEngine._best_match(rule, result.triggers) is not None
+
     def test_confirmacion_exige_muestras_seguidas(self):
         analyzer, _ = _analyzer([_patada(), _patada()], confirmation_frames=2)
 

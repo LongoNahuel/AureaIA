@@ -1,0 +1,159 @@
+CAMBIOS PARA DANIEL — rama ruleta-no-va-mas-manos (Nahuel, 24/09 al 02/10/2026)
+==============================================================================
+
+Daniel: esta rama junta todo lo de Nahuel desde el 24/09. Casi todo es
+front y analiticas, pero hay 5 archivos tuyos que se tocaron y necesitan
+tu revision antes de pasar a main. Abajo: que cambio en cada uno y por que,
+lo que queda propuesto para vos (no esta en la rama), y como probar.
+
+Pull request:
+https://github.com/LongoNahuel/AureaIA/compare/main...ruleta-no-va-mas-manos
+
+
+1. ARCHIVOS TUYOS QUE CAMBIARON (revisar: aprobar o rehacer a tu manera)
+------------------------------------------------------------------------
+
+1.1 aurea_vms/core/events.py  (+5 lineas)
+    - DetectionEvent tiene un campo nuevo: frame_ts: float = 0.0
+    - Es el "captured_at" del cuadro sobre el que se calculo el evento (el
+      mismo valor que da StreamWorker.get_latest_frame_with_timestamp).
+    - Para que sirve: el tile de video dibuja las marcas sobre ESE cuadro y
+      no sobre el siguiente (antes el recuadro de una mano rapida quedaba un
+      cuadro atras).
+    - Compatible: tiene default; ningun otro emisor de eventos cambia.
+
+1.2 aurea_vms/core/analytics_engine.py  (+22 lineas)
+    - El DetectionEvent que publica el worker lleva frame_ts=self._last_frame_ts.
+    - AnalyticsWorker.request_reset(): marca un pedido; en _analyze(), ANTES
+      de procesar el proximo cuadro, el worker llama a
+      self._analyzer.reset_counters() (en su propio hilo; el analizador no es
+      thread-safe). Si falla se loguea y sigue.
+    - AnalyticsEngine.reset_counters(config_id) -> bool: dispara ese pedido;
+      False si el worker no esta corriendo.
+    - Lo usa el boton "Limpiar incidentes" de la Vista Inteligente.
+    - Va junto con un hook nuevo en core/analytics/base.py:
+      Analyzer.reset_counters() (no-op por defecto; lo implementan los
+      analizadores de Incidentes).
+
+1.3 aurea_vms/models/repository.py  (+51 lineas, nada existente cambia de comportamiento)
+    - list_alarm_events(...): parametros opcionales nuevos object_class,
+      status y offset (paginado del historico).
+    - count_alarm_events(...): parametro opcional nuevo object_class.
+    - count_alarm_events_by_device(site_id=None) -> {device_id: cantidad}
+      (una consulta agrupada; el filtro por canal de Alarmas muestra cuantos
+      incidentes tiene cada camara).
+    - list_alarm_event_classes() -> tipos de incidente del historico.
+    - acknowledge_pending_alarm_events(device_id) -> int: pasa a
+      "reconocida" las alarmas "nueva" de una camara (un UPDATE). Lo usa
+      "Limpiar incidentes". El historico no se borra.
+    - El import de alarm_event agrega STATUS_NEW y STATUS_ACKNOWLEDGED.
+
+1.4 aurea_vms/main.py  (+10 lineas)
+    - En _start_enabled_analytics, antes de analytics_engine.start(...), se
+      llama a incident_rules.ensure_incident_rule(config).
+    - Motivo: un incidente solo queda en el historico (con captura y clip)
+      si hay una regla de alarma para su camara; habia una sola (la de la
+      #5) y los incidentes de la ruleta no se guardaban. Si una camara con
+      "Incidentes en casinos" no tiene ninguna regla de esa analitica
+      (propia o de "todas las camaras"), se crea una con todas las clases y
+      "guardar clip". Nunca levanta (no frena el arranque).
+    - El modulo nuevo es aurea_vms/core/incident_rules.py; usa solo
+      repository.list_alarm_rules y repository.add_alarm_rule (existentes).
+
+1.5 aurea_vms/config/settings.py  (display_fps: 25 -> 60)
+    - El tile de video sondeaba a 25 fps fijos: un stream (y sus marcas) de
+      60 fps se veia a 25. Solo redibuja si hay cuadro o marcas nuevas, asi
+      que sondear mas seguido casi no cuesta.
+
+1.6 Tests tuyos que se ajustaron
+    - tests/test_monitor_tamper_alarma.py: sale del xfail (la alarma perdida
+      ya estaba arreglada en la analitica).
+    - tests/test_analytics_config_module.py: el caso del engine que no
+      arranca usa Incidentes en modo BlackJack (Cruce de linea ya no se
+      muestra en la interfaz).
+    - tests/test_migraciones_seguras.py: CABEZA_REAL se toma de
+      ScriptDirectory(...).get_current_head() en vez de un string fijo (con
+      cualquier revision nueva, la 0099 de prueba dejaba dos cabezas).
+
+
+2. PROPUESTAS PARA VOS (NO estan en la rama)
+--------------------------------------------
+
+2.1 Revision de datos para las analiticas ocultas (era la 0009).
+    La interfaz ahora muestra una sola analitica ("Incidentes en
+    casinos"). Conteo, Cruce y Rostros siguen implementadas pero ocultas:
+    si en una base vieja estan prendidas, main._start_enabled_analytics las
+    arranca y corren sin que nadie las vea ni las pueda apagar. Propuesta:
+    una revision solo de datos que las apague con una marca (y un downgrade
+    que prenda solo las marcadas). Se habia escrito como
+    0009_una_sola_analitica; se saco de la rama para que la decidas vos.
+
+2.2 Columna alarm_events.details (JSON), por Alembic.
+    Para guardar donde estaba la ficha (bbox) y la zona de cada incidente,
+    y marcarlo sobre la captura en el detalle de Alarmas. Hoy la alarma no
+    tiene donde guardarlo.
+
+2.3 onnxruntime: session.intra_op.allow_spinning = 0
+    En object_detector_backend._crear_sesion. Medido el 02/10: con la
+    deteccion de manos corriendo, varios hilos de ONNX quedan al 20-30 %
+    "girando" mientras esperan; el VMS llego a 500-550 % de CPU.
+
+2.4 Bundle: el modelo RTMW (cuerpo entero, 62 MB)
+    Ahora lo usa tambien el modo ruleta (manos de 21 puntos). En el .spec
+    se baja la primera vez que se usa: si la demo corre sin internet,
+    conviene empaquetarlo.
+
+
+3. LA BASE DE DESARROLLO DE NAHUEL
+----------------------------------
+
+- Estaba en la revision 0009. Al sacar la 0009 de la rama se llevo a 0008
+  con "alembic stamp 0008_normaliza_adoptadas": cambia solo la revision
+  registrada; los datos quedan igual (las 5 analiticas ocultas siguen
+  apagadas, con la marca "oculta_0009" en sus params).
+- Backup previo: data/backups/aurea_vms-0009_antes_de_stamp-20261002-225440.*
+- Tu base no se toco (nunca tuvo la 0009).
+
+
+4. LO NUEVO DE FRONT Y ANALITICAS (resumen; detalle en docs/ACTUALIZACION_2026-10-02.md)
+----------------------------------------------------------------------------------
+
+- Una sola analitica visible: "Incidentes en casinos" (golpes al monitor,
+  consumo de sustancias, ruleta; BlackJack pendiente de video).
+- Ruleta: rueda y velocidad del plato; la bola seguida en la pista; "no va
+  mas" automatico cuando la bola baja de 200 grados/s (configurable); la
+  rueda marca la jugada (re-impulso o cambio de sentido); paño armado hasta
+  que el crupier marca: mover fichas en ese lapso dispara la alarma
+  "fichas_tras_no_va_mas".
+- Manos: crupier (quien toca la rueda) y jugadores, 21 puntos por mano con
+  RTMW donde importa, recuadro por mano seguido cuadro a cuadro (flujo
+  optico) hasta 60 fps; la deteccion completa corre en su propio hilo.
+- Alarmas: boton "Limpiar incidentes"; modulo rehecho con filtros por
+  canal/incidente/estado, historico paginado y detalle con el clip
+  reproducido adentro.
+- Rig de demo: tools/demo/start_fake_cams.sh publica los 7 clips sin
+  recodificar (cam1..cam7 = dispositivos #3..#10).
+
+
+5. COMO PROBAR
+--------------
+
+- pytest: 878 passed; ruff limpio.
+- Video simulado: tools/demo/start_fake_cams.sh (levanta mediamtx si falta).
+- Ruleta sobre los clips:
+    python tools/ruleta/linea_de_tiempo.py tools/demo/media/cam7.mp4 \
+        --rueda 1167.7 1063.7 442.4 556.1 87.3 --zona 1004 24 404 668 --desde 44
+  (cero alertas falsas en RA-04 y AR 4171)
+    python tools/ruleta/past_post_simulado.py ... (ver el docstring)
+  (la alarma sale donde se puso la ficha)
+- Bitacoras con mediciones: sesiones/2026-09-30.md y sesiones/2026-10-02.md.
+
+
+6. PENDIENTES CONOCIDOS
+-----------------------
+
+- AR 4171: el crupier nunca se identifica (la bola ya viene lanzada y no
+  toca la rueda). Sin crupier, con la bola girando, cualquier mano en el
+  paño es alerta: sale un incidente por vuelta del clip. Falta poder marcar
+  el puesto del crupier en la configuracion.
+- Con 15 detecciones completas de manos por segundo el CPU satura; 5 alcanza.

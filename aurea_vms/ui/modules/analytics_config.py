@@ -26,7 +26,8 @@ from qfluentwidgets import (
     TableWidget,
 )
 
-from aurea_vms.core.analytics.registry import ANALYZER_DISPLAY_NAMES, AVAILABLE_ANALYZERS
+from aurea_vms.core import incident_rules
+from aurea_vms.core.analytics.registry import ANALYZER_DISPLAY_NAMES, VISIBLE_ANALYZERS
 from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import DetectionEvent
@@ -166,7 +167,7 @@ class AnalyticsConfigModule(QWidget):
         self.device_selector.currentIndexChanged.connect(self._on_device_changed)
 
         self.table = TableWidget(self)
-        self.table.setRowCount(len(AVAILABLE_ANALYZERS))
+        self.table.setRowCount(len(VISIBLE_ANALYZERS))
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(["Analizador", "Habilitado", "Estado", ""])
         header = self.table.horizontalHeader()
@@ -181,7 +182,7 @@ class AnalyticsConfigModule(QWidget):
         self.table.setBorderVisible(True)
         self.table.setBorderRadius(6)
 
-        for row, analyzer_name in enumerate(AVAILABLE_ANALYZERS):
+        for row, analyzer_name in enumerate(VISIBLE_ANALYZERS):
             self.table.setItem(row, 0, QTableWidgetItem(ANALYZER_DISPLAY_NAMES[analyzer_name]))
 
             switch = SwitchButton()
@@ -208,7 +209,7 @@ class AnalyticsConfigModule(QWidget):
         self.dashboard_grid.setSpacing(8)
         dashboard_layout.addLayout(self.dashboard_grid)
         self._dashboard_cards: dict[str, _DashboardCard] = {}
-        for index, analyzer_name in enumerate(AVAILABLE_ANALYZERS):
+        for index, analyzer_name in enumerate(VISIBLE_ANALYZERS):
             card = _DashboardCard(
                 ANALYZER_DISPLAY_NAMES[analyzer_name],
                 ANALYTIC_ACCENTS.get(analyzer_name, "#64748b"),
@@ -219,6 +220,8 @@ class AnalyticsConfigModule(QWidget):
             self.dashboard_grid.addWidget(card, index // 2, index % 2)
         self.heatmap_widget = _HeatmapWidget(self.dashboard_card)
         self.dashboard_grid.addWidget(self.heatmap_widget, 2, 0, 1, 2)
+        # El mapa de calor es de Conteo de Personas.
+        self.heatmap_widget.setVisible("people_counting" in VISIBLE_ANALYZERS)
 
         top_row = QHBoxLayout()
         top_row.addWidget(BodyLabel("Cámara:"))
@@ -300,7 +303,7 @@ class AnalyticsConfigModule(QWidget):
             else {}
         )
 
-        for row, analyzer_name in enumerate(AVAILABLE_ANALYZERS):
+        for row, analyzer_name in enumerate(VISIBLE_ANALYZERS):
             config = configs.get(analyzer_name)
             switch: SwitchButton = self.table.cellWidget(row, 1)
             switch.blockSignals(True)
@@ -334,7 +337,7 @@ class AnalyticsConfigModule(QWidget):
         if device_id is None:
             return
         configs = {c.analyzer_name: c for c in repository.list_analytics_configs(device_id)}
-        for row, analyzer_name in enumerate(AVAILABLE_ANALYZERS):
+        for row, analyzer_name in enumerate(VISIBLE_ANALYZERS):
             config = configs.get(analyzer_name)
             if config is None or not config.enabled:
                 continue
@@ -360,6 +363,7 @@ class AnalyticsConfigModule(QWidget):
             if device is not None:
                 config = repository.get_analytics_config_for(device_id, analyzer_name)
                 try:
+                    incident_rules.ensure_incident_rule(config)
                     analytics_engine.start(config, device)
                 except Exception as exc:  # noqa: BLE001 - config inválido o modelo no descargable
                     # Si quedara enabled=True en la DB, el próximo arranque
@@ -388,6 +392,7 @@ class AnalyticsConfigModule(QWidget):
         if dialog.exec():
             config = dialog.save()
             if config.enabled:
+                incident_rules.ensure_incident_rule(config)
                 analytics_engine.start(config, device)
             else:
                 analytics_engine.stop(config.id)
@@ -414,7 +419,7 @@ class AnalyticsConfigModule(QWidget):
             return
         value = metrics.get(spec[0])
         if name == "monitor_tamper":
-            value = 1.0 if metrics.get("estado") == "alerta" else 0.0
+            value = {"alerta": 1.0, "previa": 0.5}.get(metrics.get("estado"), 0.0)
         if not isinstance(value, (int, float)):
             return
         if name == "line_crossing":
@@ -425,11 +430,28 @@ class AnalyticsConfigModule(QWidget):
 
     @staticmethod
     def _card_content(analyzer_name: str, metrics: dict) -> tuple[str, str]:
+        if analyzer_name == "monitor_tamper" and metrics.get("modo") == "ruleta":
+            speed = metrics.get("velocidad_deg_s")
+            if speed is None:
+                return "Buscando la rueda", "La rueda tiene que estar girando y a la vista"
+            return f"{speed:.0f} °/s", (
+                f"{metrics.get('rpm', 0):.1f} rpm · {metrics.get('sentido') or '—'} · "
+                f"{metrics.get('fichas_movidas', 0)} movimientos de fichas"
+            )
         if analyzer_name == "monitor_tamper":
-            alert = metrics.get("estado") == "alerta"
+            status = metrics.get("estado")
             zones = metrics.get("zonas") or []
-            return ("INCIDENTE DETECTADO" if alert else "Sin incidentes"), (
-                f"{metrics.get('incidentes', 0)} incidentes · {len(zones)} pantallas vigiladas"
+            watched = (
+                "puestos vigilados"
+                if metrics.get("zona_tipo") == "puesto"
+                else "pantallas vigiladas"
+            )
+            title = {"alerta": "INCIDENTE DETECTADO", "previa": "ALERTA PREVIA"}.get(
+                status, "Sin incidentes"
+            )
+            return (
+                title,
+                f"{metrics.get('incidentes', 0)} incidentes · {len(zones)} {watched}",
             )
         if analyzer_name == "people_counting":
             occupancy = int(metrics.get("occupancy", 0))

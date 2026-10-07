@@ -24,7 +24,14 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 from qfluentwidgets import setThemeColor
 
 from aurea_vms.config.settings import settings
-from aurea_vms.core import app_prefs, auth, clip_recorder, credential_store, retention
+from aurea_vms.core import (
+    app_prefs,
+    auth,
+    clip_recorder,
+    credential_store,
+    incident_rules,
+    retention,
+)
 from aurea_vms.core.alarm_engine import alarm_engine
 from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.core.logging_setup import setup_logging
@@ -83,6 +90,7 @@ def _start_enabled_analytics() -> None:
         if device is None:
             continue
         try:
+            incident_rules.ensure_incident_rule(config)
             analytics_engine.start(config, device)
         except Exception:  # noqa: BLE001 - un config roto no debe impedir el arranque
             logging.getLogger(__name__).exception(

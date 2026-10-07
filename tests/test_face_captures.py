@@ -196,6 +196,34 @@ class TestTiraDeRostros:
 
         assert strip.list_widget.count() == 1
 
+    def test_la_escoba_limpia_todas_las_capturas(self, strip, qtbot):
+        """Antes el clic no borraba nada: clicked(bool) llegaba a
+        face_registry.clear como device_id=False."""
+        from PySide6.QtCore import Qt
+
+        from aurea_vms.ui.face_registry import face_registry
+
+        strip._on_detection(self._event(1, self._shot(1), self._shot(2)))
+        strip._on_detection(self._event(2, self._shot(1)))
+        assert strip.list_widget.count() == 3
+
+        qtbot.mouseClick(strip.clear_button, Qt.MouseButton.LeftButton)
+
+        assert face_registry.capture_count() == 0
+        assert strip.list_widget.count() == 0
+        assert strip.count_label.text() == ""
+        assert strip.empty_label.isVisibleTo(strip)
+
+    def test_despues_de_limpiar_vuelven_a_aparecer_las_nuevas(self, strip, qtbot):
+        from PySide6.QtCore import Qt
+
+        strip._on_detection(self._event(1, self._shot(1)))
+        qtbot.mouseClick(strip.clear_button, Qt.MouseButton.LeftButton)
+        strip._on_detection(self._event(1, self._shot(7), timestamp=5.0))
+
+        assert strip.list_widget.count() == 1
+        assert strip.count_label.text() == "1 captura"
+
     def test_ignora_otras_analiticas(self, strip):
         strip._on_detection(DetectionEvent(1, "people_counting", 0.0, metrics={"occupancy": 3}))
         assert strip.list_widget.count() == 0

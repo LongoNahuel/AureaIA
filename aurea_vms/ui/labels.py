@@ -14,7 +14,18 @@ CLASS_LABELS_ES: dict[str, str] = {
     "truck": "Camión",
     "patada_monitor": "Patada al monitor",
     "golpe_monitor": "Golpe al monitor",
+    "consumo_sustancias": "Consumo de sustancias",
+    "preparacion_consumo": "Preparación de consumo (alerta previa)",
+    "fichas_movidas": "Fichas movidas",
+    "fichas_tras_no_va_mas": "Fichas tras el no va más",
     "cara": "Cara",
+}
+
+# Cambio del plato de la ruleta que abrio una jugada nueva ("la rueda ...").
+ROTOR_EVENT_ES: dict[str, str] = {
+    "sentido": "cambió de sentido",
+    "impulso": "se re-impulsó",
+    "frenado": "frenó",
 }
 
 DEVICE_STATUS_ES: dict[str, str] = {
@@ -26,6 +37,10 @@ DEVICE_STATUS_ES: dict[str, str] = {
 
 def display_class(label: str) -> str:
     return CLASS_LABELS_ES.get(label, label)
+
+
+def display_rotor_event(kind: str | None) -> str:
+    return ROTOR_EVENT_ES.get(kind or "", "se movió")
 
 
 def display_status(status: str) -> str:

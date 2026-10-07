@@ -48,6 +48,9 @@ tools/demo/mediamtx
 tools/demo/mediamtx.exe
 # Clips que publican las camaras falsas (pesados, cada uno trae los suyos).
 tools/demo/media/
+# Pose whole-body del consumo de sustancias (62 MB): se baja sola la primera
+# vez que se usa (core/analytics/pose_backend.py, WHOLEBODY_MODEL).
+data/models/rtmw-*.onnx
 auto.crt
 auto.key
 

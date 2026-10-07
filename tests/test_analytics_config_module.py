@@ -87,8 +87,8 @@ class TestSwitchDeHabilitado:
     def test_si_el_engine_no_arranca_el_switch_revierte_y_avisa(
         self, qtbot, temp_db, fake_engine, monkeypatch
     ):
-        """Un config prendible pero inutilizable (ej. line_crossing guardado
-        con line=None por una version vieja del dialogo) no debe dejar
+        """Un config prendible pero inutilizable (ej. Incidentes en casinos en
+        modo BlackJack, que todavia no esta disponible) no debe dejar
         enabled=True en la DB: eso rompe el proximo arranque en
         _start_enabled_analytics."""
         warnings: list[tuple[str, str]] = []
@@ -97,21 +97,23 @@ class TestSwitchDeHabilitado:
         )
 
         def failing_start(config, device):
-            raise ValueError("necesita una línea configurada")
+            raise ValueError("BlackJack todavía no está disponible")
 
         fake_engine.start = failing_start
 
         device = _device()
-        config = repository.upsert_analytics_config(device.id, "line_crossing", enabled=False)
+        config = repository.upsert_analytics_config(
+            device.id, "monitor_tamper", enabled=False, params={"modo": "blackjack"}
+        )
         module = _module_with_device(qtbot, device)
-        row = ac_module.AVAILABLE_ANALYZERS.index("line_crossing")
+        row = ac_module.VISIBLE_ANALYZERS.index("monitor_tamper")
 
         module.table.cellWidget(row, 1).setChecked(True)
 
         assert repository.get_analytics_config(config.id).enabled is False
         assert module.table.cellWidget(row, 1).isChecked() is False
         assert len(warnings) == 1
-        assert "necesita una línea configurada" in warnings[0][1]
+        assert "BlackJack todavía no está disponible" in warnings[0][1]
 
 
 class TestValidacionDeCruceDeLinea:

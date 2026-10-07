@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import math
 import time
+from collections import deque
 
 import cv2
 import numpy as np
@@ -36,12 +37,13 @@ from aurea_vms.core.stream_manager import stream_manager
 from aurea_vms.models import repository
 from aurea_vms.models.device import Device
 from aurea_vms.ui import icons
-from aurea_vms.ui.labels import display_class
+from aurea_vms.ui.labels import display_class, display_rotor_event
 from aurea_vms.ui.theme import STATUS_COLORS
 from aurea_vms.ui.widgets.analytics_visuals import (
     STALE_AFTER_S,
     STATUS_CRITICAL,
     STATUS_OK,
+    STATUS_WARNING,
     draw_heatmap,
 )
 from aurea_vms.ui.widgets.device_tree import DEVICE_ID_MIME
@@ -73,8 +75,44 @@ SHORT_NAMES = {
 }
 # Cada cuanto se relee la preferencia de marca (ver _branding_enabled).
 BRANDING_REFRESH_S = 2.0
-# Motivo de un golpe a un monitor, para el rotulo de la zona.
-MOTIVE_TEXT = {"patada": "patada", "golpe_mano": "mano"}
+# Motivo de un incidente, para el rotulo de la zona y el cartel.
+MOTIVE_TEXT = {
+    "patada": "patada",
+    "golpe_mano": "mano",
+    "consumo": "consumo",
+    "preparacion": "preparación",
+    "no_va_mas": "fichas tras el no va más",
+}
+# Colores de una zona de Detección de incidentes segun su estado.
+INCIDENT_STATE_COLORS = {"alerta": STATUS_CRITICAL, "previa": STATUS_WARNING}
+# Ruleta: manos en una zona de fichas, y cuanto se resalta que se movieron.
+ROULETTE_ACTIVITY = "#38bdf8"
+CHIP_FLASH_S = 3.0
+# Manos en una mesa de juego, por rol. El jugador va en el celeste de "manos
+# en la zona"; el crupier en violeta, que no se confunde con los estados de
+# las zonas (verde, celeste, ambar, rojo); sin rol todavia, neutro.
+HAND_ROLE_COLORS = {"crupier": "#c084fc", "jugador": ROULETTE_ACTIVITY, "persona": "#e5e7eb"}
+HAND_ROLE_TEXT = {"crupier": "Crupier", "jugador": "Jugador"}
+# El recuadro de la mano lo calcula la analitica (suavizado entre cuadros);
+# sin el (eventos viejos), un cuadrado de HAND_BOX_PX alrededor de la palma.
+HAND_BOX_PX = 24.0
+HAND_BOX_MIN_PX = 12.0
+# Sincronia marcas-video: el tile muestra el cuadro sobre el que se calcularon
+# las ultimas marcas (DetectionEvent.frame_ts) si es el ultimo que llego o el
+# anterior; si las marcas vienen mas atrasadas (la analitica corre a menos fps
+# que el stream, o se freno), manda el video. Nunca se muestra un cuadro mas
+# viejo que uno ya mostrado.
+SYNC_FRAMES = 2
+# Ronda de la ruleta: rotulo y color junto a la rueda.
+ROUND_STYLE = {
+    "apuestas": ("Apuestas abiertas", STATUS_OK),
+    "bola": ("Bola en juego", ROULETTE_ACTIVITY),
+    "no_va_mas": ("NO VA MÁS", STATUS_WARNING),
+    "resultado": ("Resultado · esperando la marca", STATUS_WARNING),
+}
+# Jugada nueva abierta por la rueda (el crupier freno o re-impulso el plato):
+# se avisa junto a la rueda durante NEW_GAME_FLASH_S.
+NEW_GAME_FLASH_S = 4.0
 # Cuanto dura el resaltado de la linea tras un cruce.
 LINE_FLASH_S = 1.5
 
@@ -85,16 +123,19 @@ def frame_to_pixmap(frame: np.ndarray, size: QSize) -> QPixmap:
     con el GIL tomado: medido (2026-09-23) 1,4 ms por cuadro de 2048x1536
     contra 0,04 ms ahora, porque cv2.resize/cvtColor sueltan el GIL. El
     costo total queda parecido (~2-4 ms); lo que se gana es menos GIL
-    compartido con los hilos de video y analiticas, y una imagen mas limpia:
-    INTER_AREA al achicar en vez del vecino mas cercano (FastTransformation)."""
+    compartido con los hilos de video y analiticas.
+
+    Al achicar: INTER_LINEAR, y solo por debajo de 1/4 (grillas grandes)
+    primero pyrDown, que no hace serrucho. Medido (2026-09-30) sobre la RA-04
+    (2048x1536): INTER_AREA tardaba 14-20 ms por cuadro, en el hilo de la
+    interfaz, a cualquier tamaño (a 25 fps, el 39% del hilo; a 60 no entraba);
+    INTER_LINEAR tarda 0,5-2,2 ms y hasta 1/3 difiere de INTER_AREA en menos
+    de 2 niveles de gris en promedio."""
     width, height = size.width(), size.height()
     if (width, height) != (frame.shape[1], frame.shape[0]):
-        shrinking = width < frame.shape[1]
-        frame = cv2.resize(
-            frame,
-            (width, height),
-            interpolation=cv2.INTER_AREA if shrinking else cv2.INTER_LINEAR,
-        )
+        while frame.shape[1] >= 4 * width and frame.shape[0] >= 4 * height:
+            frame = cv2.pyrDown(frame)
+        frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_LINEAR)
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     image = QImage(rgb.data, width, height, 3 * width, QImage.Format.Format_RGB888)
     return QPixmap.fromImage(image)
@@ -136,6 +177,10 @@ class VideoTile(QWidget):
         self._offline_rendered = False
         self._last_rendered_ts = 0.0
         self._last_rendered_size = QSize()
+        # Los ultimos cuadros (captured_at, cuadro) para dibujar las marcas
+        # sobre el cuadro en que se calcularon (ver SYNC_*).
+        self._recent_frames: deque[tuple[float, np.ndarray]] = deque(maxlen=SYNC_FRAMES)
+        self._shown_ts = 0.0
         # Todas las vistas usan exclusivamente el flujo principal. El
         # substream puede seguir configurado en el dispositivo para pruebas,
         # pero nunca se abre desde la interfaz.
@@ -307,7 +352,11 @@ class VideoTile(QWidget):
         if self._device is not None and event.device_id == self._device.id:
             self._latest_events[event.analyzer_name] = event
             self._invalidate_render()
-            self.update()
+            if event.frame_ts > 0 and self._smart_marks:
+                # El cuadro de estas marcas, ya: sin esperar al timer.
+                self._refresh_frame()
+            else:
+                self.update()
 
     def _invalidate_render(self) -> None:
         self._last_rendered_ts = 0.0
@@ -387,6 +436,9 @@ class VideoTile(QWidget):
                 self._render_offline_state()
             return
         self._offline_rendered = False
+        if not self._recent_frames or self._recent_frames[-1][0] != frame_ts:
+            self._recent_frames.append((frame_ts, frame))
+        frame, frame_ts = self._frame_to_show(frame, frame_ts)
         target_size = self.video_label.size()
         if frame_ts == self._last_rendered_ts and target_size == self._last_rendered_size:
             return
@@ -399,6 +451,20 @@ class VideoTile(QWidget):
         self.video_label.setPixmap(pixmap)
         self._last_rendered_ts = frame_ts
         self._last_rendered_size = target_size
+        self._shown_ts = max(self._shown_ts, frame_ts)
+
+    def _frame_to_show(self, latest: np.ndarray, latest_ts: float) -> tuple[np.ndarray, float]:
+        """El cuadro de las ultimas marcas, si es de los dos ultimos y no es
+        mas viejo que lo ya mostrado; si no, el ultimo (ver SYNC_FRAMES)."""
+        if not self._smart_marks:
+            return latest, latest_ts
+        marks_ts = max((event.frame_ts for event in self._latest_events.values()), default=0.0)
+        if marks_ts <= 0 or marks_ts < self._shown_ts:
+            return latest, latest_ts
+        for ts, frame in self._recent_frames:
+            if ts == marks_ts:
+                return frame, ts
+        return latest, latest_ts
 
     def _draw_overlay(self, pixmap: QPixmap, frame_w: int, frame_h: int) -> QPixmap:
         result = QPixmap(pixmap)
@@ -443,9 +509,60 @@ class VideoTile(QWidget):
                 else:
                     self._draw_detection_box(painter, det, scale_x, scale_y, color, analyzer_name)
 
+        self._draw_hands(painter, fresh, scale_x, scale_y, result.width())
         self._draw_incident_mark(painter, fresh, result.width(), result.height(), now)
         painter.end()
         return result
+
+    def _draw_hands(
+        self,
+        painter: QPainter,
+        fresh: dict[str, DetectionEvent],
+        scale_x: float,
+        scale_y: float,
+        width: int,
+    ) -> None:
+        """Un recuadro por mano, del color del rol: trazo fino y relleno tenue;
+        mas marcado mientras la mano toca la rueda o una zona de fichas. El
+        rol, una sola vez por persona, sobre su mano mas alta."""
+        event = fresh.get("monitor_tamper")
+        metrics = event.metrics if event is not None else {}
+        hands = metrics.get("manos") or []
+        if not hands:
+            return
+        labels: dict = {}
+        for index, hand in enumerate(hands):
+            role = hand.get("rol")
+            color = QColor(HAND_ROLE_COLORS.get(role, HAND_ROLE_COLORS["persona"]))
+            box = hand.get("caja")
+            if box:
+                x, y, w, h = box
+                rect = QRectF(x * scale_x, y * scale_y, w * scale_x, h * scale_y)
+            else:
+                rect = QRectF(0, 0, HAND_BOX_PX, HAND_BOX_PX)
+                rect.moveCenter(QPointF(hand["x"] * scale_x, hand["y"] * scale_y))
+            if rect.width() < HAND_BOX_MIN_PX or rect.height() < HAND_BOX_MIN_PX:
+                center = rect.center()
+                rect.setWidth(max(rect.width(), HAND_BOX_MIN_PX))
+                rect.setHeight(max(rect.height(), HAND_BOX_MIN_PX))
+                rect.moveCenter(center)
+            touching = bool(hand.get("en_rueda")) or hand.get("zona") is not None
+            fill = QColor(color)
+            fill.setAlpha(60 if touching else 22)
+            pen = QPen(color)
+            pen.setWidthF(3.0 if touching else 1.8)
+            painter.setPen(pen)
+            painter.setBrush(fill)
+            painter.drawRoundedRect(rect, 4, 4)
+            if role in HAND_ROLE_TEXT:
+                key = hand.get("persona") if hand.get("persona") is not None else ("mano", index)
+                current = labels.get(key)
+                if current is None or rect.top() < current[0].y():
+                    labels[key] = (QPointF(rect.center().x(), rect.top()), role, color)
+        for anchor, role, color in labels.values():
+            self._draw_guide_label(
+                painter, anchor - QPointF(0, 12), HAND_ROLE_TEXT[role], color, centered=True
+            )
 
     def _draw_incident_mark(
         self,
@@ -455,22 +572,28 @@ class VideoTile(QWidget):
         height: int,
         now: float,
     ) -> None:
-        """Marca de incidente sobre todo el video: marco rojo que late y un
-        cartel con que paso y donde, mientras dura la alerta."""
+        """Marca de incidente sobre todo el video: marco que late y un cartel
+        con que paso y donde, mientras dura. Rojo para el incidente, ambar
+        para la alerta previa (preparacion de consumo)."""
         event = fresh.get("monitor_tamper")
-        if event is None or event.metrics.get("estado") != "alerta":
+        status = event.metrics.get("estado") if event is not None else None
+        if status not in INCIDENT_STATE_COLORS:
             return
-        screens = event.metrics.get("zonas") or []
+        zones = event.metrics.get("zonas") or []
+        noun = {"puesto": "el puesto", "zona": "la zona"}.get(
+            event.metrics.get("zona_tipo"), "la pantalla"
+        )
         alerts = [
-            (index, MOTIVE_TEXT.get(screen.get("motivo") or "", "golpe"))
-            for index, screen in enumerate(screens)
-            if screen.get("estado") == "alerta"
+            (index, MOTIVE_TEXT.get(zone.get("motivo") or "", "golpe"))
+            for index, zone in enumerate(zones)
+            if zone.get("estado") == status
         ]
         if not alerts:
             return
+        color = INCIDENT_STATE_COLORS[status]
         # Latido de ~1,2 s: el marco va de 45% a 100% de opacidad.
         pulse = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(now * 2 * math.pi / 1.2))
-        frame_color = QColor(STATUS_CRITICAL)
+        frame_color = QColor(color)
         frame_color.setAlphaF(pulse)
         pen = QPen(frame_color)
         pen.setWidthF(6.0)
@@ -478,8 +601,9 @@ class VideoTile(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(QRectF(3, 3, width - 6, height - 6))
 
-        detail = " · ".join(f"{motive} en la pantalla {index + 1}" for index, motive in alerts)
-        text = f"⚠  INCIDENTE  ·  {detail}"
+        detail = " · ".join(f"{motive} en {noun} {index + 1}" for index, motive in alerts)
+        title = "INCIDENTE" if status == "alerta" else "ALERTA PREVIA"
+        text = f"⚠  {title}  ·  {detail}"
         font = painter.font()
         font.setBold(True)
         font.setPixelSize(max(12, min(18, width // 55)))
@@ -488,7 +612,7 @@ class VideoTile(QWidget):
         banner_w = min(width - 24.0, metrics.horizontalAdvance(text) + 28.0)
         banner = QRectF((width - banner_w) / 2, 34, banner_w, metrics.height() + 12)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(STATUS_CRITICAL))
+        painter.setBrush(QColor(color))
         painter.drawRoundedRect(banner, 8, 8)
         painter.setPen(QColor("#ffffff"))
         painter.drawText(banner, Qt.AlignmentFlag.AlignCenter, text)
@@ -514,14 +638,32 @@ class VideoTile(QWidget):
                 zone_text = None
                 screens = metrics.get("zonas") if name == "monitor_tamper" else None
                 zone_alert = False
-                if screens and index < len(screens):
+                if metrics.get("modo") == "ruleta":
+                    zone = screens[index] if screens and index < len(screens) else {}
+                    armed = bool((metrics.get("ronda") or {}).get("pano_armado"))
+                    zone_color, zone_text = self._roulette_zone_style(zone, index, now, armed)
+                    zone_alert = zone.get("estado") == "alerta" or armed
+                    if zone.get("estado") == "alerta":
+                        tint = QColor(zone_color)
+                        tint.setAlpha(60)
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.setBrush(tint)
+                        painter.drawRect(rect)
+                        self._draw_corner_brackets(painter, rect, zone_color, 3.0)
+                    self._draw_chip_spots(painter, zone, scale_x, scale_y, now)
+                elif screens and index < len(screens):
                     screen = screens[index]
-                    zone_alert = screen.get("estado") == "alerta"
-                    zone_color = QColor(STATUS_CRITICAL if zone_alert else STATUS_OK)
+                    zone_state = screen.get("estado")
+                    zone_alert = zone_state in INCIDENT_STATE_COLORS
+                    zone_color = QColor(INCIDENT_STATE_COLORS.get(zone_state, STATUS_OK))
                     motive = MOTIVE_TEXT.get(screen.get("motivo") or "", "golpe")
-                    zone_text = (
-                        f"INCIDENTE · {motive}" if zone_alert else f"Pantalla {index + 1} · OK"
-                    )
+                    noun = "Puesto" if metrics.get("zona_tipo") == "puesto" else "Pantalla"
+                    if zone_state == "alerta":
+                        zone_text = f"INCIDENTE · {motive}"
+                    elif zone_state == "previa":
+                        zone_text = f"PREVIA · {motive}"
+                    else:
+                        zone_text = f"{noun} {index + 1} · OK"
                     tint = QColor(zone_color)
                     tint.setAlpha(70 if zone_alert else 14)
                     painter.setPen(Qt.PenStyle.NoPen)
@@ -549,6 +691,9 @@ class VideoTile(QWidget):
                 if zone_text:
                     self._draw_guide_label(painter, rect.topLeft(), zone_text, zone_color)
 
+            if metrics.get("modo") == "ruleta" and metrics.get("rueda"):
+                self._draw_roulette_wheel(painter, metrics, scale_x, scale_y)
+
             line = (config.params or {}).get("line")
             if name == "line_crossing" and line and len(line) == 2:
                 if event is not None and event.triggers:
@@ -556,6 +701,115 @@ class VideoTile(QWidget):
                 self._draw_crossing_line(
                     painter, config, line, metrics, scale_x, scale_y, now < self._line_flash_until
                 )
+
+    @staticmethod
+    def _roulette_zone_style(
+        zone: dict, index: int, now: float, armed: bool = False
+    ) -> tuple[QColor, str]:
+        """Zona de fichas: roja con fichas movidas tras el no va mas, ambar
+        unos segundos despues de un movimiento normal, celeste con manos
+        adentro, y verde quieta (ambar y trazo lleno si el paño esta armado)."""
+        if zone.get("estado") == "alerta":
+            return QColor(STATUS_CRITICAL), f"Zona {index + 1} · FICHAS TRAS NO VA MÁS"
+        last_change = zone.get("ultimo_cambio")
+        if last_change is not None and now - last_change <= CHIP_FLASH_S:
+            return QColor(STATUS_WARNING), f"Zona {index + 1} · FICHAS MOVIDAS"
+        if zone.get("estado") == "actividad":
+            owners = [
+                HAND_ROLE_TEXT[role].lower()
+                for role in zone.get("manos") or ()
+                if role in HAND_ROLE_TEXT
+            ]
+            text = f"Zona {index + 1} · manos"
+            return QColor(ROULETTE_ACTIVITY), f"{text} · {' y '.join(owners)}" if owners else text
+        if armed:
+            return QColor(STATUS_WARNING), f"Zona {index + 1} · ARMADA"
+        return QColor(STATUS_OK), f"Zona {index + 1} · quieta"
+
+    @staticmethod
+    def _draw_chip_spots(
+        painter: QPainter, zone: dict, scale_x: float, scale_y: float, now: float
+    ) -> None:
+        """Donde cambiaron las fichas (la ficha agregada, sacada o corrida),
+        mientras dura el aviso: rojo si fue tras el no va mas."""
+        last_change = zone.get("ultimo_cambio")
+        alert = zone.get("estado") == "alerta"
+        if not alert and (last_change is None or now - last_change > CHIP_FLASH_S):
+            return
+        color = QColor(STATUS_CRITICAL if alert else STATUS_WARNING)
+        pen = QPen(color)
+        pen.setWidthF(2.4)
+        for x, y, w, h in zone.get("posiciones") or ():
+            center = QPointF((x + w / 2) * scale_x, (y + h / 2) * scale_y)
+            radius = max(7.0, max(w * scale_x, h * scale_y) / 2 + 4)
+            halo = QColor(color)
+            halo.setAlpha(55)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(halo)
+            painter.drawEllipse(center, radius + 5, radius + 5)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(center, radius, radius)
+
+    def _draw_roulette_wheel(
+        self, painter: QPainter, metrics: dict, scale_x: float, scale_y: float
+    ) -> None:
+        """La elipse del plato y, al costado, su velocidad."""
+        cx, cy, width, height, angle = metrics["rueda"]
+        painter.save()
+        painter.translate(cx * scale_x, cy * scale_y)
+        painter.rotate(angle)
+        pen = QPen(ANALYTIC_COLORS["monitor_tamper"])
+        pen.setWidthF(2.2)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        # Con la escala del tile distinta en x e y la elipse girada queda
+        # levemente deformada; con el angulo casi recto de las camaras de
+        # mesa la diferencia no se ve.
+        painter.drawEllipse(QPointF(0, 0), width * scale_x / 2, height * scale_y / 2)
+        painter.restore()
+        speed = metrics.get("velocidad_deg_s")
+        if speed is None:
+            text = "Ruleta · midiendo…"
+        else:
+            arrow = "↻" if metrics.get("sentido") == "horario" else "↺"
+            text = f"{arrow} {speed:.0f} °/s · {metrics.get('rpm', 0):.1f} rpm"
+        top = QPointF((cx - width / 2) * scale_x, (cy - height / 2) * scale_y - 22)
+        self._draw_guide_label(painter, top, text, ANALYTIC_COLORS["monitor_tamper"])
+        self._draw_round(painter, metrics, top, scale_x, scale_y)
+
+    def _draw_round(
+        self, painter: QPainter, metrics: dict, anchor: QPointF, scale_x: float, scale_y: float
+    ) -> None:
+        """Arriba de la rueda, el estado de la ronda (con la velocidad de la
+        bola); sobre la pista, la bola."""
+        ronda = metrics.get("ronda") or {}
+        state = ronda.get("estado")
+        game = ronda.get("ultima_jugada")
+        if state in ROUND_STYLE:
+            text, color = ROUND_STYLE[state]
+            if state in ("bola", "no_va_mas") and ronda.get("bola_deg_s"):
+                text = f"{text} · bola {ronda['bola_deg_s']:.0f} °/s"
+            elif state == "apuestas" and game and time.time() - game["t"] <= NEW_GAME_FLASH_S:
+                what = display_rotor_event(game.get("tipo"))
+                text, color = f"Nueva jugada · la rueda {what}", ROULETTE_ACTIVITY
+            if state == "no_va_mas":
+                font = painter.font()
+                font.setBold(True)
+                painter.setFont(font)
+            self._draw_guide_label(painter, anchor - QPointF(0, 22), text, QColor(color))
+            font = painter.font()
+            font.setBold(False)
+            painter.setFont(font)
+        ball = metrics.get("bola")
+        if ball:
+            center = QPointF(ball[0] * scale_x, ball[1] * scale_y)
+            painter.setPen(QPen(QColor(ROULETTE_ACTIVITY), 2.0))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(center, 8.0, 8.0)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor("#ffffff"))
+            painter.drawEllipse(center, 2.5, 2.5)
 
     def _draw_crossing_line(
         self,
@@ -674,9 +928,21 @@ class VideoTile(QWidget):
                 return f"{metrics.get('total', 0)} cruces"
             return f"Ent. {metrics.get('count_in', 0)} · Sal. {metrics.get('count_out', 0)}"
         if name == "monitor_tamper":
+            if metrics.get("modo") == "ruleta":
+                if metrics.get("estado") == "alerta":
+                    return f"ALERTA · fichas tras el no va más ({metrics.get('incidentes', 0)})"
+                state = (metrics.get("ronda") or {}).get("estado")
+                if state in ("no_va_mas", "resultado"):
+                    return f"Ruleta {ROUND_STYLE[state][0]} · paño armado"
+                speed = metrics.get("velocidad_deg_s")
+                moved = metrics.get("fichas_movidas", 0)
+                wheel = "buscando la rueda" if speed is None else f"{speed:.0f} °/s"
+                return f"Ruleta {wheel} · {moved} movimientos de fichas"
             if metrics.get("estado") == "alerta":
-                last = metrics.get("ultimo_golpe") or {}
+                last = metrics.get("ultimo_incidente") or metrics.get("ultimo_golpe") or {}
                 return f"ALERTA · {MOTIVE_TEXT.get(last.get('motivo') or '', 'golpe')}"
+            if metrics.get("estado") == "previa":
+                return "PREVIA · preparación"
             return f"OK · {metrics.get('incidentes', 0)} incidentes"
         if name == "face_detection":
             faces = metrics.get("caras", len(event.detections))

@@ -59,7 +59,7 @@ class FaceStrip(QFrame):
         header.addWidget(self.count_label)
         self.clear_button = TransparentToolButton(FluentIcon.BROOM, self)
         self.clear_button.setToolTip("Limpiar los últimos rostros y volver a mostrar los nuevos")
-        self.clear_button.clicked.connect(face_registry.clear)
+        self.clear_button.clicked.connect(self._clear_all)
         header.addWidget(self.clear_button)
 
         self.empty_label = CaptionLabel(
@@ -138,6 +138,13 @@ class FaceStrip(QFrame):
             )
             self.list_widget.addItem(item)
         self._refresh_state()
+
+    def _clear_all(self) -> None:
+        """La escoba vacia las capturas de TODAS las camaras (y con ellas la
+        galeria y la grilla del dashboard, que son espejos del registro).
+        Slot propio y no `face_registry.clear` directo: `clicked` emite
+        `checked=False`, que llegaba como device_id y no borraba nada."""
+        face_registry.clear()
 
     def _refresh_state(self, _device_id: int | None = None) -> None:
         count = self.list_widget.count()
