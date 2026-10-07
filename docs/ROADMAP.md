@@ -71,10 +71,18 @@ que se trabajan ese mismo día:
 
 ## Datos
 
-- **Las migraciones no son portables**, aunque los modelos sí: 0002, 0003 y
-  `migrations/ayudas.py` consultan `PRAGMA`/`sqlite_master`; 0002 y 0004
-  comparan enteros contra booleanos; `models/db.py` fija `sqlite:///`. Antes de
-  un nodo PostgreSQL hay que pasarlas a `sa.inspect(conn)` y `sa.true()`.
+- ~~**Las migraciones no son portables**~~ — resuelto el 07/10 (rama
+  `feat/migraciones-portables`). Las revisiones y la adopción usan el
+  inspector y `TRUE`/`FALSE`, y `AUREA_DB_URL` apunta la app a un servidor.
+  `tests/test_migraciones_postgres.py` (integration, con
+  `AUREA_TEST_PG_URL`) migra una base vacía de PostgreSQL 16 sin deriva, hace
+  la ida y vuelta hasta 0002 y corre el repositorio. Quedan dos cosas:
+  - **El CI no tiene un servicio Postgres**, así que ese test se saltea ahí.
+    Sumar un `services: postgres` a `ci.yml`.
+  - En el servidor **no hay backup automático** antes de migrar (la API de
+    backup es de sqlite3): `pg_dump` a cargo de quien lo opera, o que `migrar`
+    lo llame. Un nodo central se migra desde un solo puesto: el lock de
+    migración es un archivo local.
 - **La adopción de bases legadas usa el metadata vivo**
   (`migrations/adopcion.py`): una `op.create_table` futura choca con la tabla
   que la adopción ya creó con la forma nueva. Los índices sobre columnas
@@ -100,7 +108,7 @@ que se trabajan ese mismo día:
 
 - Migrar timestamps float → DateTime UTC unificado.
 - Si aparece multisede real con servidor central: nodo central en
-  PostgreSQL (la capa SQLAlchemy ya es portable), grabadores por sitio
+  PostgreSQL (modelos y migraciones ya portables, ver arriba), grabadores por sitio
   en SQLite.
 - `users.custom_permissions JSON` que overridee el rol (matriz editable
   por usuario en la UI).
