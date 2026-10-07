@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import FluentIcon, PushButton
 
+from aurea_vms.core.analytics.digital_zoom import OUTSIDE_ZOOM
 from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.core.events import DetectionEvent
 from aurea_vms.core.permissions import Perm, can
@@ -227,6 +228,9 @@ class MonitorTamperPanel(AnalyticsPanelBase):
             )
         lines = []
         for index, zone in enumerate(metrics.get("zonas") or [], start=1):
+            if zone.get("estado") == OUTSIDE_ZOOM:
+                lines.append(self._outside_zoom_line(f"Zona {index}"))
+                continue
             active = zone.get("estado") == "actividad"
             color = ROULETTE_ACTIVITY if active else STATUS_OK
             state = "manos" if active else "quieta"
@@ -270,10 +274,21 @@ class MonitorTamperPanel(AnalyticsPanelBase):
         self.pre_alerts_label.setVisible(visible)
         self.pre_alerts_caption.setVisible(visible)
 
+    @staticmethod
+    def _outside_zoom_line(name: str) -> str:
+        """Una zona que quedo fuera del zoom digital de la analitica."""
+        return (
+            f"<span style='color:{TEXT_SECONDARY}'>○&nbsp;{name} · fuera del zoom"
+            " (no se analiza)</span>"
+        )
+
     def _render_zones(self) -> None:
         lines = []
         for index, zone in enumerate(self._zones, start=1):
             status = zone.get("estado")
+            if status == OUTSIDE_ZOOM:
+                lines.append(self._outside_zoom_line(f"{self._noun} {index}"))
+                continue
             if status == "alerta":
                 color, state = STATUS_CRITICAL, f"ALERTA · {motive_label(zone.get('motivo'))}"
             elif status == "previa":

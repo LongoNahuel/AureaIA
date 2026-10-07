@@ -161,3 +161,32 @@ class TestSincroniaConLasMarcas:
         tile._on_detection(self._marks(1.04))  # marcas tardias del 20
 
         assert _shown(tile) == 30
+
+
+def test_en_una_pestaña_que_no_se_ve_no_dibuja(qtbot, monkeypatch):
+    """Con Vista en Vivo de fondo, sus camaras redibujaban cada cuadro para
+    nadie (2026-10-07). Al volver a la pestaña, dibuja el ultimo cuadro."""
+    from PySide6.QtWidgets import QStackedWidget
+
+    stack = QStackedWidget()
+    qtbot.addWidget(stack)
+    visible, hidden = VideoTile(0), VideoTile(1)
+    stack.addWidget(visible)
+    stack.addWidget(hidden)
+    stack.resize(640, 480)
+    stack.show()
+    worker = _Worker(_frame(640, 480))
+    monkeypatch.setattr(vt_module.stream_manager, "get_worker", lambda *_a, **_k: worker)
+    for tile in (visible, hidden):
+        tile._device = SimpleNamespace(name="Cam", id=5)
+        tile._analytics_configs = []
+    drawn: list = []
+    original = vt_module.frame_to_pixmap
+    monkeypatch.setattr(vt_module, "frame_to_pixmap", lambda *a: (drawn.append(a), original(*a))[1])
+
+    hidden._refresh_frame()
+    assert drawn == []
+
+    stack.setCurrentWidget(hidden)
+    hidden._refresh_frame()
+    assert len(drawn) == 1

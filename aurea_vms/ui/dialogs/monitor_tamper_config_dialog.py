@@ -7,7 +7,12 @@
 - Monitor roto: una zona por pantalla y la sensibilidad de las dos reglas
   (patada y golpe con la mano). Ver monitor_tamper_analyzer.py.
 - Consumo de sustancias: una zona por puesto (el jugador sentado), con
-  alerta previa por preparacion. Ver consumption_analyzer.py."""
+  alerta previa por preparacion. Ver consumption_analyzer.py.
+
+En todos los modos la analitica puede mirar el cuadro completo o solo un
+zoom digital (ver core/analytics/digital_zoom.py). Las zonas y la rueda se
+dibujan siempre sobre el cuadro completo; "Ver solo el zoom" agranda esa
+parte para dibujarlas con mas precision."""
 
 from __future__ import annotations
 
@@ -30,6 +35,7 @@ from aurea_vms.core.analytics.consumption_analyzer import (
     DEFAULT_ALERT_HOLD_S as CONSUMPTION_ALERT_HOLD_S,
 )
 from aurea_vms.core.analytics.consumption_analyzer import DEFAULT_PREPARATION_MIN_S
+from aurea_vms.core.analytics.digital_zoom import ANALYZE_ZOOM_PARAM, ZOOM_PARAM, zoom_region
 from aurea_vms.core.analytics.monitor_tamper_analyzer import (
     DEFAULT_ALERT_HOLD_S,
     DEFAULT_HAND_STRIKE_SPEED,
@@ -51,6 +57,7 @@ from aurea_vms.core.analytics.roulette_analyzer import (
 from aurea_vms.core.analytics.roulette_round import DEFAULT_NO_MORE_BETS_DEG_S
 from aurea_vms.models.analytics_config import AnalyticsConfig
 from aurea_vms.models.device import Device
+from aurea_vms.ui.analysis_zoom import zoom_check
 from aurea_vms.ui.dialogs.analytics_config_dialog_base import AnalyticsConfigDialogBase
 
 FIELD_WIDTH = 130
@@ -108,6 +115,14 @@ VALIDATION = {
 DETECTION_INTERVAL_MS = 200
 
 
+def default_fps(mode: str) -> int:
+    """FPS de analisis por defecto de un modo. Fuera de la ruleta, con el tope
+    global de settings.analytics_fps (la pose corre en cada muestra)."""
+    if mode == ROULETTE_MODE:
+        return DEFAULT_FPS[mode]
+    return min(DEFAULT_FPS[mode], int(settings.analytics_fps))
+
+
 def sensitivity_to_score(sensitivity: int) -> float:
     low, high = SCORE_RANGE
     return round(high - (max(1, min(100, sensitivity)) - 1) / 99 * (high - low), 3)
@@ -140,6 +155,9 @@ class MonitorTamperConfigDialog(AnalyticsConfigDialogBase):
         if self._params.get("modo") == ROULETTE_MODE and region and len(region) == 4:
             zones = [tuple(zone) for zone in self._params.get("zones", []) if len(zone) == 4]
             self.selector_widget.set_initial_rects([tuple(region), *zones])
+        self.selector_widget.set_zoom_rect(self._zoom)
+        self.selector_widget.zoom_changed.connect(self._on_zoom_drawn)
+        self._update_zoom_ui()
 
     def build_extra_fields(self, form: QFormLayout, existing: AnalyticsConfig | None) -> None:
         params = (existing.params if existing else {}) or {}
@@ -288,6 +306,36 @@ class MonitorTamperConfigDialog(AnalyticsConfigDialogBase):
         )
         form.addRow(self._consumption_caption)
 
+        # --- zoom digital ----------------------------------------------------
+        self._zoom = zoom_region(params)
+        self.analysis_area_combo = ComboBox()
+        self.analysis_area_combo.addItem("El cuadro completo", userData=False)
+        self.analysis_area_combo.addItem("Solo el zoom digital", userData=True)
+        self.analysis_area_combo.setCurrentIndex(
+            1 if params.get(ANALYZE_ZOOM_PARAM) and self._zoom else 0
+        )
+        self.analysis_area_combo.setToolTip(
+            "Con el zoom digital la analítica recibe solo esa parte del cuadro, en la resolución "
+            "del stream: en una cámara que toma la sala entera, la mesa se ve con más detalle y "
+            "cada cuadro cuesta menos."
+        )
+        self.analysis_area_combo.currentIndexChanged.connect(lambda _i: self._update_zoom_ui())
+        form.addRow("Analizar:", self.analysis_area_combo)
+        self.mark_zoom_button = PushButton(FluentIcon.ZOOM, "Marcar zoom")
+        self.mark_zoom_button.clicked.connect(self._mark_zoom)
+        self.view_zoom_button = PushButton(FluentIcon.ZOOM_IN, "Ver solo el zoom")
+        self.view_zoom_button.clicked.connect(self._toggle_zoom_view)
+        self.clear_zoom_button = PushButton(FluentIcon.CLOSE, "Quitar zoom")
+        self.clear_zoom_button.clicked.connect(self._clear_zoom)
+        self._zoom_row = QHBoxLayout()
+        self._zoom_row.addWidget(self.mark_zoom_button)
+        self._zoom_row.addWidget(self.view_zoom_button)
+        self._zoom_row.addWidget(self.clear_zoom_button)
+        self._zoom_row.addStretch(1)
+        form.addRow(self._zoom_row)
+        self.zoom_caption = _caption("")
+        form.addRow(self.zoom_caption)
+
         # --- comunes ----------------------------------------------------------
         self.hold_spin = DoubleSpinBox()
         self.hold_spin.setRange(1.0, 60.0)
@@ -301,10 +349,7 @@ class MonitorTamperConfigDialog(AnalyticsConfigDialogBase):
         self.fps_spin = SpinBox()
         self.fps_spin.setRange(3, MAX_FPS[mode])
         self.fps_spin.setMaximumWidth(FIELD_WIDTH)
-        default_fps = DEFAULT_FPS[mode]
-        if mode != ROULETTE_MODE:
-            default_fps = min(default_fps, int(settings.analytics_fps))
-        self.fps_spin.setValue(int(params.get("fps", default_fps)))
+        self.fps_spin.setValue(int(params.get("fps", default_fps(mode))))
         self.fps_spin.setToolTip(
             "Un golpe dura décimas de segundo: con menos de 5 fps puede pasar entre dos "
             "muestras. El gesto de consumo dura ~0,5 s. En ruleta son los cuadros por segundo "
@@ -324,10 +369,17 @@ class MonitorTamperConfigDialog(AnalyticsConfigDialogBase):
         # Los valores que siguen en el default del otro modo pasan al de este.
         if self.hold_spin.value() == DEFAULT_HOLD[self._mode]:
             self.hold_spin.setValue(DEFAULT_HOLD[mode])
-        if self.fps_spin.value() == DEFAULT_FPS[self._mode]:
-            self.fps_spin.setValue(DEFAULT_FPS[mode])
+        # El de golpes y consumo lleva el tope global: comparar contra el
+        # DEFAULT_FPS crudo dejaba una ruleta nueva en 5 fps en vez de 25. Y
+        # el maximo del modo nuevo va antes del valor: con el de golpes (15)
+        # los 25 de la ruleta quedaban en 15.
+        follow_fps = self.fps_spin.value() == default_fps(self._mode)
+        self.fps_spin.setMaximum(MAX_FPS[mode])
+        if follow_fps:
+            self.fps_spin.setValue(default_fps(mode))
         self._mode = mode
         self._apply_mode(mode)
+        self._update_zoom_ui()
 
     def _apply_mode(self, mode: str) -> None:
         self.intro_label.setText(INTRO[mode])
@@ -357,6 +409,65 @@ class MonitorTamperConfigDialog(AnalyticsConfigDialogBase):
         for owner, owned in rows.items():
             for row in owned:
                 self._form.setRowVisible(row, owner == mode)
+
+    # --- zoom digital ---------------------------------------------------------
+
+    def analyzes_zoom(self) -> bool:
+        return bool(self.analysis_area_combo.currentData())
+
+    def _mark_zoom(self) -> None:
+        self.selector_widget.set_view(None)
+        self.selector_widget.capture_zoom(True)
+        self.zoom_caption.setText(
+            "Dibujá el zoom en la vista previa: un rectángulo alrededor de lo que se quiere "
+            "analizar (la mesa, la rueda y el paño)."
+        )
+
+    def _on_zoom_drawn(self, rect) -> None:
+        self._zoom = tuple(rect)
+        # Quien marca un zoom quiere analizarlo.
+        self.analysis_area_combo.setCurrentIndex(1)
+        self._update_zoom_ui()
+
+    def _toggle_zoom_view(self) -> None:
+        showing = self.selector_widget.view() is not None
+        self.selector_widget.set_view(None if showing else self._zoom)
+        self._update_zoom_ui()
+
+    def _clear_zoom(self) -> None:
+        self._zoom = None
+        self.selector_widget.capture_zoom(False)
+        self.selector_widget.set_zoom_rect(None)
+        self.selector_widget.set_view(None)
+        self.analysis_area_combo.setCurrentIndex(0)
+        self._update_zoom_ui()
+
+    def _zoom_params(self) -> dict:
+        """Lo que zoom_check necesita ver: el modo, las zonas y la rueda."""
+        return {"modo": self.mode(), **self.zone_params()}
+
+    def _update_zoom_ui(self) -> None:
+        if not hasattr(self, "selector_widget"):
+            return  # todavia armando el formulario
+        has_zoom = self._zoom is not None
+        self.view_zoom_button.setEnabled(has_zoom)
+        self.clear_zoom_button.setEnabled(has_zoom)
+        showing = self.selector_widget.view() is not None
+        self.view_zoom_button.setText("Ver todo el cuadro" if showing else "Ver solo el zoom")
+        if not has_zoom:
+            text = (
+                "Sin zoom. Marcalo acá o en el video: con la rueda del mouse se acerca, y con el "
+                "clic derecho, «analizar este zoom»."
+            )
+        else:
+            x, y, w, h = self._zoom
+            text = f"Zoom de {w}×{h} px, desde ({x}, {y})."
+            if self.analyzes_zoom():
+                error, notes = zoom_check(self._zoom_params(), self._zoom)
+                text = " ".join([text, *([error] if error else notes)])
+            else:
+                text += " Queda guardado; la analítica mira el cuadro completo."
+        self.zoom_caption.setText(text)
 
     # --- deteccion de la ruleta ----------------------------------------------
 
@@ -397,8 +508,10 @@ class MonitorTamperConfigDialog(AnalyticsConfigDialogBase):
         self._wheel_region = wheel.bounding_rect()
         rects = [self._wheel_region] + ([grid] if grid else [])
         self.selector_widget.set_initial_rects(rects)
-        grid_text = "y la grilla del paño como zona 1" if grid else "(la grilla no se encontró)"
-        self.detection_label.setText(f"{self._wheel_text()} Se propone {grid_text}.")
+        grid_text = (
+            "Se propone la grilla del paño como zona 1." if grid else "La grilla no se encontró."
+        )
+        self.detection_label.setText(f"{self._wheel_text()} {grid_text}")
 
     # --- guardado ---------------------------------------------------------------
 
@@ -408,6 +521,12 @@ class MonitorTamperConfigDialog(AnalyticsConfigDialogBase):
             return INTRO[BLACKJACK_MODE]
         if not self.selector_widget.get_rects():
             return VALIDATION[mode]
+        if self.analyzes_zoom():
+            if self._zoom is None:
+                return "Marcá el zoom digital («Marcar zoom») o elegí analizar el cuadro completo."
+            error, _notes = zoom_check(self._zoom_params(), self._zoom)
+            if error:
+                return error
         return None
 
     def zone_params(self) -> dict:
@@ -427,7 +546,10 @@ class MonitorTamperConfigDialog(AnalyticsConfigDialogBase):
             "modo": mode,
             "alert_hold_s": self.hold_spin.value(),
             "fps": self.fps_spin.value(),
+            ANALYZE_ZOOM_PARAM: self.analyzes_zoom() and self._zoom is not None,
         }
+        if self._zoom is not None:
+            params[ZOOM_PARAM] = list(self._zoom)
         if mode == ROULETTE_MODE:
             params["manos"] = self.table_hands_check.isChecked()
             params["no_va_mas_deg_s"] = float(self.no_more_bets_spin.value())

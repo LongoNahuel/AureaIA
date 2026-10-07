@@ -61,6 +61,16 @@ MODULES = [
     ("Dashboard de Eventos", icons.icon_alarms, EventDashboardModule),
 ]
 
+
+def _module_index(label: str) -> int:
+    """Indice de un modulo por su nombre: con un numero fijo, agregar un
+    modulo a la lista corria a todos los que venian despues."""
+    return next(i for i, (name, _, _) in enumerate(MODULES) if name == label)
+
+
+ALARMS_INDEX = _module_index("Alarmas")
+ANALYZERS_INDEX = _module_index("Analizadores")
+
 CATEGORIES = {
     "Operación": ["Vista en Vivo", "Vista Inteligente", "Alarmas", "Dashboard de Eventos"],
     "Configuración": [
@@ -152,6 +162,7 @@ class MainWindow(QMainWindow):
         # autoajusta a su contenido (ver GlobalAlertPopupLayer) y queda
         # oculta cuando no hay tarjetas -- no cubre toda la ventana.
         self.alert_layer = GlobalAlertPopupLayer(central)
+        self.alert_layer.open_alarm_requested.connect(self._on_open_alarm_requested)
 
         QShortcut(QKeySequence("Ctrl+K"), self, self._open_command_palette)
 
@@ -230,6 +241,19 @@ class MainWindow(QMainWindow):
                 f"{event.object_class} detectado con {event.confidence:.0%} de confianza.",
             )
 
+    def _on_open_alarm_requested(self, alarm_event_id: int) -> None:
+        """Clic en el popup de una alarma: abre (o enfoca) Alarmas con ese
+        incidente en el detalle. Sin permiso, open_module_by_index avisa."""
+        self.open_module_by_index(ALARMS_INDEX)
+        module = self.tabs.currentWidget()
+        focus_event = getattr(module, "focus_event", None)
+        if callable(focus_event) and not focus_event(alarm_event_id):
+            warn(
+                self,
+                "Alarmas",
+                "El incidente no está en la lista: su cámara no es del sitio elegido.",
+            )
+
     def _open_command_palette(self) -> None:
         dialog = CommandPaletteDialog(MODULES, self)
         if dialog.exec() != QDialog.DialogCode.Accepted or dialog.action is None:
@@ -252,7 +276,7 @@ class MainWindow(QMainWindow):
     def _on_open_analytics_config_requested(self, device_id: int) -> None:
         """ "Ajustes avanzados" desde Dispositivos: abre/enfoca Analizadores
         con esta camara seleccionada."""
-        self.open_module_by_index(2)
+        self.open_module_by_index(ANALYZERS_INDEX)
         analytics_module = self.tabs.currentWidget()
         focus_device = getattr(analytics_module, "focus_device", None)
         if callable(focus_device):
