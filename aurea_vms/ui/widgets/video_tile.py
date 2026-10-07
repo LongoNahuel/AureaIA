@@ -193,6 +193,7 @@ class VideoTile(QWidget):
         # La preferencia de marca se cachea: leerla en cada cuadro abria
         # preferences.json dos veces por cuadro y por recuadro.
         self._branding = app_prefs.intelligent_branding_enabled()
+        self._brand_name = app_prefs.get_brand_name()
         self._branding_checked_at = time.monotonic()
 
         self.setAcceptDrops(True)
@@ -275,6 +276,7 @@ class VideoTile(QWidget):
         now = time.monotonic()
         if now - self._branding_checked_at > BRANDING_REFRESH_S:
             self._branding = app_prefs.intelligent_branding_enabled()
+            self._brand_name = app_prefs.get_brand_name()
             self._branding_checked_at = now
         return self._branding
 
@@ -422,8 +424,36 @@ class VideoTile(QWidget):
         painter.end()
         self.video_label.setPixmap(pixmap)
 
+    def _en_pantalla(self) -> bool:
+        """Si alguien puede ver el recuadro: visible (su pestaña es la actual
+        y su ventana esta abierta) y la ventana no esta minimizada. Una
+        ventana tapada por otra no se detecta: Qt no lo sabe de forma
+        portable."""
+        return self.isVisible() and not self.window().isMinimized()
+
+    def showEvent(self, event) -> None:  # noqa: N802 - override de Qt
+        super().showEvent(event)
+        # Volver a una pestaña: dibuja el cuadro actual sin esperar al tick.
+        self._invalidate_render()
+        self._offline_rendered = False
+        if not self._timer.isActive():
+            self._timer.start()
+
+    def hideEvent(self, event) -> None:  # noqa: N802 - override de Qt
+        # Pestaña oculta, ventana cerrada o minimizada: el timer se para.
+        # Antes cada recuadro oculto seguia achicando, convirtiendo y
+        # pintando a 25-60 fps (medido 2026-10-07: 16 recuadros ocultos
+        # ocupaban el 99 % del hilo de la GUI). El stream NO se suelta: al
+        # volver, el video sigue al instante.
+        self._timer.stop()
+        super().hideEvent(event)
+
     def _refresh_frame(self) -> None:
         if self._device is None:
+            return
+        if not self._en_pantalla():
+            # Red de seguridad: un hide que no llego (minimizar no siempre
+            # lo manda a los hijos) o una deteccion que pide redibujar.
             return
 
         worker = stream_manager.get_worker(self._device.id, self._stream_kind)
@@ -1019,7 +1049,9 @@ class VideoTile(QWidget):
         painter.drawText(rect.adjusted(4, 0, 0, 0), Qt.AlignmentFlag.AlignCenter, text)
 
     def _draw_branding(self, painter: QPainter) -> None:
-        text = app_prefs.get_brand_name()
+        # Cacheado junto con _branding: leerlo aca abria preferences.json en
+        # cada cuadro de cada recuadro (medido 2026-10-07: ~0,6 ms por render).
+        text = self._brand_name
         font = painter.font()
         font.setBold(True)
         font.setPointSize(max(7, font.pointSize()))

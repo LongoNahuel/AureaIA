@@ -376,6 +376,11 @@ class StreamManager:
         self._workers: dict[WorkerKey, StreamWorker] = {}
         self._refcounts: dict[WorkerKey, int] = {}
         self._lock = threading.RLock()
+        # Workers ya detenidos (release/stop_device) que todavia pueden estar
+        # cerrando su captura. Nadie los espera en el momento -- release()
+        # se llama desde la GUI al cerrar una vista -- pero stop_all() si,
+        # para que logout->login no acumule sockets de la sesion anterior.
+        self._parando: list[StreamWorker] = []
 
     @staticmethod
     def _effective_kind(device: Device, kind: str) -> str:
@@ -425,8 +430,10 @@ class StreamManager:
                 worker_to_stop = self._workers.pop(key)
                 worker_to_stop.stop()
                 self._refcounts.pop(key, None)
-        if worker_to_stop is not None:
-            worker_to_stop.join(timeout=1.0)
+                self._a_parando(worker_to_stop)
+        # Sin join: release() se llama desde el hilo de la GUI y antes
+        # esperaba hasta 1 s por camara (cerrar una grilla de 16 congelaba la
+        # interfaz). El worker sale solo al ver el stop; stop_all() lo espera.
 
     def get_worker(self, device_id: int, kind: str = "main") -> StreamWorker | None:
         with self._lock:
@@ -439,14 +446,23 @@ class StreamManager:
         tiles o analiticas que todavia lo referencien."""
         with self._lock:
             for key in [k for k in self._workers if k[0] == device_id]:
-                self._workers.pop(key).stop()
+                worker = self._workers.pop(key)
+                worker.stop()
                 self._refcounts.pop(key, None)
+                self._a_parando(worker)
+
+    def _a_parando(self, worker: StreamWorker) -> None:
+        """Bajo _lock. De paso descarta los que ya terminaron, para que la
+        lista no crezca en una sesion larga."""
+        self._parando = [w for w in self._parando if w.is_alive()]
+        self._parando.append(worker)
 
     def stop_all(self) -> None:
         with self._lock:
-            workers = list(self._workers.values())
+            workers = list(self._workers.values()) + self._parando
             self._workers.clear()
             self._refcounts.clear()
+            self._parando = []
         for worker in workers:
             worker.stop()
         # Espera acotada: logout->login re-arranca engines y sin el join se

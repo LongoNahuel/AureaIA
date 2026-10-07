@@ -162,6 +162,9 @@ class WorkerFalso:
     def join(self, timeout=None) -> None:
         pass
 
+    def is_alive(self) -> bool:
+        return not self.parado
+
 
 class TestStreamManagerReemplazaAlMuerto:
     def test_acquire_no_devuelve_el_cadaver(self, monkeypatch):

@@ -52,6 +52,9 @@ def tile(qtbot, monkeypatch):
     widget._analytics_configs = []
     worker = _Worker(_frame(2048, 1536))
     monkeypatch.setattr(vt_module.stream_manager, "get_worker", lambda *_a, **_k: worker)
+    # Sin mostrar el widget (el layout pisaria el tamaño del label): se
+    # declara en pantalla. La visibilidad se prueba en TestSoloLoQueSeVe.
+    monkeypatch.setattr(widget, "_en_pantalla", lambda: True)
     return widget
 
 
@@ -118,6 +121,7 @@ class TestSincroniaConLasMarcas:
         widget.video_label.resize(640, 480)
         stream = _Stream()
         monkeypatch.setattr(vt_module.stream_manager, "get_worker", lambda *_a, **_k: stream)
+        monkeypatch.setattr(widget, "_en_pantalla", lambda: True)
         return widget, stream
 
     @staticmethod
@@ -161,3 +165,99 @@ class TestSincroniaConLasMarcas:
         tile._on_detection(self._marks(1.04))  # marcas tardias del 20
 
         assert _shown(tile) == 30
+
+
+class TestSoloLoQueSeVe:
+    """Fase V1 (2026-10-07): un recuadro que nadie ve no achica, convierte ni
+    pinta. Medido antes del cambio: 16 recuadros 1080p en una pestaña oculta
+    ocupaban el 99 % del hilo de la GUI."""
+
+    @pytest.fixture()
+    def visible(self, qtbot, monkeypatch):
+        from PySide6.QtWidgets import QTabWidget, QWidget
+
+        tabs = QTabWidget()
+        qtbot.addWidget(tabs)
+        widget = VideoTile(0)
+        widget._device = SimpleNamespace(name="Cam", id=5)
+        widget._analytics_configs = []
+        tabs.addTab(widget, "vivo")
+        tabs.addTab(QWidget(), "otra")
+        tabs.resize(640, 480)
+        tabs.show()
+        qtbot.waitExposed(tabs)
+        worker = _Worker(_frame(1280, 720))
+        monkeypatch.setattr(vt_module.stream_manager, "get_worker", lambda *_a, **_k: worker)
+        # El espia es de ESTE tile (no frame_to_pixmap, que es del modulo):
+        # los tiles vivos de otros tests tambien tickean y se contarian.
+        convertidos: list = []
+        original = widget._draw_overlay
+
+        def contar(*args):
+            convertidos.append(args)
+            return original(*args)
+
+        monkeypatch.setattr(widget, "_draw_overlay", contar)
+        # Los ticks del timer quedan afuera: cada test llama a
+        # _refresh_frame a mano. showEvent lo vuelve a arrancar.
+        widget._timer.stop()
+        return tabs, widget, convertidos
+
+    def test_visible_dibuja(self, visible):
+        _tabs, tile, convertidos = visible
+        tile._refresh_frame()
+        assert len(convertidos) == 1
+
+    def test_en_una_pestaña_oculta_no_dibuja_ni_sondea(self, visible):
+        tabs, tile, convertidos = visible
+        tile._timer.start()
+        tabs.setCurrentIndex(1)
+
+        tile._refresh_frame()
+
+        assert convertidos == []
+        assert not tile._timer.isActive()  # lo paro el hideEvent
+
+    def test_al_volver_a_la_pestaña_redibuja_y_sondea(self, visible):
+        tabs, tile, convertidos = visible
+        tile._refresh_frame()
+        tabs.setCurrentIndex(1)
+        tabs.setCurrentIndex(0)
+
+        assert tile._timer.isActive()
+        tile._timer.stop()
+        tile._refresh_frame()  # mismo cuadro, pero hay que pintarlo de nuevo
+        assert len(convertidos) == 2
+
+    def test_minimizada_no_dibuja(self, visible, monkeypatch):
+        """Minimizar no siempre manda hideEvent a los hijos (depende de la
+        plataforma): la guarda de _refresh_frame lo cubre igual."""
+        tabs, tile, convertidos = visible
+        monkeypatch.setattr(tabs, "isMinimized", lambda: True)
+
+        tile._refresh_frame()
+
+        assert convertidos == []
+
+    def test_una_deteccion_en_un_tile_oculto_no_dibuja(self, visible):
+        from aurea_vms.core.events import DetectionEvent
+
+        tabs, tile, convertidos = visible
+        tabs.setCurrentIndex(1)
+        tile._on_detection(DetectionEvent(5, "monitor_tamper", time.time(), frame_ts=1.0))
+
+        assert convertidos == []
+
+
+def test_el_nombre_de_marca_no_se_lee_en_cada_cuadro(tile, monkeypatch):
+    lecturas: list = []
+    monkeypatch.setattr(vt_module.app_prefs, "get_brand_name", lambda: lecturas.append(1) or "X")
+    monkeypatch.setattr(tile, "_branding", True)
+    monkeypatch.setattr(tile, "_branding_checked_at", time.monotonic())
+    monkeypatch.setattr(tile, "_branding_enabled", lambda: True)
+    tile.video_label.resize(640, 400)
+    for _ in range(3):
+        tile._last_rendered_ts = 0.0
+        tile._refresh_frame()
+
+    assert lecturas == []
