@@ -154,22 +154,26 @@
 
 <!-- 1. Portada -->
 <section class="page cover">
-  <img class="logo" src="../../../aurea_vms/ui/assets/images/logo.png" alt="AureaIA">
-  <div class="txt">
+  <div class="gridbg"></div>
+  <img class="deco" src="../../../aurea_vms/ui/assets/images/logo.png" alt="">
+  <div class="cbar"><span class="brand"><img src="../../../aurea_vms/ui/assets/images/logo.png" alt="">AureaIA</span><span>Presentación de producto · 2026</span></div>
+  <div class="ctxt">
     <div class="eyebrow">AureaIA VMS</div>
-    <h1>Seguridad inteligente<br>para casinos y salas de juego</h1>
-    <div class="sub">Video en vivo, grabación y analítica con inteligencia artificial,<br>en una sola plataforma.</div>
-    <div class="rule"></div>
+    <h1>Seguridad<br>inteligente<br><span>para casinos y<br>salas de juego.</span></h1>
+    <p class="sub">Video en vivo, grabación y analítica con inteligencia artificial, en una sola plataforma.</p>
   </div>
-  <div class="foot"><span>Presentación de producto</span><span>2026</span></div>
+  <div class="cpills"><span><b>100 %</b> local, sin nube</span><span><b>Tiempo real</b> en cada cámara</span><span><b>IA a medida</b> para el juego</span></div>
 </section>
 
 <!-- 2. La plataforma -->
 <section class="page">
-  <div class="top"><b>AureaIA</b><span>La plataforma</span></div>
-  <div class="kicker">La plataforma</div>
-  <h2>Ve, graba y analiza.<br>Avisa en el momento.</h2>
-  <p class="lead">AureaIA VMS centraliza todas las cámaras de la sala y aplica inteligencia artificial sobre cada una. Detecta lo que está fuera de lo normal y alerta al operador con el video del evento, sin depender de internet.</p>
+  <header class="hero">
+    <div class="bar"><span class="brand"><img src="../../../aurea_vms/ui/assets/images/logo.png" alt="">AureaIA <em>VMS</em></span><span>La plataforma</span></div>
+    <div class="big">02</div>
+    <div class="kicker">La plataforma</div>
+    <h2>Ve, graba y analiza.<br>Avisa en el momento.</h2>
+    <p class="lead">AureaIA VMS centraliza todas las cámaras de la sala y aplica inteligencia artificial sobre cada una. Detecta lo que está fuera de lo normal y alerta al operador con el video del evento, sin depender de internet.</p>
+  </header>
 
   <div class="stats">
     <div class="stat"><div class="n">25<span>fps</span></div><div class="l">Video en vivo fluido, en grilla de hasta 16 cámaras.</div></div>
@@ -196,15 +200,18 @@
   </div>
 
   <div class="tech"><b>Base técnica</b>VMS de escritorio con arquitectura SuperCliente LAN · Procesamiento de IA en el borde (edge computing) · Motor de inferencia ONNX Runtime · IA de visión por computadora, no generativa.</div>
-  <div class="num">02</div>
+  <footer class="pf"><span>AureaIA VMS · Presentación de producto</span><span class="pn">02</span></footer>
 </section>
 
 <!-- 3. Arquitectura -->
 <section class="page">
-  <div class="top"><b>AureaIA</b><span>Arquitectura</span></div>
-  <div class="kicker">Arquitectura</div>
-  <h2>Cómo funciona por dentro</h2>
-  <p class="lead">Del video de la cámara a la alerta del operador, todo ocurre dentro de la red del cliente.</p>
+  <header class="hero">
+    <div class="bar"><span class="brand"><img src="../../../aurea_vms/ui/assets/images/logo.png" alt="">AureaIA <em>VMS</em></span><span>Arquitectura</span></div>
+    <div class="big">03</div>
+    <div class="kicker">Arquitectura</div>
+    <h2>Cómo funciona por dentro</h2>
+    <p class="lead">Del video de la cámara a la alerta del operador, todo ocurre dentro de la red del cliente.</p>
+  </header>
 
   <div style="margin-top:8mm">
   <svg viewBox="0 0 680 470" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter">
@@ -218,7 +225,62 @@
         .n{font-size:11px;font-weight:700;fill:#fff}
         .flow{stroke:#0891B2;stroke-width:2;fill:none}
         .soft{stroke:#94A3B8;stroke-width:1.4;fill:none;stroke-dasharray:4 3}
-      </style>
+        /* ====== Rediseño ====== */
+  .page { padding: 0 20mm 20mm; }
+  .hero { position: relative; margin: 0 -20mm 9mm; padding: 9mm 20mm 9mm; color: #fff; overflow: hidden;
+          background: radial-gradient(90% 140% at 100% 0%, #123A6E 0%, #0A1A33 45%, #050B18 100%); }
+  .hero::before { content: ""; position: absolute; inset: 0; opacity: .5;
+          background-image: linear-gradient(#ffffff0a 1px, transparent 1px), linear-gradient(90deg, #ffffff0a 1px, transparent 1px);
+          background-size: 9mm 9mm; }
+  .hero::after { content: ""; position: absolute; left: 20mm; bottom: 0; width: 28mm; height: 1.2mm; background: linear-gradient(90deg, #22D3EE, #22D3EE00); }
+  .hero > * { position: relative; }
+  .hero .bar { display: flex; justify-content: space-between; align-items: center; font-size: 7.5pt; letter-spacing: .16em; text-transform: uppercase; color: #7C8CA6; margin-bottom: 9mm; }
+  .brand { display: flex; align-items: center; gap: 2mm; color: #fff; font-weight: 700; letter-spacing: .12em; }
+  .brand img { width: 7mm; height: 7mm; mix-blend-mode: lighten; }
+  .brand em { font-style: normal; color: #22D3EE; }
+  .hero .big { position: absolute; right: 16mm; top: 17mm; font-family: "Inter Display","Inter"; font-weight: 800; font-size: 96pt; line-height: 1;
+               color: transparent; -webkit-text-stroke: 1.2px #22D3EE55; letter-spacing: -.04em; }
+  .hero .kicker { color: #22D3EE; }
+  .hero h2 { color: #fff; font-size: 26pt; margin: 3mm 0 3.5mm; max-width: 135mm; }
+  .hero .lead { color: #B6C3D6; font-size: 11pt; line-height: 1.55; max-width: 140mm; }
+  .top, .num { display: none; }
+  .pf { position: absolute; left: 20mm; right: 20mm; bottom: 8mm; display: flex; justify-content: space-between; align-items: center; font-size: 7.5pt; color: var(--muted); letter-spacing: .08em; }
+  .pf .pn { font-weight: 700; color: var(--ink); padding-left: 3mm; border-left: 2px solid var(--cyan-l); }
+  .tech { bottom: 15mm; }
+
+  /* Portada */
+  .cover { background: radial-gradient(80% 60% at 85% 75%, #0F3B6E 0%, #071428 45%, #02050C 100%); }
+  .gridbg { position: absolute; inset: 0; opacity: .6; background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px); background-size: 12mm 12mm; }
+  .cover .deco { position: absolute; right: -42mm; bottom: -78mm; width: 190mm; opacity: .5; mix-blend-mode: lighten; }
+  .cbar { position: absolute; top: 14mm; left: 20mm; right: 20mm; display: flex; justify-content: space-between; align-items: center; font-size: 8pt; letter-spacing: .14em; text-transform: uppercase; color: #7C8CA6; }
+  .cbar .brand img { width: 9mm; height: 9mm; }
+  .cover .ctxt { position: absolute; top: 62mm; left: 20mm; right: 20mm; text-align: left; }
+  .cover .eyebrow { font-size: 9.5pt; letter-spacing: .32em; color: #22D3EE; font-weight: 700; display: flex; align-items: center; gap: 4mm; }
+  .cover .eyebrow::after { content: ""; width: 18mm; height: 1.5px; background: #22D3EE; }
+  .cover h1 { font-family: "Inter Display","Inter"; font-size: 46pt; line-height: 1.02; letter-spacing: -.03em; font-weight: 800; margin: 8mm 0 7mm; }
+  .cover h1 span { font-weight: 300; color: #9FB3CF; }
+  .cover .sub { font-size: 12pt; color: #B6C3D6; line-height: 1.55; max-width: 115mm; }
+  .cpills { position: absolute; left: 20mm; bottom: 18mm; display: flex; flex-direction: column; gap: 2.5mm; }
+  .cpills span { font-size: 9.5pt; color: #CFE3F7; padding: 2.4mm 4.5mm; border: 1px solid #ffffff1f; border-radius: 99px; background: #ffffff08; width: fit-content; }
+  .cpills b { color: #22D3EE; font-weight: 700; }
+
+  /* Cierre */
+  .end { background: radial-gradient(70% 55% at 50% 42%, #0F3B6E 0%, #071428 50%, #02050C 100%); }
+  .end > * { position: relative; }
+  .end .elogo { width: 78mm; mix-blend-mode: lighten; }
+  .end h3 { font-size: 26pt; letter-spacing: -.02em; }
+
+  /* Ajustes de componentes */
+  .stats { margin-top: 2mm; }
+  .stat .n { font-size: 44pt; }
+  .flow { margin-top: 12mm; }
+  .card .ic, .sc .ic { box-shadow: inset 0 0 0 1px #22D3EE33; }
+  .grid { margin-top: 2mm; border-radius: 3mm; overflow: hidden; }
+  .sec { margin-top: 2mm; }
+  .fig-t:first-of-type { margin-top: 0; }
+  .callout, .eq { box-shadow: 0 6px 18px #0A1A3326; }
+
+</style>
     </defs>
 
     <!-- Nube bloqueada -->
@@ -331,24 +393,18 @@
   </div>
 
   <div class="tech"><b>Base técnica</b>Arquitectura en capas desacopladas · Hilo dedicado por flujo de cámara y por analítica, con conexión RTSP compartida · Bus de eventos tipado en memoria · ONNX Runtime · SQLAlchemy con migraciones Alembic · Interfaz PySide6 (Qt).</div>
-  <div class="num">03</div>
+  <footer class="pf"><span>AureaIA VMS · Presentación de producto</span><span class="pn">03</span></footer>
 </section>
 
 <!-- 4. Analítica estrella: past-posting en ruleta -->
 <section class="page">
-  <div class="top"><b>AureaIA</b><span>Analítica a medida</span></div>
-  <div class="kicker">Analítica a medida · Ruleta</div>
-  <h2>Detección de past-posting<br>en el paño de ruleta</h2>
-  <p class="lead">Detecta fichas colocadas o movidas en el paño después del "no va más". El cierre de apuestas se determina de forma automática.</p>
-
-  <div class="pipe">
-    <div class="ps"><span>01</span>Seguimiento de la bola</div><i></i>
-    <div class="ps"><span>02</span>Velocidad en °/s</div><i></i>
-    <div class="ps hl"><span>03</span>"No va más" automático</div><i></i>
-    <div class="ps"><span>04</span>Verificación por cuadro</div><i></i>
-    <div class="ps"><span>05</span>Filtro de lista blanca</div><i></i>
-    <div class="ps al"><span>06</span>Alerta</div>
-  </div>
+  <header class="hero">
+    <div class="bar"><span class="brand"><img src="../../../aurea_vms/ui/assets/images/logo.png" alt="">AureaIA <em>VMS</em></span><span>Analítica a medida</span></div>
+    <div class="big">04</div>
+    <div class="kicker">Analítica a medida · Ruleta</div>
+    <h2>Detección de past-posting<br>en el paño de ruleta</h2>
+    <p class="lead">Detecta fichas colocadas o movidas en el paño después del "no va más". El cierre de apuestas se determina de forma automática.</p>
+  </header>
 
   <div class="fig-t"><b>A</b>Activación: la velocidad de la bola como detonante</div>
   <svg viewBox="0 0 680 172" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter">
@@ -421,17 +477,20 @@
   </table>
 
   <div class="tech"><b>Base técnica</b>Detección por cuadro de bola, fichas y manos · Seguimiento de la trayectoria de la bola con cálculo de velocidad angular (°/s) · Cierre automático de apuestas por umbral de velocidad · Comparación del paño contra el estado de referencia · Lista blanca de manos por morfología del crupier · Alerta con clip del evento.</div>
-  <div class="num">04</div>
+  <footer class="pf"><span>AureaIA VMS · Presentación de producto</span><span class="pn">04</span></footer>
 </section>
 
 <!-- 5. Cómo piensa el modelo -->
 <section class="page">
-  <div class="top"><b>AureaIA</b><span>Cómo piensa el modelo</span></div>
-  <div class="kicker">Cómo piensa el modelo</div>
-  <h2>El paño, convertido<br>en números</h2>
-  <p class="lead">El modelo no "mira" la mesa como una persona: la traduce a números y compara.</p>
+  <header class="hero">
+    <div class="bar"><span class="brand"><img src="../../../aurea_vms/ui/assets/images/logo.png" alt="">AureaIA <em>VMS</em></span><span>Cómo piensa el modelo</span></div>
+    <div class="big">05</div>
+    <div class="kicker">Cómo piensa el modelo</div>
+    <h2>El paño, convertido<br>en números</h2>
+    <p class="lead">El modelo no "mira" la mesa como una persona: la traduce a números y compara.</p>
+  </header>
 
-  <svg viewBox="0 0 680 250" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter" style="margin-top:9mm">
+  <svg viewBox="0 0 680 250" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter" style="margin-top:0">
     <defs>
       <pattern id="pz" width="74.67" height="50" patternUnits="userSpaceOnUse"><rect width="74.67" height="50" fill="none" stroke="#3E7A63"/></pattern>
       <marker id="az" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#0891B2"/></marker>
@@ -492,10 +551,10 @@
     <text x="24" y="221" font-size="13.5" font-weight="700" fill="#fff">Comparar números es <tspan fill="#22D3EE">instantáneo y objetivo</tspan>: no depende del cansancio ni de la atención.</text>
   </svg>
 
-  <div class="kicker" style="margin-top:10mm">Cómo aprendió · Red neuronal</div>
+  <div class="kicker" style="margin-top:6mm">Cómo aprendió · Red neuronal</div>
   <h2 style="font-size:19pt;margin-bottom:4mm">Una red neuronal entrenada con ejemplos</h2>
 
-  <svg viewBox="0 0 680 300" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter">
+  <svg viewBox="0 0 680 300" width="88%" style="display:block;margin:0 auto" xmlns="http://www.w3.org/2000/svg" font-family="Inter">
 <defs>
 <radialGradient id="ng"><stop offset="0" stop-color="#22D3EE" stop-opacity=".55"/><stop offset="1" stop-color="#22D3EE" stop-opacity="0"/></radialGradient>
 <linearGradient id="nbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0B2347"/><stop offset="1" stop-color="#050B18"/></linearGradient>
@@ -597,15 +656,18 @@
   <div class="loopback"><span>✓</span> En la sala, el modelo ya llega entrenado y trabaja en tiempo real.</div>
 
   <div class="tech"><b>Base técnica</b>Vectorización del paño en K casilleros y comparación contra el estado de referencia (Δ = s<sub>t</sub> − s<sub>ref</sub>) · Red neuronal de detección entrenada por retropropagación (backpropagation) y descenso de gradiente · Pesos fijos en operación.</div>
-  <div class="num">05</div>
+  <footer class="pf"><span>AureaIA VMS · Presentación de producto</span><span class="pn">05</span></footer>
 </section>
 
 <!-- 6. Compatibilidad y operación -->
 <section class="page">
-  <div class="top"><b>AureaIA</b><span>Integración y operación</span></div>
-  <div class="kicker">Integración y operación</div>
-  <h2>Se conecta a lo que<br>la sala ya tiene</h2>
-  <p class="lead">Compatible con el estándar de la industria: no hace falta cambiar cámaras ni grabadores.</p>
+  <header class="hero">
+    <div class="bar"><span class="brand"><img src="../../../aurea_vms/ui/assets/images/logo.png" alt="">AureaIA <em>VMS</em></span><span>Integración y operación</span></div>
+    <div class="big">06</div>
+    <div class="kicker">Integración y operación</div>
+    <h2>Se conecta a lo que<br>la sala ya tiene</h2>
+    <p class="lead">Compatible con el estándar de la industria: no hace falta cambiar cámaras ni grabadores.</p>
+  </header>
 
   <div class="grid">
     <div class="card"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M12 18h.01"/><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/><path d="m13.41 10.59 5.66-5.66"/></svg></div><h4>Descubrimiento automático</h4><p>Encuentra las cámaras de la red y lee marca, modelo y configuración.</p></div>
@@ -629,15 +691,18 @@
   <div class="hier"><span class="b">Sitio</span><span class="s">→</span><span class="b">Zona</span><span class="s">→</span><span class="b">Cámara</span><span style="font-size:9pt;color:var(--muted);margin-left:3mm">De una sala a varias sedes, con filtro global por sitio.</span></div>
 
   <div class="tech"><b>Base técnica</b>Protocolos RTSP y ONVIF (WS-Discovery, perfiles de medios, PTZ) · Doble flujo main/sub-stream con conexión compartida · Watchdog por PTS · Arquitectura en capas con analíticas como plugins · Base de datos versionada y portable a PostgreSQL.</div>
-  <div class="num">06</div>
+  <footer class="pf"><span>AureaIA VMS · Presentación de producto</span><span class="pn">06</span></footer>
 </section>
 
 <!-- 5. Seguridad -->
 <section class="page">
-  <div class="top"><b>AureaIA</b><span>Seguridad</span></div>
-  <div class="kicker">Seguridad por diseño</div>
-  <h2>Protegido desde<br>la arquitectura</h2>
-  <p class="lead">La seguridad no es un agregado: está en cómo se construyó el sistema.</p>
+  <header class="hero">
+    <div class="bar"><span class="brand"><img src="../../../aurea_vms/ui/assets/images/logo.png" alt="">AureaIA <em>VMS</em></span><span>Seguridad</span></div>
+    <div class="big">07</div>
+    <div class="kicker">Seguridad por diseño</div>
+    <h2>Protegido desde<br>la arquitectura</h2>
+    <p class="lead">La seguridad no es un agregado: está en cómo se construyó el sistema.</p>
+  </header>
 
   <div class="sec">
     <div class="sc hl"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/></svg></div><div><h4>Sin nube, sin puertos abiertos</h4><p>No ofrece servicios a la red ni envía imágenes afuera.</p></div></div>
@@ -656,13 +721,14 @@
   </div>
 
   <div class="tech"><b>Base técnica</b>ORM con consultas parametrizadas · Hash PBKDF2-SHA256 con 600.000 iteraciones (OWASP) · Cifrado de credenciales en reposo · Control de acceso por roles (RBAC) · Migraciones atómicas con backup previo · Integración continua con análisis estático y pruebas.</div>
-  <div class="num">07</div>
+  <footer class="pf"><span>AureaIA VMS · Presentación de producto</span><span class="pn">07</span></footer>
 </section>
 
 <!-- 6. Cierre -->
 <section class="page end">
-  <img src="../../../aurea_vms/ui/assets/images/logo.png" alt="AureaIA">
-  <h3>Inteligencia artificial aplicada<br>a la <em>seguridad del juego</em></h3>
+  <div class="gridbg"></div>
+  <img class="elogo" src="../../../aurea_vms/ui/assets/images/logo.png" alt="AureaIA">
+  <h3>Inteligencia artificial aplicada<br>a la <em>seguridad del juego</em>.</h3>
   <p>AureaIA VMS · Video, grabación y analítica en una sola plataforma.</p>
   <div class="pills"><span>100 % local</span><span>Tiempo real</span><span>Analítica a medida</span></div>
 </section>
