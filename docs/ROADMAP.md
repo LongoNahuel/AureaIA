@@ -182,6 +182,27 @@ que se trabajan ese mismo día:
   *(Medición de la galería del 22/09; esa lógica salió con `face_catalog.py`
   el 23/09. La galería nueva no se midió.)*
 
+- **Con 16 recuadros visibles cada uno muestra unos 13-15 de sus 25 fps.**
+  La GUI quedó liviana (14,7 %, un clic en menos de 10 ms, Fase V1b del
+  07/10), pero los hilos de render los limita el GIL: el overlay es Python.
+  Si hiciera falta, la opción es abaratar el overlay (cachear lo fijo:
+  textos, guías y zonas) o achicar en el `StreamWorker`. Con marcas reales
+  de analíticas el overlay cuesta más; falta medirlo con detecciones.
+
+## Multi-monitor (pestañas en varias ventanas, 07/10)
+
+Hecho: las fases V1, V1b, V2, V3 y V4 de `sesiones/2026-10-07.md`.
+Queda:
+
+- **V5: arrastrar una pestaña afuera de la barra.** Hoy se desacopla por el
+  menú contextual. Depende de la plataforma (X11, Wayland y Windows): hay
+  que probarlo a mano en las tres.
+- **Probar a mano con 2 monitores reales y en el build de Windows.** Daniel
+  lo probó en X11 con un solo monitor: desacoplar anda bien y la
+  disposición se guarda.
+- Lo que la disposición no guarda todavía: el recuadro expandido de una
+  grilla y el modo de la vista. Al restaurar quedan los de siempre.
+
 ## UI — para Nahuel
 
 Salieron de la re-auditoría del 2026-09-23; el detalle y cómo se
@@ -269,6 +290,19 @@ Salieron de la revisión del 2026-09-24 de `f309d79`; el detalle está en
   Sitios → Zonas → Cámaras).
 
 ## Hecho
+
+- ~~Las pestañas solo vivían en una ventana~~ — 07/10: cualquier pestaña
+  (menos Inicio) se lleva a otra ventana por el menú contextual sin cortar
+  el video. Vista en Vivo e Inteligente admiten varias instancias, el «+»
+  abre una Vista en Vivo y la disposición se restaura por usuario
+  (`ui_layouts`, 0009).
+- ~~La `MainWindow` vieja sobrevivía a cada logout~~ — 07/10: un ciclo por
+  C++ (la lambda del combo de sitio) la mantenía viva con sus timers y sus
+  conexiones al `event_bus`. Ahora tiene `WA_DeleteOnClose`.
+- ~~«Ajustes avanzados» abría Dispositivos en vez de Analizadores~~ — 07/10:
+  índice 2 fijo. Los atajos piden el módulo por clase.
+- ~~Recuadros ocultos o minimizados que seguían pintando~~ — 07/10: 16
+  ocultos ocupaban el 99 % de la GUI, ahora 0 %.
 
 - ~~El smoke del `.exe` no prueba el bundle~~ — compartía `AUREA_DATA_DIR`
   con el smoke previo al build: encontraba la base en head y los `.onnx`
