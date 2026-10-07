@@ -139,12 +139,17 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
         return
 
     settings.ensure_dirs()
-    path = db_path or settings.db_path
+    # Un db_path explicito siempre es SQLite (tests, smoke). Si no, manda
+    # AUREA_DB_URL y, sin ella, el SQLite local de siempre.
+    path = db_path or (None if settings.db_url else settings.db_path)
 
-    engine = create_engine(
-        f"sqlite:///{path}",
-        connect_args={"check_same_thread": False},
-    )
+    if path is not None:
+        engine = create_engine(
+            f"sqlite:///{path}",
+            connect_args={"check_same_thread": False},
+        )
+    else:
+        engine = create_engine(settings.db_url, pool_pre_ping=True)
     if engine.dialect.name == "sqlite":
         event.listen(engine, "connect", _apply_sqlite_pragmas)
 
@@ -163,17 +168,19 @@ def init_db(db_path: Path | None = None, *, force: bool = False) -> None:
         anterior.dispose()
 
 
-def _config_de_alembic(db_path: Path) -> Config:
+def _config_de_alembic(destino: Path | str) -> Config:
+    """`destino` es la ruta de un SQLite o una URL completa de SQLAlchemy."""
     # set_main_option pasa por la interpolacion de ConfigParser: un "%" en
-    # la ruta (un usuario de Windows "ana%20", un AUREA_DATA_DIR raro)
-    # levantaba ValueError al arrancar. "%%" es el escape.
+    # la ruta (un usuario de Windows "ana%20", un AUREA_DATA_DIR raro) o en
+    # la clave de la URL levantaba ValueError al arrancar. "%%" es el escape.
+    url = destino if "://" in str(destino) else f"sqlite:///{destino}"
     config = Config()
     config.set_main_option("script_location", str(MIGRATIONS_DIR).replace("%", "%%"))
-    config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}".replace("%", "%%"))
+    config.set_main_option("sqlalchemy.url", str(url).replace("%", "%%"))
     return config
 
 
-def migrar(engine, db_path: Path) -> None:
+def migrar(engine, db_path: Path | None) -> None:
     """Lleva la base a la ultima revision, venga de donde venga.
 
     Tres casos, y los tres terminan en `upgrade head`:
@@ -191,8 +198,21 @@ def migrar(engine, db_path: Path) -> None:
     Todo pasa con el lock entre procesos tomado (ver
     migrations/resguardo.py); cuando hay algo que aplicar, despues de un
     backup de la base y con cada upgrade atomico (ver migrations/env.py).
+
+    `db_path` es None cuando la base vive en un servidor (AUREA_DB_URL).
+    Ahi cambian tres cosas:
+    - El lock se toma en el directorio de datos local. Cubre dos instancias en
+      el mismo equipo, no dos puestos contra el mismo nodo: un nodo central se
+      migra desde un solo lugar.
+    - No hay backup automatico: la API de backup es de sqlite3, y el resguardo
+      del servidor es `pg_dump`, a cargo de quien lo opera. El upgrade es
+      atomico igual, porque Postgres tiene DDL transaccional.
+    - No se adopta: las bases anteriores a Alembic solo existieron en SQLite.
     """
-    config = _config_de_alembic(db_path)
+    sqlite = db_path is not None
+    config = _config_de_alembic(
+        db_path if sqlite else engine.url.render_as_string(hide_password=False)
+    )
     cabeza = ScriptDirectory.from_config(config).get_current_head()
 
     # El lock va ANTES de la primera lectura, no solo alrededor del upgrade:
@@ -201,7 +221,7 @@ def migrar(engine, db_path: Path) -> None:
     # niega SIN esperar si otro proceso esta migrando (su caso de evitar
     # deadlock: busy_timeout no aplica). Reproducido con dos procesos sobre
     # una base legada, ~1 de cada 20 corridas. Tomarlo cuesta ~50us.
-    with lock_de_migracion(Path(db_path).parent):
+    with lock_de_migracion(Path(db_path).parent if sqlite else settings.data_dir):
         revision, tablas = _estado(engine)
         if revision == cabeza:
             # El caso normal de todos los arranques a partir del segundo. Se
@@ -210,10 +230,23 @@ def migrar(engine, db_path: Path) -> None:
             return
 
         tiene_datos = bool(tablas - {"alembic_version"})
-        if tiene_datos:
+        if tiene_datos and sqlite:
             respaldar(Path(db_path), revision)
             limpiar_tablas_temporales(engine)
+        elif tiene_datos:
+            logger.warning(
+                "Migrando %s de %s a %s sin backup automático: el resguardo del "
+                "servidor (pg_dump) queda a cargo de quien lo opera",
+                engine.url.render_as_string(hide_password=True),
+                revision,
+                cabeza,
+            )
 
+        if revision is None and tiene_datos and not sqlite:
+            raise RuntimeError(
+                "La base del servidor tiene tablas pero no está versionada por Alembic: "
+                "no se adopta automáticamente. Hay que revisarla a mano."
+            )
         if revision is None and tiene_datos:
             adoptar(engine, Base.metadata)
             logger.info(

@@ -20,6 +20,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
+from aurea_vms.migrations.ayudas import columna_existe
+
 revision: str = "0003_drop_site_id"
 down_revision: str | None = "0002_datos_legados"
 branch_labels: str | Sequence[str] | None = None
@@ -28,21 +30,17 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     conn = op.get_bind()
-    columnas = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(devices)")}
-    if "site_id" not in columnas:
+    if not columna_existe(conn, "devices", "site_id"):
         return  # base creada por 0001: nunca tuvo la columna
 
     # Las bases viejas traen ix_devices_site_id. batch_alter_table refleja la
     # tabla entera y recrea sus indices sobre la copia nueva, asi que un
     # indice sobre la columna que estamos sacando la hace fallar con
-    # "no such column: site_id". Se van primero.
-    for fila in conn.exec_driver_sql("PRAGMA index_list(devices)").fetchall():
-        nombre = fila[1]
-        if nombre.startswith("sqlite_autoindex"):
-            continue
-        columnas_del_indice = {r[2] for r in conn.exec_driver_sql(f"PRAGMA index_info({nombre})")}
-        if "site_id" in columnas_del_indice:
-            op.drop_index(nombre, table_name="devices")
+    # "no such column: site_id". Se van primero. El inspector no lista los
+    # `sqlite_autoindex_*` de las UNIQUE, que antes habia que saltear a mano.
+    for indice in sa.inspect(conn).get_indexes("devices"):
+        if "site_id" in indice["column_names"]:
+            op.drop_index(indice["name"], table_name="devices")
 
     # SQLite no sabe DROP COLUMN con constraints: batch_alter_table recrea
     # la tabla entera, y por eso hizo falta la naming_convention de

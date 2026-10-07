@@ -48,6 +48,9 @@ logger = logging.getLogger("alembic.0004_constraints")
 # una regla que nadie termino de configurar -- rellenarla con el default la
 # ACTIVABA (con analizador inventado) sin que nadie lo pidiera. Se apaga, y
 # queda visible en la UI para que alguien la revise.
+#
+# Booleanos como TRUE/FALSE y no 1/0: Postgres no castea un entero a boolean
+# en un UPDATE. SQLite (>= 3.23) los entiende y los guarda igual, como 1/0.
 DEFAULTS_DE_ALARM_RULES = {
     "analyzer_name": "'door_state'",
     "object_classes": "'[]'",
@@ -56,14 +59,14 @@ DEFAULTS_DE_ALARM_RULES = {
     "severity": "'medio'",
     "schedule_days": "'[]'",
     "actions": "'{}'",
-    "enabled": "0",
+    "enabled": "FALSE",
 }
 
 
 def _rellenar_nulls_de_alarm_rules(conn) -> None:
     # Antes de rellenar analyzer_name: despues ya no se sabe cual venia NULL.
     apagadas = conn.execute(
-        sa.text("UPDATE alarm_rules SET enabled = 0 WHERE analyzer_name IS NULL")
+        sa.text("UPDATE alarm_rules SET enabled = FALSE WHERE analyzer_name IS NULL")
     )
     if apagadas.rowcount:
         logger.info(
