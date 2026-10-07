@@ -130,6 +130,13 @@
   table.dec th { text-align: left; font-size: 7.5pt; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 700; padding: 0 0 2mm; border-bottom: 1px solid var(--line); }
   table.dec td { padding: 2.2mm 0; border-bottom: 1px solid var(--line); color: var(--ink); }
   table.dec tr:last-child td { font-weight: 600; }
+
+  .eq { margin-top: 4mm; background: var(--navy); border-radius: 3mm; padding: 3.5mm 5mm; display: flex; align-items: baseline; gap: 6mm; color: #fff; }
+  .eq .lbl { font-size: 7.5pt; letter-spacing: .14em; text-transform: uppercase; color: var(--cyan-l); font-weight: 700; }
+  .eq .m, .eq .m2 { font-family: "FreeSerif", serif; font-style: italic; font-size: 13pt; }
+  .eq .m2 { font-size: 11pt; color: #A5B4CC; margin-left: auto; }
+  .eq sub, .tech sub { font-size: 70%; }
+  .tech i { font-family: "FreeSerif", serif; font-size: 10pt; color: var(--ink); }
 </style>
 </head>
 <body>
@@ -406,7 +413,174 @@
   <div class="num">04</div>
 </section>
 
-<!-- 4. Compatibilidad y operación -->
+<!-- 5. Esquema técnico del modelo de fichas -->
+<section class="page">
+  <div class="top"><b>AureaIA</b><span>Esquema técnico</span></div>
+  <div class="kicker">Esquema técnico · Modelo de fichas</div>
+  <h2 style="font-size:22pt">Vectorización del paño<br>y entrenamiento del modelo</h2>
+
+  <!-- Figura 1 -->
+  <svg viewBox="0 0 680 118" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter" style="margin-top:3mm">
+    <defs><marker id="f1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#0F172A"/></marker></defs>
+    <g font-size="9.5" text-anchor="middle">
+      <rect x="0" y="22" width="92" height="58" rx="6" fill="#F1F7FB" stroke="#CBD5E1"/>
+      <text x="46" y="42" font-weight="700" fill="#0F172A">Cuadro</text>
+      <text x="46" y="64" font-family="FreeSerif" font-style="italic" font-size="14" fill="#0F172A">I<tspan font-size="10" dy="3">t</tspan></text>
+      <rect x="114" y="22" width="102" height="58" rx="6" fill="#F1F7FB" stroke="#CBD5E1"/>
+      <text x="165" y="42" font-weight="700" fill="#0F172A">Preproceso</text>
+      <text x="165" y="58" font-size="8.5" fill="#64748B">ROI del paño</text>
+      <text x="165" y="70" font-size="8.5" fill="#64748B">normalización</text>
+      <rect x="238" y="22" width="102" height="58" rx="6" fill="#0A1A33"/>
+      <text x="289" y="42" font-weight="700" fill="#fff">Red de detección</text>
+      <text x="289" y="64" font-family="FreeSerif" font-style="italic" font-size="14" fill="#22D3EE">f<tspan font-size="10" dy="3">θ</tspan><tspan dy="-3">(I</tspan><tspan font-size="10" dy="3">t</tspan><tspan dy="-3">)</tspan></text>
+      <rect x="362" y="22" width="102" height="58" rx="6" fill="#F1F7FB" stroke="#CBD5E1"/>
+      <text x="413" y="42" font-weight="700" fill="#0F172A">Vectorización</text>
+      <text x="413" y="64" font-family="FreeSerif" font-style="italic" font-size="14" fill="#0F172A">s<tspan font-size="10" dy="3">t</tspan><tspan dy="-3" font-style="normal"> ∈ ℕ</tspan><tspan font-size="10" dy="-5">K</tspan></text>
+      <rect x="486" y="22" width="88" height="58" rx="6" fill="#F1F7FB" stroke="#CBD5E1"/>
+      <text x="530" y="42" font-weight="700" fill="#0F172A">Diferencia</text>
+      <text x="530" y="64" font-family="FreeSerif" font-style="italic" font-size="13" fill="#0F172A">Δ<tspan font-size="10" dy="3">t</tspan><tspan dy="-3"> = s</tspan><tspan font-size="10" dy="3">t</tspan><tspan dy="-3"> − s</tspan><tspan font-size="9" dy="3">ref</tspan></text>
+      <rect x="596" y="22" width="84" height="58" rx="6" fill="#FFF1F2" stroke="#FECDD3"/>
+      <text x="638" y="42" font-weight="700" fill="#E11D48">Decisión</text>
+      <text x="638" y="58" font-size="8.5" fill="#9F1239">regla + lista</text>
+      <text x="638" y="70" font-size="8.5" fill="#9F1239">blanca</text>
+    </g>
+    <g stroke="#0F172A" stroke-width="1.4"><path d="M92 51 H112" marker-end="url(#f1)"/><path d="M216 51 H236" marker-end="url(#f1)"/><path d="M340 51 H360" marker-end="url(#f1)"/><path d="M464 51 H484" marker-end="url(#f1)"/><path d="M574 51 H594" marker-end="url(#f1)"/></g>
+    <g font-size="11" fill="#475569" text-anchor="middle" font-family="FreeSerif" font-style="italic">
+      <text x="350" y="12">D<tspan font-size="8" dy="2">t</tspan><tspan dy="-2"> = {(x</tspan><tspan font-size="8" dy="2">i</tspan><tspan dy="-2">, y</tspan><tspan font-size="8" dy="2">i</tspan><tspan dy="-2">, w</tspan><tspan font-size="8" dy="2">i</tspan><tspan dy="-2">, h</tspan><tspan font-size="8" dy="2">i</tspan><tspan dy="-2">, c</tspan><tspan font-size="8" dy="2">i</tspan><tspan dy="-2">, p</tspan><tspan font-size="8" dy="2">i</tspan><tspan dy="-2">)}</tspan></text>
+    </g>
+    <path d="M350 17 V20" stroke="#94A3B8"/>
+    <text x="0" y="104" font-size="8.5" fill="#64748B"><tspan font-weight="700" fill="#0F172A">Figura 1.</tspan> Pipeline de inferencia por cuadro. Cada detección es un vector con posición, tamaño, clase (ficha, mano, bola) y confianza.</text>
+  </svg>
+
+  <!-- Figura 2 -->
+  <svg viewBox="0 0 680 200" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter" style="margin-top:7mm">
+    <defs><pattern id="pn2" width="50" height="40" patternUnits="userSpaceOnUse"><rect width="50" height="40" fill="none" stroke="#3E7A63"/></pattern></defs>
+    <text x="0" y="10" font-size="9" font-weight="700" fill="#0F172A">Paño discretizado en K casilleros</text>
+    <rect x="0" y="18" width="300" height="120" rx="4" fill="#0E3B2E"/>
+    <rect x="0" y="18" width="300" height="120" fill="url(#pn2)"/>
+    <g font-size="8" fill="#9BC7B5" font-family="FreeSerif" font-style="italic">
+      <text x="4" y="29">k=1</text><text x="54" y="29">2</text><text x="104" y="29">3</text><text x="154" y="29">4</text><text x="204" y="29">5</text><text x="254" y="29">6</text>
+      <text x="4" y="69">7</text><text x="54" y="69">8</text><text x="104" y="69">9</text><text x="154" y="69">10</text><text x="204" y="69">11</text><text x="254" y="69">12</text>
+      <text x="4" y="109">13</text><text x="54" y="109">14</text><text x="104" y="109">15</text><text x="154" y="109">16</text><text x="204" y="109">17</text><text x="254" y="109">18</text>
+    </g>
+    <g fill="#F59E0B" stroke="#fff" stroke-width="1.3">
+      <circle cx="75" cy="42" r="7"/><circle cx="175" cy="82" r="7"/><circle cx="181" cy="78" r="7"/><circle cx="225" cy="122" r="7"/>
+    </g>
+    <circle cx="125" cy="122" r="7" fill="#F59E0B" stroke="#fff" stroke-width="1.3"/>
+    <circle cx="125" cy="122" r="12" fill="none" stroke="#E11D48" stroke-width="2"/>
+    <text x="0" y="152" font-size="8" fill="#64748B">Cada ficha detectada se asigna al casillero que contiene su centro <tspan font-family="FreeSerif" font-style="italic" font-size="10">(x</tspan><tspan font-family="FreeSerif" font-style="italic" font-size="7" dy="2">i</tspan><tspan font-family="FreeSerif" font-style="italic" font-size="10" dy="-2">, y</tspan><tspan font-family="FreeSerif" font-style="italic" font-size="7" dy="2">i</tspan><tspan font-family="FreeSerif" font-style="italic" font-size="10" dy="-2">)</tspan>.</text>
+
+    <path d="M312 78 H346" stroke="#0891B2" stroke-width="1.8"/><path d="M346 78 l-6 -4 v8 z" fill="#0891B2"/>
+
+    <!-- Vectores -->
+    <g font-family="FreeSerif" font-style="italic" font-size="13" fill="#0F172A" text-anchor="middle">
+      <text x="392" y="12">s<tspan font-size="9" dy="3">t</tspan></text>
+      <text x="472" y="12">s<tspan font-size="9" dy="3">ref</tspan></text>
+      <text x="552" y="12">Δ<tspan font-size="9" dy="3">t</tspan></text>
+    </g>
+    <g font-size="9" text-anchor="middle">
+      <g id="col">
+      </g>
+    </g>
+    <!-- filas k: valores ref / t / delta -->
+    <g font-size="9" text-anchor="middle" fill="#0F172A">
+      <rect x="452" y="20" width="40" height="15" fill="#F1F7FB" stroke="#CBD5E1"/><text x="472" y="31">0</text>
+      <rect x="452" y="35" width="40" height="15" fill="#FEF3C7" stroke="#CBD5E1"/><text x="472" y="46">1</text>
+      <rect x="452" y="50" width="40" height="15" fill="#F1F7FB" stroke="#CBD5E1"/><text x="472" y="61">⋮</text>
+      <rect x="452" y="65" width="40" height="15" fill="#FDE68A" stroke="#CBD5E1"/><text x="472" y="76">2</text>
+      <rect x="452" y="80" width="40" height="15" fill="#F1F7FB" stroke="#CBD5E1"/><text x="472" y="91">⋮</text>
+      <rect x="452" y="95" width="40" height="15" fill="#F1F7FB" stroke="#CBD5E1"/><text x="472" y="106">0</text>
+      <rect x="452" y="110" width="40" height="15" fill="#F1F7FB" stroke="#CBD5E1"/><text x="472" y="121">⋮</text>
+      <rect x="452" y="125" width="40" height="15" fill="#FEF3C7" stroke="#CBD5E1"/><text x="472" y="136">1</text>
+
+      <rect x="372" y="20" width="40" height="15" fill="#F1F7FB" stroke="#CBD5E1"/><text x="392" y="31">0</text>
+      <rect x="372" y="35" width="40" height="15" fill="#FEF3C7" stroke="#CBD5E1"/><text x="392" y="46">1</text>
+      <rect x="372" y="50" width="40" height="15" fill="#F1F7FB" stroke="#CBD5E1"/><text x="392" y="61">⋮</text>
+      <rect x="372" y="65" width="40" height="15" fill="#FDE68A" stroke="#CBD5E1"/><text x="392" y="76">2</text>
+      <rect x="372" y="80" width="40" height="15" fill="#F1F7FB" stroke="#CBD5E1"/><text x="392" y="91">⋮</text>
+      <rect x="372" y="95" width="40" height="15" fill="#FEF3C7" stroke="#E11D48" stroke-width="1.6"/><text x="392" y="106" font-weight="700" fill="#E11D48">1</text>
+      <rect x="372" y="110" width="40" height="15" fill="#F1F7FB" stroke="#CBD5E1"/><text x="392" y="121">⋮</text>
+      <rect x="372" y="125" width="40" height="15" fill="#FEF3C7" stroke="#CBD5E1"/><text x="392" y="136">1</text>
+
+      <rect x="532" y="20" width="40" height="15" fill="#fff" stroke="#CBD5E1"/><text x="552" y="31">0</text>
+      <rect x="532" y="35" width="40" height="15" fill="#fff" stroke="#CBD5E1"/><text x="552" y="46">0</text>
+      <rect x="532" y="50" width="40" height="15" fill="#fff" stroke="#CBD5E1"/><text x="552" y="61">⋮</text>
+      <rect x="532" y="65" width="40" height="15" fill="#fff" stroke="#CBD5E1"/><text x="552" y="76">0</text>
+      <rect x="532" y="80" width="40" height="15" fill="#fff" stroke="#CBD5E1"/><text x="552" y="91">⋮</text>
+      <rect x="532" y="95" width="40" height="15" fill="#E11D48"/><text x="552" y="106" font-weight="700" fill="#fff">+1</text>
+      <rect x="532" y="110" width="40" height="15" fill="#fff" stroke="#CBD5E1"/><text x="552" y="121">⋮</text>
+      <rect x="532" y="125" width="40" height="15" fill="#fff" stroke="#CBD5E1"/><text x="552" y="136">0</text>
+    </g>
+    <g font-size="8" fill="#64748B" font-family="FreeSerif" font-style="italic" text-anchor="end">
+      <text x="366" y="31">k=1</text><text x="366" y="46">2</text><text x="366" y="76">10</text><text x="366" y="106">15</text><text x="366" y="136">17</text>
+    </g>
+    <text x="432" y="84" font-size="16" fill="#0F172A" text-anchor="middle">−</text>
+    <text x="512" y="84" font-size="16" fill="#0F172A" text-anchor="middle">=</text>
+    <g font-size="8.5" fill="#0F172A">
+      <text x="586" y="100" font-weight="700" fill="#E11D48">Casillero 15:</text>
+      <text x="586" y="112" fill="#64748B">ficha nueva luego</text>
+      <text x="586" y="124" fill="#64748B">del "no va más"</text>
+    </g>
+    <text x="372" y="156" font-size="8.5" fill="#0F172A" font-family="FreeSerif" font-style="italic"><tspan font-size="11">‖Δ</tspan><tspan font-size="8" dy="3">t</tspan><tspan font-size="11" dy="-3">‖</tspan><tspan font-size="8" dy="3">1</tspan><tspan font-size="11" dy="-3"> = 1 &gt; ε</tspan><tspan font-family="Inter" font-style="normal" fill="#64748B"> → cambio confirmado</tspan></text>
+    <text x="0" y="190" font-size="8.5" fill="#64748B"><tspan font-weight="700" fill="#0F172A">Figura 2.</tspan> Vectorización del paño: el estado de cada cuadro se compara contra el vector de referencia tomado en el "no va más".</text>
+  </svg>
+
+  <!-- Figura 3 -->
+  <svg viewBox="0 0 680 222" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter" style="margin-top:7mm">
+    <defs>
+      <marker id="fw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#0891B2"/></marker>
+      <marker id="bw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#E11D48"/></marker>
+    </defs>
+    <rect x="0" y="0" width="680" height="196" rx="8" fill="#F8FBFD" stroke="#E2E8F0"/>
+    <text x="668" y="17" text-anchor="end" font-size="8.5" font-weight="700" fill="#64748B" letter-spacing="1">FASE DE ENTRENAMIENTO · FUERA DE LÍNEA</text>
+    <!-- conexiones -->
+    <g stroke="#CBD5E1" stroke-width=".8">
+      <path d="M60 50 L150 40 M60 50 L150 75 M60 50 L150 110 M60 50 L150 145 M60 95 L150 40 M60 95 L150 75 M60 95 L150 110 M60 95 L150 145 M60 140 L150 40 M60 140 L150 75 M60 140 L150 110 M60 140 L150 145"/>
+      <path d="M150 40 L240 40 M150 40 L240 75 M150 40 L240 110 M150 40 L240 145 M150 75 L240 40 M150 75 L240 75 M150 75 L240 110 M150 75 L240 145 M150 110 L240 40 M150 110 L240 75 M150 110 L240 110 M150 110 L240 145 M150 145 L240 40 M150 145 L240 75 M150 145 L240 110 M150 145 L240 145"/>
+      <path d="M240 40 L330 60 M240 40 L330 95 M240 40 L330 130 M240 75 L330 60 M240 75 L330 95 M240 75 L330 130 M240 110 L330 60 M240 110 L330 95 M240 110 L330 130 M240 145 L330 60 M240 145 L330 95 M240 145 L330 130"/>
+    </g>
+    <g fill="#fff" stroke="#0891B2" stroke-width="1.6">
+      <circle cx="60" cy="50" r="9"/><circle cx="60" cy="95" r="9"/><circle cx="60" cy="140" r="9"/>
+      <circle cx="150" cy="40" r="9"/><circle cx="150" cy="75" r="9"/><circle cx="150" cy="110" r="9"/><circle cx="150" cy="145" r="9"/>
+      <circle cx="240" cy="40" r="9"/><circle cx="240" cy="75" r="9"/><circle cx="240" cy="110" r="9"/><circle cx="240" cy="145" r="9"/>
+    </g>
+    <g fill="#0A1A33"><circle cx="330" cy="60" r="9"/><circle cx="330" cy="95" r="9"/><circle cx="330" cy="130" r="9"/></g>
+    <g font-size="7.5" fill="#64748B" text-anchor="middle">
+      <text x="60" y="164">Entrada</text><text x="195" y="164">Capas ocultas</text><text x="330" y="164">Salida</text>
+    </g>
+    <g font-size="8" fill="#0F172A"><text x="344" y="63">ficha</text><text x="344" y="98">mano</text><text x="344" y="133">bola</text></g>
+    <!-- forward / backward -->
+    <path d="M60 24 H318" stroke="#0891B2" stroke-width="1.6" marker-end="url(#fw)"/>
+    <text x="12" y="17" font-size="8.5" fill="#0891B2" font-weight="700">Propagación hacia adelante</text>
+    <!-- pérdida -->
+    <rect x="396" y="70" width="104" height="50" rx="6" fill="#fff" stroke="#CBD5E1"/>
+    <text x="448" y="88" font-size="8.5" font-weight="700" fill="#0F172A" text-anchor="middle">Función de pérdida</text>
+    <text x="448" y="108" font-size="12" fill="#0F172A" text-anchor="middle" font-family="FreeSerif" font-style="italic">L(ŷ, y)</text>
+    <path d="M372 95 H394" stroke="#0891B2" stroke-width="1.4" marker-end="url(#fw)"/>
+    <text x="448" y="62" font-size="7.5" fill="#64748B" text-anchor="middle">vs. imágenes etiquetadas <tspan font-family="FreeSerif" font-style="italic" font-size="10">y</tspan></text>
+    <path d="M448 120 V176 H32 V95 H48" stroke="#E11D48" stroke-width="1.6" fill="none" stroke-dasharray="5 3" marker-end="url(#bw)"/>
+    <text x="254" y="189" font-size="8.5" fill="#E11D48" font-weight="700" text-anchor="middle">Retropropagación del error  ·  ∂L/∂W</text>
+    <!-- ecuaciones -->
+    <g font-family="FreeSerif" font-style="italic" fill="#0F172A">
+      <text x="528" y="54" font-size="12">L = L<tspan font-size="8" dy="3">cls</tspan><tspan dy="-3"> + λ L</tspan><tspan font-size="8" dy="3">box</tspan></text>
+      <text x="528" y="84" font-size="12">∂L / ∂W<tspan font-size="8" dy="3">(l)</tspan><tspan dy="-3"> = δ</tspan><tspan font-size="8" dy="3">(l)</tspan><tspan dy="-3"> a</tspan><tspan font-size="8" dy="-6">(l−1)ᵀ</tspan></text>
+      <text x="528" y="114" font-size="12">W ← W − η ∇<tspan font-size="8" dy="3">W</tspan><tspan dy="-3"> L</tspan></text>
+    </g>
+    <g font-size="7.5" fill="#64748B"><text x="528" y="64">pérdida de clase + caja</text><text x="528" y="94">gradiente por capa (regla de la cadena)</text><text x="528" y="124">descenso de gradiente, tasa η</text></g>
+    <text x="0" y="214" font-size="8.5" fill="#64748B"><tspan font-weight="700" fill="#0F172A">Figura 3.</tspan> Entrenamiento por retropropagación. En la sala el modelo opera con los pesos <tspan font-family="FreeSerif" font-style="italic" font-size="11">θ</tspan> ya ajustados: no aprende en vivo.</text>
+  </svg>
+
+  <div class="eq" style="margin-top:7mm">
+    <span class="lbl">Regla de alerta</span>
+    <span class="m">Alerta(t) ⇔ t &gt; t<sub>nvm</sub> ∧ ‖Δ<sub>t</sub>‖<sub>1</sub> &gt; ε ∧ h<sub>t</sub> ∉ 𝒲</span>
+    <span class="m2">t<sub>nvm</sub> = min{ t : ω(t) ≤ ω<sub>u</sub> }</span>
+  </div>
+
+  <div class="tech" style="bottom:14mm"><b>Notación</b><i>ω</i>: velocidad angular de la bola (°/s) · <i>ω<sub>u</sub></i>: umbral configurable · <i>t<sub>nvm</sub></i>: instante del "no va más" · <i>ε</i>: tolerancia de cambio · <i>h<sub>t</sub></i>: mano asociada al cambio · <i>𝒲</i>: lista blanca de manos del crupier.</div>
+  <div class="num">05</div>
+</section>
+
+<!-- 6. Compatibilidad y operación -->
 <section class="page">
   <div class="top"><b>AureaIA</b><span>Integración y operación</span></div>
   <div class="kicker">Integración y operación</div>
@@ -435,7 +609,7 @@
   <div class="hier"><span class="b">Sitio</span><span class="s">→</span><span class="b">Zona</span><span class="s">→</span><span class="b">Cámara</span><span style="font-size:9pt;color:var(--muted);margin-left:3mm">De una sala a varias sedes, con filtro global por sitio.</span></div>
 
   <div class="tech"><b>Base técnica</b>Protocolos RTSP y ONVIF (WS-Discovery, perfiles de medios, PTZ) · Doble flujo main/sub-stream con conexión compartida · Watchdog por PTS · Arquitectura en capas con analíticas como plugins · Base de datos versionada y portable a PostgreSQL.</div>
-  <div class="num">05</div>
+  <div class="num">06</div>
 </section>
 
 <!-- 5. Seguridad -->
@@ -462,7 +636,7 @@
   </div>
 
   <div class="tech"><b>Base técnica</b>ORM con consultas parametrizadas · Hash PBKDF2-SHA256 con 600.000 iteraciones (OWASP) · Cifrado de credenciales en reposo · Control de acceso por roles (RBAC) · Migraciones atómicas con backup previo · Integración continua con análisis estático y pruebas.</div>
-  <div class="num">06</div>
+  <div class="num">07</div>
 </section>
 
 <!-- 6. Cierre -->
