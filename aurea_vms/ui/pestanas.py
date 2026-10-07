@@ -27,9 +27,12 @@ class PestanasMovibles(TabWidget):
     una pestaña; la ventana arma el menu (ella conoce al WindowManager)."""
 
     menu_pedido = Signal(object, QPoint)
+    # Entro, salio o se eligio otra pestaña: la disposicion guardada cambio.
+    cambio = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.currentChanged.connect(self.cambio)
         self.setMovable(False)
         self.setTabShadowEnabled(True)
         self.setCloseButtonDisplayMode(TabCloseButtonDisplayMode.ON_HOVER)
@@ -45,7 +48,12 @@ class PestanasMovibles(TabWidget):
                     pagina, it.mapToGlobal(pos)
                 )
             )
+            self.cambio.emit()
         return nuevo
+
+    def removeTab(self, index: int) -> None:  # noqa: N802 - override de qfluentwidgets
+        super().removeTab(index)
+        self.cambio.emit()
 
     def indice_de(self, widget: QWidget) -> int:
         return self.stackedWidget.indexOf(widget)

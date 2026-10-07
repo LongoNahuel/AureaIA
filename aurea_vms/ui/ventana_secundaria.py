@@ -46,6 +46,7 @@ class VentanaSecundaria(QMainWindow):
         self.tabs.tabCloseRequested.connect(lambda i: principal.cerrar_pestana(self, i))
         self.tabs.menu_pedido.connect(lambda w, pos: principal.menu_de_pestana(self, w, pos))
         self.tabs.tabAddRequested.connect(lambda: principal.nueva_vista_en_vivo(self))
+        self.tabs.cambio.connect(principal.marcar_cambio)
         self.tabs.tabBar.setAddButtonVisible(principal.puede_ver_en_vivo())
         layout.addWidget(self.tabs)
         self.setCentralWidget(central)

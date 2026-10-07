@@ -283,6 +283,7 @@ def main() -> int:
         _start_background_engines()
         window = MainWindow()
         window.show()
+        window.restaurar_disposicion()
         app.exec()
         # La ventana se cerro con WA_DeleteOnClose: su borrado quedo encolado
         # y se procesa aca, antes de apagar los motores, para que ningun

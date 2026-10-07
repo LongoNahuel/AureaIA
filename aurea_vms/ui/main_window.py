@@ -5,7 +5,7 @@ por categoria, y una pestaña por cada modulo que se va abriendo desde ahi
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
 from qfluentwidgets import BodyLabel, ComboBox, FluentIcon, PushButton
@@ -16,7 +16,7 @@ from aurea_vms.core.events import AlarmEvent
 from aurea_vms.core.permissions import Perm, can
 from aurea_vms.models import repository
 from aurea_vms.models.user import ROLE_LABELS
-from aurea_vms.ui import icons, pestanas, sound
+from aurea_vms.ui import icons, layout_store, pestanas, sound
 from aurea_vms.ui.dialogs.command_palette_dialog import (
     ACTION_OPEN_MODULE,
     ACTION_QUICK_VIEW,
@@ -91,6 +91,8 @@ MODULE_PERMISSIONS = {
 # mismo no tienen sentido.
 MULTI_INSTANCIA = (LiveViewModule, IntelligentViewModule)
 
+AUTOGUARDADO_MS = 2000
+
 
 def module_index(module_cls: type) -> int:
     """Posicion de un modulo en MODULES por su clase. Los atajos la usan en
@@ -133,6 +135,15 @@ class MainWindow(QMainWindow):
         # 2026-10-07: viva despues de close + del + gc.collect()).
         # `logout_requested` es atributo de Python: se lee igual despues.
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        # De quien es la disposicion que se guarda (Fase V4). Se toma ahora:
+        # al cerrar por "Cerrar sesión", auth ya no tiene usuario.
+        self.user_id = auth.current_user.id if auth.current_user is not None else None
+        # Guardado con pausa: 2 s despues del ultimo cambio de pestañas o de
+        # una grilla, por si la app se cae antes del cierre.
+        self._autoguardado = QTimer(self)
+        self._autoguardado.setSingleShot(True)
+        self._autoguardado.setInterval(AUTOGUARDADO_MS)
+        self._autoguardado.timeout.connect(self._guardar_disposicion)
 
         central = QWidget(self)
         central_layout = QVBoxLayout(central)
@@ -147,6 +158,7 @@ class MainWindow(QMainWindow):
         # El "+" abre una Vista en Vivo nueva (antes no hacia nada).
         self.tabs.tabAddRequested.connect(lambda: self.nueva_vista_en_vivo(self))
         self.tabs.tabBar.setAddButtonVisible(self.puede_ver_en_vivo())
+        self.tabs.cambio.connect(self.marcar_cambio)
         central_layout.addWidget(self.tabs, stretch=1)
 
         self.setCentralWidget(central)
@@ -233,6 +245,10 @@ class MainWindow(QMainWindow):
         las ventanas secundarias se van con ella y cada modulo suelta lo suyo
         (streams de los recuadros). Sin esto, con una secundaria abierta,
         app.exec() no volvia y los motores no se apagaban."""
+        # La disposicion se guarda ANTES de soltar los modulos: on_window_closed
+        # vacia los recuadros y se perderian las camaras.
+        self._autoguardado.stop()
+        self._guardar_disposicion()
         self.ventanas.cerrando = True  # las secundarias no devuelven pestañas
         for _ventana, widget in self.ventanas.modulos():
             on_close = getattr(widget, "on_window_closed", None)
@@ -347,6 +363,9 @@ class MainWindow(QMainWindow):
         device_tree = getattr(content, "device_tree", None)
         if device_tree is not None and hasattr(device_tree, "set_site_filter"):
             device_tree.set_site_filter(app_state.current_site_id)
+        cambio = getattr(content, "estado_cambiado", None)
+        if cambio is not None:
+            cambio.connect(self.marcar_cambio)
         destino.tabs.addTab(content, label, icon_factory(), routeKey=route_key)
         destino.tabs.setCurrentWidget(content)
         if destino is not self:
@@ -365,6 +384,19 @@ class MainWindow(QMainWindow):
         while f"{base}-{n}" in abiertas:
             n += 1
         return f"{base}-{n}", f"{label} {n}"
+
+    def marcar_cambio(self) -> None:
+        """La disposicion cambio: se guarda dentro de AUTOGUARDADO_MS si no
+        hay otro cambio antes."""
+        self._autoguardado.start()
+
+    def _guardar_disposicion(self) -> None:
+        layout_store.guardar(self)
+
+    def restaurar_disposicion(self) -> None:
+        """Despues de mostrar la ventana (main.py): reabre las ventanas y
+        pestañas que este usuario tenia al cerrar."""
+        layout_store.restaurar(self)
 
     def nueva_ventana(self) -> VentanaSecundaria:
         ventana = VentanaSecundaria(self, self.ventanas.proximo_numero())
