@@ -42,6 +42,7 @@ from aurea_vms.ui.modules.system_module import SystemModule
 from aurea_vms.ui.modules.user_management_module import UserManagementModule
 from aurea_vms.ui.notify import confirm, warn
 from aurea_vms.ui.widgets.global_alert_popup import GlobalAlertPopupLayer
+from aurea_vms.ui.window_manager import WindowManager, route_key_de
 
 WINDOW_SIZE = (1320, 840)
 
@@ -93,6 +94,16 @@ MODULE_PERMISSIONS = {
 HOME_INDEX = 0
 
 
+def module_index(module_cls: type) -> int:
+    """Posicion de un modulo en MODULES por su clase. Los atajos la usan en
+    vez de un numero fijo: "Ajustes avanzados" abria el 2 (Dispositivos)
+    creyendo que era Analizadores, y `focus_device` no hacia nada."""
+    for index, (_label, _icon, cls) in enumerate(MODULES):
+        if cls is module_cls:
+            return index
+    raise ValueError(f"{module_cls.__name__} no esta en MODULES")
+
+
 def compute_visible_categories() -> dict:
     """Categorias del launcher visibles para el usuario en sesion, segun
     su matriz de permisos (funcion libre para poder testearla sin
@@ -114,6 +125,16 @@ class MainWindow(QMainWindow):
         # True si se llego a close() via "Cerrar sesión" -- main.py lo usa
         # para decidir si vuelve a mostrar el login o corta la app del todo.
         self.logout_requested = False
+        # Ventanas de la sesion y sus modulos (Fase V2): la principal y,
+        # desde V3, las secundarias con pestañas arrancadas de esta.
+        self.ventanas = WindowManager(self)
+        # Cerrar la ventana la BORRA. Sin esto sobrevivia a cada logout:
+        # la lambda del combo de sitio (y otras de los modulos) arma un ciclo
+        # por C++ que el GC de Python no ve, y la ventana vieja seguia con
+        # sus timers consultando la base y conectada al event_bus (medido
+        # 2026-10-07: viva despues de close + del + gc.collect()).
+        # `logout_requested` es atributo de Python: se lee igual despues.
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
 
         central = QWidget(self)
         central_layout = QVBoxLayout(central)
@@ -190,10 +211,9 @@ class MainWindow(QMainWindow):
 
     def _on_site_filter_changed(self, site_id: object) -> None:
         """Propaga el filtro global de sitio a los DeviceTreeWidget de las
-        pestañas ya abiertas (las que se abran despues se inicializan con
-        el filtro vigente en open_module_by_index)."""
-        for i in range(self.tabs.count()):
-            widget = self.tabs.widget(i)
+        pestañas ya abiertas, en todas las ventanas (las que se abran despues
+        se inicializan con el filtro vigente en open_module_by_index)."""
+        for _ventana, widget in self.ventanas.modulos():
             device_tree = getattr(widget, "device_tree", None)
             if device_tree is not None and hasattr(device_tree, "set_site_filter"):
                 device_tree.set_site_filter(site_id)
@@ -208,6 +228,19 @@ class MainWindow(QMainWindow):
         auth.logout()
         app_state.reset()  # el filtro de sitio no debe sobrevivir a la sesion
         self.close()
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - override de Qt
+        """Cerrar la principal (X o "Cerrar sesión") cierra la sesion entera:
+        las ventanas secundarias se van con ella y cada modulo suelta lo suyo
+        (streams de los recuadros). Sin esto, con una secundaria abierta,
+        app.exec() no volvia y los motores no se apagaban."""
+        for ventana in self.ventanas.secundarias():
+            ventana.close()
+        for _ventana, widget in self.ventanas.modulos():
+            on_close = getattr(widget, "on_window_closed", None)
+            if callable(on_close):
+                on_close()
+        super().closeEvent(event)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - override de Qt
         if hasattr(self, "alert_layer"):
@@ -243,8 +276,7 @@ class MainWindow(QMainWindow):
     def _on_open_live_view_requested(self, device_id: int) -> None:
         """ "Vista rapida" desde Dispositivos: abre/enfoca Vista en Vivo y
         asigna esta camara en Vista Inteligente."""
-        self.open_module_by_index(0)
-        live_view = self.tabs.currentWidget()
+        live_view = self.open_module_by_index(module_index(LiveViewModule))
         focus_camera = getattr(live_view, "focus_camera", None)
         if callable(focus_camera):
             focus_camera(device_id)
@@ -252,8 +284,7 @@ class MainWindow(QMainWindow):
     def _on_open_analytics_config_requested(self, device_id: int) -> None:
         """ "Ajustes avanzados" desde Dispositivos: abre/enfoca Analizadores
         con esta camara seleccionada."""
-        self.open_module_by_index(2)
-        analytics_module = self.tabs.currentWidget()
+        analytics_module = self.open_module_by_index(module_index(AnalyticsConfigModule))
         focus_device = getattr(analytics_module, "focus_device", None)
         if callable(focus_device):
             focus_device(device_id)
@@ -261,15 +292,18 @@ class MainWindow(QMainWindow):
     def _on_home_shortcut(self, module_index: int, group: str, leaf: str) -> None:
         """Panel "Base" de Inicio: abre el modulo y, si el atajo apunta a
         una seccion especifica (ej. Sistema > Registro), la enfoca."""
-        self.open_module_by_index(module_index)
+        widget = self.open_module_by_index(module_index)
         if not group or not leaf:
             return
-        widget = self.tabs.currentWidget()
         focus_section = getattr(widget, "focus_section", None)
         if callable(focus_section):
             focus_section(group, leaf)
 
-    def open_module_by_index(self, index: int) -> None:
+    def open_module_by_index(self, index: int) -> QWidget | None:
+        """Abre el modulo, o enfoca el que ya esta abierto en CUALQUIER
+        ventana, y lo devuelve (None si el rol no tiene permiso). Los atajos
+        usan el widget devuelto: `self.tabs.currentWidget()` no sirve si el
+        modulo vive en otra ventana."""
         label, icon_factory, module_cls = MODULES[index]
         if not can(MODULE_PERMISSIONS[label]):
             warn(
@@ -277,13 +311,14 @@ class MainWindow(QMainWindow):
                 "Acceso restringido",
                 "Tu rol no tiene permisos para abrir esta sección.",
             )
-            return
+            return None
 
-        route_key = f"module-{index}"
-        for i in range(self.tabs.count()):
-            if self.tabs.widget(i).property("routeKey") == route_key:
-                self.tabs.setCurrentIndex(i)
-                return
+        route_key = route_key_de(module_cls)
+        existente = self.ventanas.buscar(route_key)
+        if existente is not None:
+            _ventana, widget = existente
+            self.ventanas.enfocar(widget)
+            return widget
 
         content = module_cls()
         device_tree = getattr(content, "device_tree", None)
@@ -291,6 +326,7 @@ class MainWindow(QMainWindow):
             device_tree.set_site_filter(app_state.current_site_id)
         self.tabs.addTab(content, label, icon_factory(), routeKey=route_key)
         self.tabs.setCurrentWidget(content)
+        return content
 
     def _on_tab_close_requested(self, index: int) -> None:
         if index == HOME_INDEX:
