@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>AureaIA VMS</title>
+<style>
+  @page { size: A4; margin: 0; }
+  :root {
+    --navy: #0A1A33; --ink: #0F172A; --text: #334155; --muted: #64748B;
+    --line: #E2E8F0; --soft: #F1F7FB; --cyan: #0891B2; --cyan-l: #22D3EE;
+    --alert: #E11D48; --ok: #10B981;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #fff; }
+  body { font-family: "Inter", sans-serif; color: var(--text); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { width: 210mm; height: 297mm; position: relative; overflow: hidden; padding: 24mm 20mm 20mm; page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+  svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* Portada */
+  .cover { background: radial-gradient(120% 80% at 50% 30%, #0B2347 0%, #050B18 60%, #02050C 100%); color: #fff; padding: 0; }
+  .cover .logo { position: absolute; top: 34mm; left: 50%; transform: translateX(-50%); width: 112mm; mix-blend-mode: lighten; }
+  .cover .txt { position: absolute; top: 160mm; left: 0; right: 0; text-align: center; padding: 0 24mm; }
+  .cover .eyebrow { font-size: 10pt; letter-spacing: .32em; text-transform: uppercase; color: var(--cyan-l); font-weight: 600; }
+  .cover h1 { font-family: "Inter Display", "Inter"; font-size: 30pt; line-height: 1.12; font-weight: 700; margin: 7mm 0 6mm; letter-spacing: -.01em; }
+  .cover .sub { font-size: 12pt; color: #A5B4CC; font-weight: 400; line-height: 1.5; }
+  .cover .rule { width: 24mm; height: 2px; background: var(--cyan-l); margin: 10mm auto 0; }
+  .cover .foot { position: absolute; bottom: 16mm; left: 20mm; right: 20mm; display: flex; justify-content: space-between; font-size: 8.5pt; color: #7C8CA6; letter-spacing: .08em; text-transform: uppercase; }
+
+  /* Interior */
+  .top { position: absolute; top: 10mm; left: 20mm; right: 20mm; display: flex; justify-content: space-between; align-items: center; font-size: 8pt; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+  .top b { color: var(--ink); letter-spacing: .14em; }
+  .num { position: absolute; bottom: 10mm; right: 20mm; font-size: 8pt; color: var(--muted); }
+  .kicker { font-size: 9pt; letter-spacing: .26em; text-transform: uppercase; color: var(--cyan); font-weight: 700; }
+  h2 { font-family: "Inter Display", "Inter"; font-size: 25pt; line-height: 1.15; color: var(--ink); font-weight: 700; margin: 4mm 0 5mm; letter-spacing: -.015em; }
+  .lead { font-size: 12pt; line-height: 1.6; color: var(--text); max-width: 150mm; }
+  .tech { position: absolute; bottom: 18mm; left: 20mm; right: 20mm; border-top: 1px solid var(--line); padding-top: 4mm; font-size: 8pt; line-height: 1.55; color: var(--muted); }
+  .tech b { color: var(--cyan); letter-spacing: .14em; text-transform: uppercase; font-size: 7pt; margin-right: 2mm; }
+
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 12mm; border-top: 1px solid var(--line); }
+  .stat { padding: 8mm 0 7mm; border-bottom: 1px solid var(--line); }
+  .stat:nth-child(odd) { padding-right: 8mm; border-right: 1px solid var(--line); }
+  .stat:nth-child(even) { padding-left: 8mm; }
+  .stat .n { font-family: "Inter Display", "Inter"; font-size: 40pt; font-weight: 700; color: var(--ink); line-height: 1; letter-spacing: -.02em; }
+  .stat .n span { font-size: 16pt; color: var(--cyan); margin-left: 1.5mm; font-weight: 600; }
+  .stat .l { font-size: 10pt; color: var(--muted); margin-top: 3mm; line-height: 1.45; }
+
+  .flow { display: flex; align-items: center; justify-content: space-between; margin-top: 14mm; }
+  .node { width: 46mm; text-align: center; }
+  .node .c { width: 20mm; height: 20mm; border-radius: 50%; margin: 0 auto 4mm; display: grid; place-items: center; background: var(--soft); color: var(--cyan); }
+  .node .c svg.i { width: 30px; height: 30px; }
+  .node.core .c { background: var(--navy); color: var(--cyan-l); box-shadow: 0 0 0 6px #E0F2FE; }
+  .node.alert .c { background: #FFF1F2; color: var(--alert); }
+  .node h4 { font-size: 10.5pt; color: var(--ink); font-weight: 700; }
+  .node p { font-size: 8.5pt; color: var(--muted); margin-top: 1.5mm; line-height: 1.4; }
+  .arrow { flex: 1; height: 2px; background: linear-gradient(90deg, var(--line), var(--cyan)); position: relative; margin-bottom: 14mm; }
+  .arrow::after { content: ""; position: absolute; right: -1px; top: -4px; border-left: 8px solid var(--cyan); border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+
+  /* Página analítica */
+  .hero-ill { margin-top: 9mm; border-radius: 5mm; overflow: hidden; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7mm; margin-top: 9mm; }
+  .step .k { font-family: "Inter Display", "Inter"; font-size: 22pt; font-weight: 700; color: var(--cyan); line-height: 1; }
+  .step h4 { font-size: 10.5pt; color: var(--ink); margin: 2.5mm 0 1.5mm; }
+  .step p { font-size: 9pt; line-height: 1.5; color: var(--muted); }
+  .compare { margin-top: 9mm; display: grid; grid-template-columns: 1.35fr 1fr; gap: 9mm; align-items: center; }
+  .bars .row { display: grid; grid-template-columns: 28mm 1fr 24mm; align-items: center; gap: 3mm; margin-bottom: 4mm; font-size: 9pt; }
+  .bars .lbl { color: var(--ink); font-weight: 600; }
+  .bars .track { height: 9px; background: var(--soft); border-radius: 9px; position: relative; }
+  .bars .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 9px; }
+  .bars .thr { position: absolute; top: -5px; bottom: -5px; left: 62%; border-left: 2px dashed var(--ink); }
+  .tag { font-size: 7.5pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 1.2mm 2.2mm; border-radius: 99px; text-align: center; white-space: nowrap; }
+  .tag.ok { background: #ECFDF5; color: #047857; }
+  .tag.no { background: #FFF1F2; color: var(--alert); }
+  .bars .cap { font-size: 7.5pt; color: var(--muted); margin-left: 31mm; }
+  .callout { background: var(--navy); color: #fff; border-radius: 4mm; padding: 6mm; }
+  .callout .big { font-family: "Inter Display", "Inter"; font-size: 17pt; font-weight: 700; line-height: 1.2; }
+  .callout .big em { font-style: normal; color: var(--cyan-l); }
+  .callout p { font-size: 8.8pt; color: #A5B4CC; margin-top: 2.5mm; line-height: 1.5; }
+
+  /* Tarjetas */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 10mm; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+  .card { padding: 6.5mm 5.5mm; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-height: 44mm; }
+  .card .ic { width: 11mm; height: 11mm; border-radius: 3mm; display: grid; place-items: center; background: var(--soft); color: var(--cyan); margin-bottom: 4mm; }
+  .card h4 { font-size: 10.5pt; color: var(--ink); margin-bottom: 1.8mm; line-height: 1.3; }
+  .card p { font-size: 8.8pt; color: var(--muted); line-height: 1.5; }
+  .chips-t { font-size: 8.5pt; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 10mm 0 4mm; }
+  .chips { display: flex; flex-wrap: wrap; gap: 2.5mm; }
+  .chip { font-size: 9.5pt; padding: 2.4mm 4.2mm; border-radius: 99px; border: 1px solid var(--line); color: var(--ink); font-weight: 500; display: flex; align-items: center; gap: 2mm; }
+  .chip.main { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cyan-l); }
+  .chip:not(.main) .dot { background: var(--cyan); }
+  .hier { display: flex; align-items: center; gap: 3mm; margin-top: 4mm; }
+  .hier .b { padding: 3mm 5mm; border-radius: 2.5mm; background: var(--soft); font-size: 9.5pt; font-weight: 600; color: var(--ink); }
+  .hier .s { color: var(--cyan); font-weight: 700; }
+
+  /* Seguridad */
+  .sec { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin-top: 10mm; }
+  .sc { display: flex; gap: 4.5mm; padding: 5.5mm; border-radius: 4mm; background: var(--soft); }
+  .sc .ic { flex: 0 0 11mm; height: 11mm; border-radius: 3mm; display: grid; place-items: center; background: #fff; color: var(--cyan); }
+  .sc h4 { font-size: 10.5pt; color: var(--ink); margin-bottom: 1.5mm; }
+  .sc p { font-size: 8.8pt; color: var(--muted); line-height: 1.5; }
+  .sc.hl { background: var(--navy); }
+  .sc.hl h4 { color: #fff; } .sc.hl p { color: #A5B4CC; }
+  .sc.hl .ic { background: #12305A; color: var(--cyan-l); }
+  .quality { margin-top: 9mm; display: flex; border: 1px solid var(--line); border-radius: 4mm; }
+  .quality div { flex: 1; padding: 5mm 6mm; border-right: 1px solid var(--line); }
+  .quality div:last-child { border-right: 0; }
+  .quality .n { font-family: "Inter Display", "Inter"; font-size: 20pt; font-weight: 700; color: var(--ink); }
+  .quality .l { font-size: 8.5pt; color: var(--muted); margin-top: 1mm; line-height: 1.4; }
+
+  /* Cierre */
+  .end { background: radial-gradient(120% 80% at 50% 40%, #0B2347 0%, #050B18 65%); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .end img { width: 70mm; mix-blend-mode: lighten; }
+  .end h3 { font-family: "Inter Display", "Inter"; font-size: 22pt; font-weight: 700; margin-top: 8mm; line-height: 1.25; }
+  .end h3 em { font-style: normal; color: var(--cyan-l); }
+  .end p { color: #A5B4CC; font-size: 11pt; margin-top: 5mm; }
+  .end .pills { display: flex; gap: 3mm; margin-top: 12mm; }
+  .end .pills span { border: 1px solid #23406B; color: #CFE3F7; border-radius: 99px; padding: 2.5mm 5mm; font-size: 9pt; }
+</style>
+</head>
+<body>
+
+<!-- 1. Portada -->
+<section class="page cover">
+  <img class="logo" src="../../../aurea_vms/ui/assets/images/logo.png" alt="AureaIA">
+  <div class="txt">
+    <div class="eyebrow">AureaIA VMS</div>
+    <h1>Seguridad inteligente<br>para casinos y salas de juego</h1>
+    <div class="sub">Video en vivo, grabación y analítica con inteligencia artificial,<br>en una sola plataforma.</div>
+    <div class="rule"></div>
+  </div>
+  <div class="foot"><span>Presentación de producto</span><span>2026</span></div>
+</section>
+
+<!-- 2. La plataforma -->
+<section class="page">
+  <div class="top"><b>AureaIA</b><span>La plataforma</span></div>
+  <div class="kicker">La plataforma</div>
+  <h2>Ve, graba y analiza.<br>Avisa en el momento.</h2>
+  <p class="lead">AureaIA VMS centraliza todas las cámaras de la sala y aplica inteligencia artificial sobre cada una. Detecta lo que está fuera de lo normal y alerta al operador con el video del evento, sin depender de internet.</p>
+
+  <div class="stats">
+    <div class="stat"><div class="n">25<span>fps</span></div><div class="l">Video en vivo fluido, en grilla de hasta 16 cámaras.</div></div>
+    <div class="stat"><div class="n">5<span>/ seg</span></div><div class="l">Análisis de IA por cámara, siempre sobre la imagen más reciente.</div></div>
+    <div class="stat"><div class="n">100<span>%</span></div><div class="l">Procesamiento local. Ninguna imagen sale de la red del cliente.</div></div>
+    <div class="stat"><div class="n">0</div><div class="l">Servicios expuestos a la red. Nada que atacar desde afuera.</div></div>
+  </div>
+
+  <div class="flow">
+    <div class="node">
+      <div class="c"><svg class="i" viewBox="0 0 24 24"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/></svg></div>
+      <h4>Cámaras y grabadores</h4><p>IP, NVR y XVR<br>de la sala</p>
+    </div>
+    <div class="arrow"></div>
+    <div class="node core">
+      <div class="c"><svg class="i" viewBox="0 0 24 24"><path d="M12 5a3 3 0 1 0-5.997.125A3 3 0 1 0 4.25 10.5 3 3 0 1 0 7 16a3 3 0 1 0 5 2.236"/><path d="M12 5a3 3 0 1 1 5.997.125A3 3 0 1 1 19.75 10.5 3 3 0 1 1 17 16a3 3 0 1 1-5 2.236"/><path d="M12 5v13"/><path d="M8 9h2m4 0h2M7 13h3m4 0h3"/><path d="M10 9v4m4-4v4"/></svg></div>
+      <h4>AureaIA VMS</h4><p>IA local, en el equipo<br>del cliente</p>
+    </div>
+    <div class="arrow"></div>
+    <div class="node alert">
+      <div class="c"><svg class="i" viewBox="0 0 24 24"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg></div>
+      <h4>Alerta al operador</h4><p>Aviso inmediato<br>con clip del evento</p>
+    </div>
+  </div>
+
+  <div class="tech"><b>Base técnica</b>VMS de escritorio con arquitectura SuperCliente LAN · Procesamiento de IA en el borde (edge computing) · Motor de inferencia ONNX Runtime · IA de visión por computadora, no generativa.</div>
+  <div class="num">02</div>
+</section>
+
+<!-- 3. Analítica estrella -->
+<section class="page">
+  <div class="top"><b>AureaIA</b><span>Analítica a medida</span></div>
+  <div class="kicker">Analítica a medida</div>
+  <h2>Detecta agresiones a las<br>máquinas de juego</h2>
+  <p class="lead">Patadas y golpes contra la pantalla de una máquina, detectados en tiempo real a partir del movimiento del cuerpo del jugador.</p>
+
+  <div class="hero-ill">
+    <svg viewBox="0 0 680 250" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0B2347"/><stop offset="1" stop-color="#050B18"/></linearGradient>
+        <radialGradient id="glow"><stop offset="0" stop-color="#E11D48" stop-opacity=".55"/><stop offset="1" stop-color="#E11D48" stop-opacity="0"/></radialGradient>
+      </defs>
+      <rect width="680" height="250" fill="url(#bg)"/>
+      <g stroke="#13305A" stroke-width="1">
+        <path d="M0 50H680M0 100H680M0 150H680M0 200H680M85 0V250M170 0V250M255 0V250M340 0V250M425 0V250M510 0V250M595 0V250"/>
+      </g>
+      <!-- máquina -->
+      <rect x="400" y="40" width="150" height="190" rx="10" fill="#0E2140" stroke="#1E3A66" stroke-width="2"/>
+      <rect x="415" y="58" width="120" height="96" rx="5" fill="#122B52"/>
+      <rect x="415" y="58" width="120" height="96" rx="5" fill="none" stroke="#22D3EE" stroke-width="2" stroke-dasharray="7 5"/>
+      <text x="421" y="74" fill="#22D3EE" font-size="10" font-weight="700" letter-spacing="1">ZONA · PANTALLA</text>
+      <rect x="430" y="170" width="90" height="10" rx="5" fill="#1E3A66"/>
+      <rect x="430" y="190" width="60" height="10" rx="5" fill="#1E3A66"/>
+      <!-- jugador (esqueleto) -->
+      <g stroke="#E2E8F0" stroke-width="3.2" stroke-linecap="round" fill="none">
+        <path d="M262 98 L268 150"/>              <!-- torso -->
+        <path d="M262 98 L240 128 L232 158"/>     <!-- brazo izq -->
+        <path d="M262 98 L292 116 L318 112"/>     <!-- brazo der -->
+        <path d="M268 150 L250 192 L246 232"/>    <!-- pierna apoyo -->
+        <path d="M268 150 L330 140 L436 120"/>    <!-- pierna que patea -->
+      </g>
+      <circle cx="258" cy="80" r="14" fill="none" stroke="#E2E8F0" stroke-width="3.2"/>
+      <g fill="#22D3EE">
+        <circle cx="262" cy="98" r="4.5"/><circle cx="240" cy="128" r="4.5"/><circle cx="232" cy="158" r="4.5"/>
+        <circle cx="292" cy="116" r="4.5"/><circle cx="318" cy="112" r="4.5"/><circle cx="268" cy="150" r="4.5"/>
+        <circle cx="250" cy="192" r="4.5"/><circle cx="246" cy="232" r="4.5"/><circle cx="330" cy="140" r="4.5"/>
+      </g>
+      <circle cx="436" cy="120" r="30" fill="url(#glow)"/>
+      <circle cx="436" cy="120" r="6" fill="#E11D48"/>
+      <circle cx="436" cy="120" r="13" fill="none" stroke="#E11D48" stroke-width="2"/>
+      <!-- etiquetas -->
+      <g font-size="10" fill="#94A3B8">
+        <text x="86" y="84">17 puntos del cuerpo</text>
+        <text x="86" y="99">seguidos en cada cuadro</text>
+        <path d="M200 90 L234 90" stroke="#475569" stroke-width="1"/>
+      </g>
+      <rect x="566" y="96" width="102" height="48" rx="8" fill="#E11D48"/>
+      <text x="577" y="115" fill="#fff" font-size="9" font-weight="700" letter-spacing="1.2">ALERTA</text>
+      <text x="577" y="133" fill="#fff" font-size="12" font-weight="700">Patada</text>
+      <path d="M450 120 L566 120" stroke="#E11D48" stroke-width="1.5" stroke-dasharray="4 4"/>
+    </svg>
+  </div>
+
+  <div class="steps">
+    <div class="step"><div class="k">01</div><h4>Se marca la pantalla</h4><p>El operador dibuja sobre la imagen la zona de cada máquina.</p></div>
+    <div class="step"><div class="k">02</div><h4>La IA sigue al jugador</h4><p>Ubica manos, rodillas y pies en cada cuadro de video.</p></div>
+    <div class="step"><div class="k">03</div><h4>Se dispara la alerta</h4><p>Un pie dentro de la pantalla o un golpe de mano a velocidad anormal.</p></div>
+  </div>
+
+  <div class="compare">
+    <div class="bars">
+      <div class="row"><span class="lbl">Toque de juego</span><div class="track"><div class="fill" style="width:22%;background:#94A3B8"></div><div class="thr"></div></div><span class="tag ok">Sin alerta</span></div>
+      <div class="row"><span class="lbl">Golpe</span><div class="track"><div class="fill" style="width:92%;background:var(--alert)"></div><div class="thr"></div></div><span class="tag no">Alerta</span></div>
+      <div class="cap">Velocidad de la mano · la línea marca el umbral de golpe</div>
+    </div>
+    <div class="callout">
+      <div class="big">Pantallas táctiles:<br><em>distingue el juego de la agresión</em></div>
+      <p>El sistema mide la velocidad del gesto, no el contacto. Varios golpes seguidos son un solo incidente y una sola alerta.</p>
+    </div>
+  </div>
+
+  <div class="tech"><b>Base técnica</b>Estimación de pose humana top-down (RTMPose, 17 puntos COCO) sobre zonas de interés · Reglas de intrusión por articulación y de velocidad de muñeca · Agrupación de eventos por incidente.</div>
+  <div class="num">03</div>
+</section>
+
+<!-- 4. Compatibilidad y operación -->
+<section class="page">
+  <div class="top"><b>AureaIA</b><span>Integración y operación</span></div>
+  <div class="kicker">Integración y operación</div>
+  <h2>Se conecta a lo que<br>la sala ya tiene</h2>
+  <p class="lead">Compatible con el estándar de la industria: no hace falta cambiar cámaras ni grabadores.</p>
+
+  <div class="grid">
+    <div class="card"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M12 18h.01"/><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/><path d="m13.41 10.59 5.66-5.66"/></svg></div><h4>Descubrimiento automático</h4><p>Encuentra las cámaras de la red y lee marca, modelo y configuración.</p></div>
+    <div class="card"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg></div><h4>Cámaras IP, NVR y XVR</h4><p>Integra grabadores completos con todos sus canales.</p></div>
+    <div class="card"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></div><h4>Reconexión automática</h4><p>Si una cámara se corta, vuelve sola. Distingue una caída de una escena quieta.</p></div>
+    <div class="card"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg></div><h4>Vista en vivo</h4><p>Grillas de 1, 4, 9 y 16 cámaras, y vista inteligente con las analíticas.</p></div>
+    <div class="card"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18M17 3v18M3 7.5h4M3 12h18M3 16.5h4M17 7.5h4M17 16.5h4"/></svg></div><h4>Evidencia completa</h4><p>Cada alarma guarda un clip que incluye los segundos previos al evento.</p></div>
+    <div class="card"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 0-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z"/></svg></div><h4>Modular</h4><p>Nuevas analíticas se suman como módulos, sin rehacer el sistema.</p></div>
+  </div>
+
+  <div class="chips-t">Analíticas disponibles</div>
+  <div class="chips">
+    <span class="chip main"><span class="dot"></span>Agresiones a máquinas</span>
+    <span class="chip"><span class="dot"></span>Conteo de personas</span>
+    <span class="chip"><span class="dot"></span>Cruce de línea e intrusión</span>
+    <span class="chip"><span class="dot"></span>Detección de rostros</span>
+    <span class="chip"><span class="dot"></span>Mapa de calor</span>
+  </div>
+
+  <div class="chips-t">Multisede</div>
+  <div class="hier"><span class="b">Sitio</span><span class="s">→</span><span class="b">Zona</span><span class="s">→</span><span class="b">Cámara</span><span style="font-size:9pt;color:var(--muted);margin-left:3mm">De una sala a varias sedes, con filtro global por sitio.</span></div>
+
+  <div class="tech"><b>Base técnica</b>Protocolos RTSP y ONVIF (WS-Discovery, perfiles de medios, PTZ) · Doble flujo main/sub-stream con conexión compartida · Watchdog por PTS · Arquitectura en capas con analíticas como plugins · Base de datos versionada y portable a PostgreSQL.</div>
+  <div class="num">04</div>
+</section>
+
+<!-- 5. Seguridad -->
+<section class="page">
+  <div class="top"><b>AureaIA</b><span>Seguridad</span></div>
+  <div class="kicker">Seguridad por diseño</div>
+  <h2>Protegido desde<br>la arquitectura</h2>
+  <p class="lead">La seguridad no es un agregado: está en cómo se construyó el sistema.</p>
+
+  <div class="sec">
+    <div class="sc hl"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/></svg></div><div><h4>Sin nube, sin puertos abiertos</h4><p>No ofrece servicios a la red ni envía imágenes afuera.</p></div></div>
+    <div class="sc hl"><div class="ic"><svg class="i" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg></div><div><h4>Protección contra inyección SQL</h4><p>Nadie puede manipular la base de datos desde los campos del sistema.</p></div></div>
+    <div class="sc"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><div><h4>Contraseñas protegidas</h4><p>Nunca se guardan legibles. Bloqueo tras 5 intentos fallidos.</p></div></div>
+    <div class="sc"><div class="ic"><svg class="i" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg></div><div><h4>Credenciales cifradas</h4><p>Los accesos a las cámaras se guardan cifrados.</p></div></div>
+    <div class="sc"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div><h4>4 perfiles de usuario</h4><p>Administrador, Supervisor, Operador y Auditor.</p></div></div>
+    <div class="sc"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></div><div><h4>Respaldo automático</h4><p>Copia de seguridad de la base antes de cada actualización.</p></div></div>
+  </div>
+
+  <div class="chips-t">Calidad de desarrollo</div>
+  <div class="quality">
+    <div><div class="n">699</div><div class="l">pruebas automáticas en cada cambio</div></div>
+    <div><div class="n">89 %</div><div class="l">del núcleo cubierto por pruebas</div></div>
+    <div><div class="n">5</div><div class="l">analíticas de IA disponibles</div></div>
+  </div>
+
+  <div class="tech"><b>Base técnica</b>ORM con consultas parametrizadas · Hash PBKDF2-SHA256 con 600.000 iteraciones (OWASP) · Cifrado de credenciales en reposo · Control de acceso por roles (RBAC) · Migraciones atómicas con backup previo · Integración continua con análisis estático y pruebas.</div>
+  <div class="num">05</div>
+</section>
+
+<!-- 6. Cierre -->
+<section class="page end">
+  <img src="../../../aurea_vms/ui/assets/images/logo.png" alt="AureaIA">
+  <h3>Inteligencia artificial aplicada<br>a la <em>seguridad del juego</em></h3>
+  <p>AureaIA VMS · Video, grabación y analítica en una sola plataforma.</p>
+  <div class="pills"><span>100 % local</span><span>Tiempo real</span><span>Analítica a medida</span></div>
+</section>
+
+</body>
+</html>
