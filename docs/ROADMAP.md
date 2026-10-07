@@ -54,7 +54,13 @@ que se trabajan ese mismo día:
   de sala tiene que levantar solo después de un corte de luz. Decisión
   consciente, a revisar si un cliente lo pide por contrato.
 - El enforcement de permisos es **solo de UI** (`core/permissions.py:9-11`):
-  nada impide llamar al repositorio directo desde un script.
+  nada impide llamar al repositorio directo desde un script. **Decisión
+  (07/10): se hace con el servidor central multisede**, no antes. En el cliente
+  monolítico, la UI y el "backend" corren en el mismo proceso y en el mismo
+  equipo: quien puede correr un script contra el repositorio también puede
+  abrir el `.sqlite3`, así que repetir el chequeo ahí no agrega una barrera
+  real. Cuando haya varios puestos contra un nodo Postgres, el chequeo se
+  repite en el servidor.
 
 
 - `core/credential_store.py` crea `camera_key` con `S_IRUSR|S_IWUSR`, que en
@@ -128,8 +134,11 @@ que se trabajan ese mismo día:
 
 - Clips: re-encodear a H.264 (PyAV/imageio-ffmpeg) — hoy mp4v a 5 fps
   con doble recompresión JPEG; usar los timestamps reales guardados.
-- Grabación continua en anillo (el `kind="recording"` de `media_assets`
-  ya está reservado).
+- Grabación continua en anillo, **opcional por cliente**: normalmente la hace
+  el NVR de la sala, y el VMS guarda la evidencia de cada evento. El
+  `kind="recording"` de `media_assets` ya está reservado. El video nunca va a
+  la base: los archivos viven en `data/media/` y `media_assets` guarda solo
+  la ruta relativa y los metadatos (tamaño, duración, resolución).
 - Reproductor embebido (hoy abre el reproductor del SO) y captura
   manual con `created_by`.
 - `analytics_fps` por cámara (hoy global, con override en `params["fps"]`).
@@ -140,8 +149,15 @@ que se trabajan ese mismo día:
   en escenas densas lo pide.
 - El cooldown de las reglas vive en un dict en memoria: se resetea en cada
   reinicio. (El lock entre hilos ya está, Fase 5 del 24/09.)
-- Reconocimiento facial real (hoy solo detección; la galería usa una
-  firma de similitud, no un embedding).
+- **Identificación de personas**: reconocer a alguien ya grabado y buscarlo
+  en los eventos. Hoy hay solo detección: `face_quality.py` elige la mejor
+  captura y la galería usa una firma de similitud, no un embedding.
+  `face_catalog` (re-identificación y conteo de únicos) lo sacó Nahuel en
+  `f309d79` por decisión de producto. Antes de implementarlo hay que definir
+  el producto (lista de registrados vs. búsqueda libre) y el marco legal de
+  datos biométricos del cliente. Candidato técnico: SFace (ONNX, CPU) para
+  embeddings, una galería de personas registradas y la búsqueda por similitud
+  sobre las capturas de los eventos.
 
 ## Rendimiento UI
 
