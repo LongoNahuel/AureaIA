@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import logging
 
+import sqlalchemy as sa
+
 logger = logging.getLogger(__name__)
 
 # (columna, DDL sin "ADD COLUMN") por tabla, en orden, solo si falta.
@@ -62,10 +64,11 @@ def adoptar(engine, metadata) -> list[str]:
     metadata.create_all(engine)  # tablas que falten; no altera las que ya estan
 
     with engine.connect() as conn:
+        inspector = sa.inspect(conn)
         for tabla, columnas in COLUMNAS_ADHOC.items():
-            existentes = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({tabla})")}
-            if not existentes:
+            if not inspector.has_table(tabla):
                 continue  # la tabla la acaba de crear create_all, ya viene completa
+            existentes = {c["name"] for c in inspector.get_columns(tabla)}
             for nombre, ddl in columnas:
                 if nombre not in existentes:
                     conn.exec_driver_sql(f"ALTER TABLE {tabla} ADD COLUMN {nombre} {ddl}")
@@ -84,14 +87,15 @@ def adoptar(engine, metadata) -> list[str]:
     # column" contra cualquier base legada, que fue lo que llevo a reflotar
     # el sistema ad-hoc el 23/09.
     with engine.begin() as conn:
+        # Inspector nuevo: el de arriba cacheo las columnas antes del ALTER.
+        inspector = sa.inspect(conn)
         existentes = {
-            row[0]
-            for row in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='index'")
+            indice["name"]
+            for nombre_tabla in inspector.get_table_names()
+            for indice in inspector.get_indexes(nombre_tabla)
         }
         for tabla in metadata.tables.values():
-            columnas_reales = {
-                row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({tabla.name})")
-            }
+            columnas_reales = {c["name"] for c in inspector.get_columns(tabla.name)}
             for indice in tabla.indexes:
                 if not {c.name for c in indice.columns} <= columnas_reales:
                     continue

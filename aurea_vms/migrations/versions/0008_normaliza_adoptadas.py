@@ -104,7 +104,7 @@ def _apagar_monitores_sin_pantalla(conn) -> None:
     filas = conn.execute(
         sa.text(
             "SELECT id, params, roi_x, roi_y, roi_w, roi_h FROM analytics_configs "
-            "WHERE analyzer_name = 'monitor_tamper' AND enabled = 1"
+            "WHERE analyzer_name = 'monitor_tamper' AND enabled = TRUE"
         )
     ).fetchall()
     apagadas = 0

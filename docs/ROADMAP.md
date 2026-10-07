@@ -54,7 +54,13 @@ que se trabajan ese mismo día:
   de sala tiene que levantar solo después de un corte de luz. Decisión
   consciente, a revisar si un cliente lo pide por contrato.
 - El enforcement de permisos es **solo de UI** (`core/permissions.py:9-11`):
-  nada impide llamar al repositorio directo desde un script.
+  nada impide llamar al repositorio directo desde un script. **Decisión
+  (07/10): se hace con el servidor central multisede**, no antes. En el cliente
+  monolítico, la UI y el "backend" corren en el mismo proceso y en el mismo
+  equipo: quien puede correr un script contra el repositorio también puede
+  abrir el `.sqlite3`, así que repetir el chequeo ahí no agrega una barrera
+  real. Cuando haya varios puestos contra un nodo Postgres, el chequeo se
+  repite en el servidor.
 
 
 - `core/credential_store.py` crea `camera_key` con `S_IRUSR|S_IWUSR`, que en
@@ -65,10 +71,18 @@ que se trabajan ese mismo día:
 
 ## Datos
 
-- **Las migraciones no son portables**, aunque los modelos sí: 0002, 0003 y
-  `migrations/ayudas.py` consultan `PRAGMA`/`sqlite_master`; 0002 y 0004
-  comparan enteros contra booleanos; `models/db.py` fija `sqlite:///`. Antes de
-  un nodo PostgreSQL hay que pasarlas a `sa.inspect(conn)` y `sa.true()`.
+- ~~**Las migraciones no son portables**~~ — resuelto el 07/10 (rama
+  `feat/migraciones-portables`). Las revisiones y la adopción usan el
+  inspector y `TRUE`/`FALSE`, y `AUREA_DB_URL` apunta la app a un servidor.
+  `tests/test_migraciones_postgres.py` (integration, con
+  `AUREA_TEST_PG_URL`) migra una base vacía de PostgreSQL 16 sin deriva, hace
+  la ida y vuelta hasta 0002 y corre el repositorio. Quedan dos cosas:
+  - **El CI no tiene un servicio Postgres**, así que ese test se saltea ahí.
+    Sumar un `services: postgres` a `ci.yml`.
+  - En el servidor **no hay backup automático** antes de migrar (la API de
+    backup es de sqlite3): `pg_dump` a cargo de quien lo opera, o que `migrar`
+    lo llame. Un nodo central se migra desde un solo puesto: el lock de
+    migración es un archivo local.
 - **La adopción de bases legadas usa el metadata vivo**
   (`migrations/adopcion.py`): una `op.create_table` futura choca con la tabla
   que la adopción ya creó con la forma nueva. Los índices sobre columnas
@@ -94,7 +108,7 @@ que se trabajan ese mismo día:
 
 - Migrar timestamps float → DateTime UTC unificado.
 - Si aparece multisede real con servidor central: nodo central en
-  PostgreSQL (la capa SQLAlchemy ya es portable), grabadores por sitio
+  PostgreSQL (modelos y migraciones ya portables, ver arriba), grabadores por sitio
   en SQLite.
 - `users.custom_permissions JSON` que overridee el rol (matriz editable
   por usuario en la UI).
@@ -128,8 +142,11 @@ que se trabajan ese mismo día:
 
 - Clips: re-encodear a H.264 (PyAV/imageio-ffmpeg) — hoy mp4v a 5 fps
   con doble recompresión JPEG; usar los timestamps reales guardados.
-- Grabación continua en anillo (el `kind="recording"` de `media_assets`
-  ya está reservado).
+- Grabación continua en anillo, **opcional por cliente**: normalmente la hace
+  el NVR de la sala, y el VMS guarda la evidencia de cada evento. El
+  `kind="recording"` de `media_assets` ya está reservado. El video nunca va a
+  la base: los archivos viven en `data/media/` y `media_assets` guarda solo
+  la ruta relativa y los metadatos (tamaño, duración, resolución).
 - Reproductor embebido (hoy abre el reproductor del SO) y captura
   manual con `created_by`.
 - `analytics_fps` por cámara (hoy global, con override en `params["fps"]`).
@@ -140,8 +157,15 @@ que se trabajan ese mismo día:
   en escenas densas lo pide.
 - El cooldown de las reglas vive en un dict en memoria: se resetea en cada
   reinicio. (El lock entre hilos ya está, Fase 5 del 24/09.)
-- Reconocimiento facial real (hoy solo detección; la galería usa una
-  firma de similitud, no un embedding).
+- **Identificación de personas**: reconocer a alguien ya grabado y buscarlo
+  en los eventos. Hoy hay solo detección: `face_quality.py` elige la mejor
+  captura y la galería usa una firma de similitud, no un embedding.
+  `face_catalog` (re-identificación y conteo de únicos) lo sacó Nahuel en
+  `f309d79` por decisión de producto. Antes de implementarlo hay que definir
+  el producto (lista de registrados vs. búsqueda libre) y el marco legal de
+  datos biométricos del cliente. Candidato técnico: SFace (ONNX, CPU) para
+  embeddings, una galería de personas registradas y la búsqueda por similitud
+  sobre las capturas de los eventos.
 
 ## Rendimiento UI
 

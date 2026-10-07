@@ -19,19 +19,32 @@ Regla, entonces: **toda revision que cree o borre un indice, o agregue una
 columna, chequea primero**. Alterar una columna existente o agregar una
 constraint no lo necesita: son idempotentes o fallan ruidosamente, no en
 silencio.
+
+Los dos chequeos usan el inspector de SQLAlchemy y no `PRAGMA` ni
+`sqlite_master`, asi que corren igual en SQLite y en PostgreSQL. Cada
+llamada arma un inspector nuevo: el inspector cachea lo que refleja, y una
+revision consulta despues de haber cambiado el esquema.
 """
 
 from __future__ import annotations
 
+import sqlalchemy as sa
+
 
 def indice_existe(conn, nombre: str) -> bool:
-    return (
-        conn.exec_driver_sql(
-            "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?", (nombre,)
-        ).fetchone()
-        is not None
+    """Busca por nombre en todas las tablas, como el `sqlite_master` de antes:
+    los nombres de indice son unicos en la base (y en el schema, en Postgres)."""
+    inspector = sa.inspect(conn)
+    return any(
+        indice["name"] == nombre
+        for tabla in inspector.get_table_names()
+        for indice in inspector.get_indexes(tabla)
     )
 
 
 def columna_existe(conn, tabla: str, columna: str) -> bool:
-    return columna in {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({tabla})")}
+    """False si la tabla no existe, igual que el `PRAGMA table_info` vacio de antes."""
+    inspector = sa.inspect(conn)
+    if not inspector.has_table(tabla):
+        return False
+    return columna in {c["name"] for c in inspector.get_columns(tabla)}

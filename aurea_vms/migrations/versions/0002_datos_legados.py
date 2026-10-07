@@ -18,6 +18,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
+from aurea_vms.migrations.ayudas import columna_existe
+
 revision: str = "0002_datos_legados"
 down_revision: str | None = "0001_baseline"
 branch_labels: str | Sequence[str] | None = None
@@ -37,8 +39,7 @@ def _backfill_de_zonas(conn) -> None:
     se CONSUME el site_id legado -- consumirlo hace el paso de una sola vez:
     desasignar una camara despues no la vuelve a asignar.
     """
-    columnas = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(devices)")}
-    if "site_id" not in columnas:
+    if not columna_existe(conn, "devices", "site_id"):
         return  # base nueva: nunca tuvo la columna legada
 
     sitios_legados = conn.execute(
@@ -63,7 +64,7 @@ def _backfill_de_zonas(conn) -> None:
         if zona is None:
             conn.execute(
                 sa.text(
-                    "INSERT INTO zones (site_id, name, critical) VALUES (:site_id, :nombre, 0)"
+                    "INSERT INTO zones (site_id, name, critical) VALUES (:site_id, :nombre, FALSE)"
                 ),
                 params,
             )
