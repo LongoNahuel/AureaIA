@@ -80,7 +80,7 @@ def test_un_tile_sin_tamaño_no_dibuja(tile, monkeypatch):
     # medir 0x0 y un pixmap nulo haria que QPainter se queje en la terminal.
     monkeypatch.setattr(tile.video_label, "size", lambda: QSize(0, 0))
     convertidos: list = []
-    monkeypatch.setattr(vt_module, "frame_to_pixmap", lambda *a: convertidos.append(a))
+    monkeypatch.setattr(vt_module, "frame_to_image", lambda *a: convertidos.append(a))
     tile._refresh_frame()
 
     assert convertidos == []

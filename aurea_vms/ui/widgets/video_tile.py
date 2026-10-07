@@ -7,9 +7,11 @@ tile lo marca como "seleccionado" (borde de acento) para ese flujo."""
 from __future__ import annotations
 
 import datetime as dt
+import itertools
 import math
 import time
 from collections import deque
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
@@ -27,6 +29,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 from qfluentwidgets import Action, FluentIcon, RoundMenu
+from shiboken6 import isValid
 
 from aurea_vms.config.settings import settings
 from aurea_vms.core import app_prefs
@@ -36,7 +39,7 @@ from aurea_vms.core.events import Detection, DetectionEvent
 from aurea_vms.core.stream_manager import stream_manager
 from aurea_vms.models import repository
 from aurea_vms.models.device import Device
-from aurea_vms.ui import icons
+from aurea_vms.ui import icons, render_pool
 from aurea_vms.ui.labels import display_class, display_rotor_event
 from aurea_vms.ui.theme import STATUS_COLORS
 from aurea_vms.ui.widgets.analytics_visuals import (
@@ -117,8 +120,8 @@ NEW_GAME_FLASH_S = 4.0
 LINE_FLASH_S = 1.5
 
 
-def frame_to_pixmap(frame: np.ndarray, size: QSize) -> QPixmap:
-    """Cuadro BGR -> pixmap de `size`, achicando con OpenCV ANTES de pasar a
+def _fit(frame: np.ndarray, size: QSize) -> np.ndarray:
+    """Cuadro BGR achicado (o agrandado) a `size` con OpenCV, ANTES de pasar a
     Qt. Antes QPixmap.fromImage(...).scaled() convertia el cuadro completo
     con el GIL tomado: medido (2026-09-23) 1,4 ms por cuadro de 2048x1536
     contra 0,04 ms ahora, porque cv2.resize/cvtColor sueltan el GIL. El
@@ -136,9 +139,41 @@ def frame_to_pixmap(frame: np.ndarray, size: QSize) -> QPixmap:
         while frame.shape[1] >= 4 * width and frame.shape[0] >= 4 * height:
             frame = cv2.pyrDown(frame)
         frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_LINEAR)
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    image = QImage(rgb.data, width, height, 3 * width, QImage.Format.Format_RGB888)
-    return QPixmap.fromImage(image)
+    return frame
+
+
+def frame_to_image(frame: np.ndarray, size: QSize) -> QImage:
+    """Como frame_to_pixmap pero devuelve un QImage propio (con copia de los
+    datos): sirve en cualquier hilo, y es lo que arma el pool de render.
+
+    Formato RGB32 (BGRA en memoria, el orden de OpenCV): es el que QPainter
+    dibuja mas rapido y el que QPixmap.fromImage pasa sin convertir."""
+    frame = _fit(frame, size)
+    bgra = cv2.cvtColor(frame, cv2.COLOR_BGR2BGRA)
+    height, width = bgra.shape[:2]
+    return QImage(bgra.data, width, height, 4 * width, QImage.Format.Format_RGB32).copy()
+
+
+def frame_to_pixmap(frame: np.ndarray, size: QSize) -> QPixmap:
+    """El cuadro como pixmap. Solo en el hilo de la GUI (QPixmap no se
+    puede crear en otro)."""
+    return QPixmap.fromImage(frame_to_image(frame, size))
+
+
+_CLAVES_RENDER = itertools.count()
+
+
+@dataclass(frozen=True)
+class _Escena:
+    """Lo que el overlay lee del recuadro, tomado en la GUI al pedir el
+    cuadro: el render corre en otro hilo mientras la GUI sigue cambiando el
+    recuadro."""
+
+    eventos: dict[str, DetectionEvent]
+    nombre: str
+    marcas: bool
+    marca: bool
+    nombre_marca: str
 
 
 class _VideoDisplay(QLabel):
@@ -151,13 +186,73 @@ class _VideoDisplay(QLabel):
     vuelve a resizear el label -> ... y la ventana "crece sola" de a poco.
     Fijar un sizeHint constante corta el loop; el tamano real lo sigue
     determinando el layout (grilla/QSizePolicy.Expanding), no el video.
+
+    Ademas pinta el video el mismo (Fase V1b, `set_cuadro`): fondo, cuadro
+    centrado y borde, opaco. Medido 2026-10-07 con 16 recuadros: el render
+    ya salia del hilo de la GUI y aun asi un clic tardaba 20-30 ms; lo que
+    quedaba era pintar cada cuadro como QLabel con stylesheet (QStyleSheetStyle
+    y el repintado de los fondos de atras). Los estados vacio y "sin señal"
+    siguen por setPixmap y el pintado normal del QLabel.
     """
+
+    FONDO = QColor("#10151c")
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._cuadro: QImage | None = None
+        self._borde = QPen(QColor(BORDER_IDLE))
 
     def sizeHint(self) -> QSize:  # noqa: N802 - override de Qt
         return QSize(160, 90)
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802 - override de Qt
         return QSize(160, 90)
+
+    def set_borde(self, color: str, ancho: int) -> None:
+        self._borde = QPen(QColor(color))
+        self._borde.setWidth(ancho)
+        self.setStyleSheet(
+            f"background-color: {self.FONDO.name()}; border: {ancho}px solid {color};"
+        )
+        self.update()
+
+    def set_cuadro(self, imagen: QImage) -> None:
+        if self._cuadro is None:
+            super().setPixmap(QPixmap())  # suelta el pixmap del estado anterior
+            # Opaco: Qt no repinta los fondos de atras en cada cuadro.
+            self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        self._cuadro = imagen
+        self.update()
+
+    def setPixmap(self, pixmap: QPixmap) -> None:  # noqa: N802 - override de Qt
+        if self._cuadro is not None:
+            self._cuadro = None
+            self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
+        super().setPixmap(pixmap)
+
+    def pixmap(self) -> QPixmap:
+        """El cuadro que se esta mostrando, venga del video o de un estado."""
+        if self._cuadro is not None:
+            return QPixmap.fromImage(self._cuadro)
+        return super().pixmap()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - override de Qt
+        if self._cuadro is None:
+            super().paintEvent(event)
+            return
+        painter = QPainter(self)
+        rect = self.rect()
+        painter.fillRect(rect, self.FONDO)
+        x = (rect.width() - self._cuadro.width()) // 2
+        y = (rect.height() - self._cuadro.height()) // 2
+        painter.drawImage(x, y, self._cuadro)
+        ancho = self._borde.width()
+        if ancho > 0:
+            painter.setPen(self._borde)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            mitad = ancho / 2
+            painter.drawRect(QRectF(rect).adjusted(mitad, mitad, -mitad, -mitad))
+        painter.end()
 
 
 class VideoTile(QWidget):
@@ -177,6 +272,11 @@ class VideoTile(QWidget):
         self._offline_rendered = False
         self._last_rendered_ts = 0.0
         self._last_rendered_size = QSize()
+        # Render en el pool (Fase V1b): la clave identifica a este recuadro en
+        # la cola, y la generacion invalida los cuadros en vuelo cuando cambia
+        # la camara (un cuadro de la anterior no puede pisar al de la nueva).
+        self._clave_render = next(_CLAVES_RENDER)
+        self._generacion = 0
         # Los ultimos cuadros (captured_at, cuadro) para dibujar las marcas
         # sobre el cuadro en que se calcularon (ver SYNC_*).
         self._recent_frames: deque[tuple[float, np.ndarray]] = deque(maxlen=SYNC_FRAMES)
@@ -240,6 +340,8 @@ class VideoTile(QWidget):
         self.device_assigned.emit(device.id)
 
     def release(self) -> None:
+        self._generacion += 1
+        render_pool.pool().descartar(self._clave_render)
         if self._device is not None:
             stream_manager.release(self._device.id, self._stream_kind)
             self._device = None
@@ -304,9 +406,7 @@ class VideoTile(QWidget):
     def _apply_border(self) -> None:
         color = BORDER_SELECTED if self._selected else BORDER_IDLE
         width = 2 if self._selected else 1
-        self.video_label.setStyleSheet(
-            f"background-color: #10151c; border: {width}px solid {color};"
-        )
+        self.video_label.set_borde(color, width)
 
     # --- interaccion -------------------------------------------------
 
@@ -477,11 +577,39 @@ class VideoTile(QWidget):
         fitted = QSize(width, height).scaled(target_size, Qt.AspectRatioMode.KeepAspectRatio)
         if fitted.isEmpty():  # tile todavia sin tamaño (antes de mostrarse)
             return
-        pixmap = self._draw_overlay(frame_to_pixmap(frame, fitted), width, height)
-        self.video_label.setPixmap(pixmap)
+        # Achicar, convertir y dibujar las marcas va al pool de render (Fase
+        # V1b): aca solo se toma la foto del estado que el overlay lee. El
+        # cuadro es una referencia (los StreamWorker lo reemplazan, no lo
+        # pisan) y los eventos, una copia del dict, que la GUI sigue tocando.
+        escena = self._escena()
+        generacion = self._generacion
+
+        def armar() -> QImage:
+            return self._draw_overlay(frame_to_image(frame, fitted), width, height, escena)
+
+        render_pool.pool().enviar(
+            self._clave_render, armar, lambda imagen: self._mostrar(imagen, generacion)
+        )
         self._last_rendered_ts = frame_ts
         self._last_rendered_size = target_size
         self._shown_ts = max(self._shown_ts, frame_ts)
+
+    def _escena(self) -> _Escena:
+        return _Escena(
+            eventos=dict(self._latest_events),
+            nombre=self._device.name if self._device else "",
+            marcas=self._smart_marks,
+            marca=self._branding_enabled(),
+            nombre_marca=self._brand_name,
+        )
+
+    def _mostrar(self, imagen: QImage, generacion: int) -> None:
+        """En la GUI, cuando el pool termina un cuadro. Se descarta si el
+        recuadro ya no existe, si cambio de camara o si mientras tanto paso a
+        "sin señal" (que lo dibuja la GUI)."""
+        if not isValid(self) or generacion != self._generacion or self._offline_rendered:
+            return
+        self.video_label.set_cuadro(imagen)
 
     def _frame_to_show(self, latest: np.ndarray, latest_ts: float) -> tuple[np.ndarray, float]:
         """El cuadro de las ultimas marcas, si es de los dos ultimos y no es
@@ -496,20 +624,34 @@ class VideoTile(QWidget):
                 return frame, ts
         return latest, latest_ts
 
-    def _draw_overlay(self, pixmap: QPixmap, frame_w: int, frame_h: int) -> QPixmap:
-        result = QPixmap(pixmap)
+    def _draw_overlay(
+        self,
+        canvas: QPixmap | QImage,
+        frame_w: int,
+        frame_h: int,
+        escena: _Escena | None = None,
+    ) -> QPixmap | QImage:
+        """Marcas sobre el cuadro. Con un QImage (el pool de render) dibuja
+        sobre el mismo y puede correr en cualquier hilo: todo lo que lee del
+        recuadro viene en `escena`, salvo las configs de analiticas (una
+        lista que la GUI reemplaza entera, nunca muta) y el destello de la
+        linea (solo lo toca el render, uno en curso por recuadro). Con un
+        QPixmap (tests, GUI) dibuja sobre una copia."""
+        if escena is None:
+            escena = self._escena()
+        result = canvas if isinstance(canvas, QImage) else QPixmap(canvas)
         painter = QPainter(result)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        branding = self._branding_enabled()
+        branding = escena.marca
         if branding:
-            self._draw_branding(painter)
+            self._draw_branding(painter, escena.nombre_marca)
         self._draw_osd_text(
             painter,
             result.width(),
             40 if branding else 8,
             Qt.AlignmentFlag.AlignLeft,
-            self._device.name if self._device else "",
+            escena.nombre,
         )
         timestamp = dt.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         self._draw_osd_text(painter, result.width(), 8, Qt.AlignmentFlag.AlignRight, timestamp)
@@ -520,10 +662,10 @@ class VideoTile(QWidget):
         # ultimas cajas no pueden quedar dibujadas como si fueran en vivo.
         fresh = {
             name: event
-            for name, event in self._latest_events.items()
+            for name, event in escena.eventos.items()
             if now - event.timestamp <= STALE_AFTER_S
         }
-        if not self._smart_marks:
+        if not escena.marcas:
             painter.end()
             return result
 
@@ -1048,10 +1190,11 @@ class VideoTile(QWidget):
         painter.setPen(QColor("#e5e7eb"))
         painter.drawText(rect.adjusted(4, 0, 0, 0), Qt.AlignmentFlag.AlignCenter, text)
 
-    def _draw_branding(self, painter: QPainter) -> None:
-        # Cacheado junto con _branding: leerlo aca abria preferences.json en
-        # cada cuadro de cada recuadro (medido 2026-10-07: ~0,6 ms por render).
-        text = self._brand_name
+    @staticmethod
+    def _draw_branding(painter: QPainter, text: str) -> None:
+        # El nombre llega en la escena, cacheado junto con _branding: leerlo
+        # aca abria preferences.json en cada cuadro de cada recuadro (medido
+        # 2026-10-07: ~0,6 ms por render).
         font = painter.font()
         font.setBold(True)
         font.setPointSize(max(7, font.pointSize()))

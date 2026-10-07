@@ -27,7 +27,8 @@ y jamás tocan widgets.
 | `ClipWriter` (efímero) | pre-buffer + post-captura → mp4 + registro en `media_assets` | `core/clip_recorder.py` |
 | `RetentionWorker` | purga media por edad/tamaño cada 30 min | `core/retention.py` |
 | `FunctionWorker` (QThread) | I/O de red disparado desde la UI (probe RTSP, ONVIF) | `ui/workers.py` |
-| Hilo principal | Qt + render de tiles vía QTimer a 25 fps | `ui/…` |
+| `Render-N` (2) | arma el cuadro de cada recuadro: achica, convierte a `QImage` y dibuja el overlay; el último pedido de cada recuadro gana | `ui/render_pool.py` |
+| Hilo principal | Qt; cada recuadro sondea con un QTimer (`display_fps`), toma una foto del estado (`_Escena`), manda el armado al pool y pinta el `QImage` que vuelve (opaco, sin stylesheet). Los recuadros ocultos o minimizados no sondean | `ui/widgets/video_tile.py` |
 
 Puntos finos ya resueltos (no romper):
 

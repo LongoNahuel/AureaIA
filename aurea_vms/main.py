@@ -39,6 +39,7 @@ from aurea_vms.core.stream_manager import stream_manager
 from aurea_vms.migrations.resguardo import BACKUPS_DIRNAME
 from aurea_vms.models import repository
 from aurea_vms.models.db import init_db
+from aurea_vms.ui import render_pool
 from aurea_vms.ui.dialogs.login_dialog import LoginDialog
 from aurea_vms.ui.dialogs.setup_wizard_dialog import SetupWizardDialog
 from aurea_vms.ui.main_window import MainWindow
@@ -282,6 +283,9 @@ def main() -> int:
         window = MainWindow()
         window.show()
         app.exec()
+        # Los hilos de render dibujan sobre QImage: se paran antes que los
+        # streams, con la QApplication todavia viva. Se recrea al re-login.
+        render_pool.detener()
         _stop_background_engines()
 
         if not window.logout_requested:
