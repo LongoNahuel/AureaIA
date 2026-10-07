@@ -35,6 +35,10 @@ def _resolve_data_dir() -> Path:
 
 DATA_DIR = _resolve_data_dir()
 DB_PATH = DATA_DIR / "aurea_vms.sqlite3"
+# Base en un servidor (ej. postgresql+psycopg://usuario:clave@host/aurea), para
+# un nodo central. Sin la variable, la base es el SQLite local de DB_PATH, que
+# es el despliegue normal de una sala.
+DB_URL = os.environ.get("AUREA_DB_URL") or None
 # Raiz unica de clips/capturas/grabaciones, organizada por
 # <tipo>/<fecha>/<camara> e indexada por la tabla media_assets.
 MEDIA_DIR = DATA_DIR / "media"
@@ -45,6 +49,7 @@ LOG_PATH = DATA_DIR / "aurea_vms.log"
 class Settings:
     data_dir: Path = DATA_DIR
     db_path: Path = DB_PATH
+    db_url: str | None = DB_URL
     media_dir: Path = MEDIA_DIR
     log_path: Path = LOG_PATH
 

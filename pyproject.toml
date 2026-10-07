@@ -32,6 +32,11 @@ dev = [
     "pytest-qt>=4.4",
     "ruff>=0.6",
 ]
+# Driver para un nodo central en PostgreSQL (AUREA_DB_URL). No entra al .exe
+# de sala, que usa el SQLite local.
+postgres = [
+    "psycopg[binary]>=3.2",
+]
 
 [project.scripts]
 aurea-vms = "aurea_vms.main:main"
