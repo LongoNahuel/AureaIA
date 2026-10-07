@@ -167,7 +167,142 @@
   <div class="num">02</div>
 </section>
 
-<!-- 3. Analítica estrella -->
+<!-- 3. Arquitectura -->
+<section class="page">
+  <div class="top"><b>AureaIA</b><span>Arquitectura</span></div>
+  <div class="kicker">Arquitectura</div>
+  <h2>Cómo funciona por dentro</h2>
+  <p class="lead">Del video de la cámara a la alerta del operador, todo ocurre dentro de la red del cliente.</p>
+
+  <div style="margin-top:8mm">
+  <svg viewBox="0 0 680 470" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#0891B2"/></marker>
+      <marker id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#94A3B8"/></marker>
+      <style>
+        .box{fill:#fff;stroke:#CBD5E1;stroke-width:1.2}
+        .t{font-size:12px;font-weight:700;fill:#0F172A}
+        .s{font-size:9.5px;fill:#64748B}
+        .n{font-size:11px;font-weight:700;fill:#fff}
+        .flow{stroke:#0891B2;stroke-width:2;fill:none}
+        .soft{stroke:#94A3B8;stroke-width:1.4;fill:none;stroke-dasharray:4 3}
+      </style>
+    </defs>
+
+    <!-- Nube bloqueada -->
+    <g transform="translate(520,2)">
+      <rect width="150" height="30" rx="15" fill="#FFF1F2"/>
+      <g transform="translate(12,5) scale(0.85)" fill="none" stroke="#E11D48" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/>
+      </g>
+      <text x="40" y="19.5" font-size="10" font-weight="700" fill="#E11D48">Sin nube ni internet</text>
+    </g>
+
+    <!-- Límite LAN -->
+    <rect x="6" y="44" width="668" height="420" rx="14" fill="#F8FBFD" stroke="#0891B2" stroke-width="1.4" stroke-dasharray="7 5"/>
+    <rect x="22" y="36" width="190" height="18" rx="9" fill="#0A1A33"/>
+    <text x="34" y="49" font-size="9.5" font-weight="700" fill="#22D3EE" letter-spacing="1.2">RED LOCAL DEL CLIENTE · LAN</text>
+
+    <!-- Fila 1: flujo principal -->
+    <g>
+      <rect class="box" x="24" y="76" width="136" height="88" rx="10"/>
+      <circle cx="44" cy="96" r="11" fill="#0891B2"/><text class="n" x="40.5" y="100">1</text>
+      <text class="t" x="62" y="100">Cámaras</text>
+      <text class="s" x="36" y="128">IP, NVR y XVR</text>
+      <text class="s" x="36" y="143">ya instaladas en la sala</text>
+    </g>
+    <path class="flow" d="M160 120 H186" marker-end="url(#ah)"/>
+    <text x="163" y="112" font-size="8" fill="#0891B2" font-weight="700">RTSP</text>
+    <g>
+      <rect class="box" x="188" y="76" width="136" height="88" rx="10"/>
+      <circle cx="208" cy="96" r="11" fill="#0891B2"/><text class="n" x="204.5" y="100">2</text>
+      <text class="t" x="226" y="100">Captura</text>
+      <text class="s" x="200" y="128">Recibe el video y se</text>
+      <text class="s" x="200" y="143">reconecta si se corta</text>
+    </g>
+    <path class="flow" d="M324 120 H350" marker-end="url(#ah)"/>
+    <g>
+      <rect x="352" y="76" width="136" height="88" rx="10" fill="#0A1A33"/>
+      <circle cx="372" cy="96" r="11" fill="#22D3EE"/><text x="368.5" y="100" font-size="11" font-weight="700" fill="#0A1A33">3</text>
+      <text x="390" y="100" font-size="12" font-weight="700" fill="#fff">Motor de IA</text>
+      <text x="364" y="128" font-size="9.5" fill="#A5B4CC">Analiza cada cámara</text>
+      <text x="364" y="143" font-size="9.5" fill="#A5B4CC">5 veces por segundo</text>
+    </g>
+    <path class="flow" d="M488 120 H514" marker-end="url(#ah)"/>
+    <g>
+      <rect class="box" x="516" y="76" width="140" height="88" rx="10"/>
+      <circle cx="536" cy="96" r="11" fill="#E11D48"/><text class="n" x="532.5" y="100">4</text>
+      <text class="t" x="554" y="100">Alarmas</text>
+      <text class="s" x="528" y="128">Aplica reglas, horarios</text>
+      <text class="s" x="528" y="143">y nivel de severidad</text>
+    </g>
+
+    <!-- Bus de eventos -->
+    <path class="soft" d="M256 164 V206"/><path class="soft" d="M420 164 V206"/><path class="soft" d="M586 164 V206"/>
+    <rect x="24" y="208" width="632" height="36" rx="18" fill="#E0F2FE"/>
+    <text x="44" y="230.5" font-size="11" font-weight="700" fill="#0F172A">Bus de eventos interno</text>
+    <text x="196" y="230.5" font-size="9.5" fill="#475569">Los componentes se comunican en memoria, sin abrir puertos de red</text>
+
+    <!-- Fila 3: operador y almacenamiento -->
+    <path class="flow" d="M170 244 V282" marker-end="url(#ah)"/>
+    <path class="soft" d="M440 244 V280" marker-end="url(#ahg)"/>
+    <path class="soft" d="M590 244 V280" marker-end="url(#ahg)"/>
+    <g>
+      <rect class="box" x="24" y="284" width="300" height="104" rx="10"/>
+      <circle cx="44" cy="304" r="11" fill="#0891B2"/><text class="n" x="40.5" y="308">5</text>
+      <text class="t" x="62" y="308">Puesto del operador</text>
+      <g font-size="9.5" fill="#334155">
+        <rect x="40" y="324" width="80" height="22" rx="11" fill="#F1F7FB"/><text x="52" y="338.5">Video en vivo</text>
+        <rect x="126" y="324" width="78" height="22" rx="11" fill="#FFF1F2"/><text x="140" y="338.5" fill="#E11D48" font-weight="700">Alertas</text>
+        <rect x="210" y="324" width="96" height="22" rx="11" fill="#F1F7FB"/><text x="222" y="338.5">Incidentes</text>
+        <rect x="40" y="352" width="110" height="22" rx="11" fill="#F1F7FB"/><text x="52" y="366.5">Búsqueda de clips</text>
+        <rect x="156" y="352" width="150" height="22" rx="11" fill="#F1F7FB"/><text x="168" y="366.5">Configuración y usuarios</text>
+      </g>
+    </g>
+    <g>
+      <rect class="box" x="352" y="284" width="148" height="104" rx="10"/>
+      <g transform="translate(366,296)" fill="none" stroke="#0891B2" stroke-width="1.8"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></g>
+      <text class="t" x="396" y="312">Base de datos</text>
+      <text class="s" x="366" y="344">Cámaras, reglas, eventos</text>
+      <text class="s" x="366" y="359">y usuarios</text>
+      <text x="366" y="377" font-size="9" font-weight="700" fill="#0891B2">Credenciales cifradas</text>
+    </g>
+    <g>
+      <rect class="box" x="516" y="284" width="140" height="104" rx="10"/>
+      <g transform="translate(530,296)" fill="none" stroke="#0891B2" stroke-width="1.8"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18M17 3v18M3 12h18"/></g>
+      <text class="t" x="560" y="312">Evidencia</text>
+      <text class="s" x="530" y="344">Clips y capturas de</text>
+      <text class="s" x="530" y="359">cada evento</text>
+      <text x="530" y="377" font-size="9" font-weight="700" fill="#0891B2">Depuración automática</text>
+    </g>
+
+    <!-- Capa de seguridad -->
+    <rect x="24" y="408" width="632" height="40" rx="10" fill="#0A1A33"/>
+    <g transform="translate(40,418) scale(0.85)" fill="none" stroke="#22D3EE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></g>
+    <text x="68" y="432" font-size="11" font-weight="700" fill="#fff">Capa de seguridad</text>
+    <g font-size="9.5" fill="#CFE3F7">
+      <text x="196" y="432">Usuarios con roles</text>
+      <text x="300" y="432">·</text>
+      <text x="310" y="432">Contraseñas protegidas</text>
+      <text x="430" y="432">·</text>
+      <text x="440" y="432">Acceso a datos seguro</text>
+      <text x="552" y="432">·</text>
+      <text x="562" y="432">Backup automático</text>
+    </g>
+  </svg>
+  </div>
+
+  <div class="steps" style="margin-top:7mm">
+    <div class="step"><div class="k">1 · 2</div><h4>Entra el video</h4><p>Las cámaras de la sala envían su señal; si una se corta, el sistema la reconecta solo.</p></div>
+    <div class="step"><div class="k">3 · 4</div><h4>La IA decide</h4><p>Cada imagen se analiza y las reglas definen si corresponde una alarma.</p></div>
+    <div class="step"><div class="k">5</div><h4>El operador actúa</h4><p>Recibe la alerta con el video del evento y gestiona el incidente.</p></div>
+  </div>
+
+  <div class="tech"><b>Base técnica</b>Arquitectura en capas desacopladas · Hilo dedicado por flujo de cámara y por analítica, con conexión RTSP compartida · Bus de eventos tipado en memoria · ONNX Runtime · SQLAlchemy con migraciones Alembic · Interfaz PySide6 (Qt).</div>
+  <div class="num">03</div>
+</section>
+
+<!-- 4. Analítica estrella -->
 <section class="page">
   <div class="top"><b>AureaIA</b><span>Analítica a medida</span></div>
   <div class="kicker">Analítica a medida</div>
@@ -240,7 +375,7 @@
   </div>
 
   <div class="tech"><b>Base técnica</b>Estimación de pose humana top-down (RTMPose, 17 puntos COCO) sobre zonas de interés · Reglas de intrusión por articulación y de velocidad de muñeca · Agrupación de eventos por incidente.</div>
-  <div class="num">03</div>
+  <div class="num">04</div>
 </section>
 
 <!-- 4. Compatibilidad y operación -->
@@ -272,7 +407,7 @@
   <div class="hier"><span class="b">Sitio</span><span class="s">→</span><span class="b">Zona</span><span class="s">→</span><span class="b">Cámara</span><span style="font-size:9pt;color:var(--muted);margin-left:3mm">De una sala a varias sedes, con filtro global por sitio.</span></div>
 
   <div class="tech"><b>Base técnica</b>Protocolos RTSP y ONVIF (WS-Discovery, perfiles de medios, PTZ) · Doble flujo main/sub-stream con conexión compartida · Watchdog por PTS · Arquitectura en capas con analíticas como plugins · Base de datos versionada y portable a PostgreSQL.</div>
-  <div class="num">04</div>
+  <div class="num">05</div>
 </section>
 
 <!-- 5. Seguridad -->
@@ -299,7 +434,7 @@
   </div>
 
   <div class="tech"><b>Base técnica</b>ORM con consultas parametrizadas · Hash PBKDF2-SHA256 con 600.000 iteraciones (OWASP) · Cifrado de credenciales en reposo · Control de acceso por roles (RBAC) · Migraciones atómicas con backup previo · Integración continua con análisis estático y pruebas.</div>
-  <div class="num">05</div>
+  <div class="num">06</div>
 </section>
 
 <!-- 6. Cierre -->
