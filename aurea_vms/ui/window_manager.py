@@ -35,6 +35,14 @@ class WindowManager:
     def __init__(self, principal: VentanaConPestanas) -> None:
         self._principal = principal
         self._ventanas: list[VentanaConPestanas] = [principal]
+        self._numerador = 1  # la principal es la 1
+        # True mientras se cierra la principal: las secundarias que se cierran
+        # en ese momento NO devuelven sus pestañas (la sesion se va entera).
+        self.cerrando = False
+
+    def proximo_numero(self) -> int:
+        self._numerador += 1
+        return self._numerador
 
     @property
     def principal(self) -> VentanaConPestanas:
@@ -66,6 +74,20 @@ class WindowManager:
             if widget.property("routeKey") == route_key:
                 return ventana, widget
         return None
+
+    def buscar_modulo(self, module_cls: type) -> tuple[VentanaConPestanas, QWidget] | None:
+        """Una instancia abierta del modulo, en cualquier ventana. Vista en
+        Vivo e Inteligente pueden tener varias (`module-<Clase>-<n>`): da la
+        primera que encuentra."""
+        base = route_key_de(module_cls)
+        for ventana, widget in self.modulos():
+            clave = widget.property("routeKey") or ""
+            if clave == base or clave.startswith(base + "-"):
+                return ventana, widget
+        return None
+
+    def claves_abiertas(self) -> set[str]:
+        return {widget.property("routeKey") or "" for _v, widget in self.modulos()}
 
     def ventana_de(self, widget: QWidget) -> VentanaConPestanas | None:
         for ventana, pagina in self.modulos():

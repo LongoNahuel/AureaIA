@@ -9,7 +9,7 @@ aurea_vms/
 ├── config/    settings (paths, constantes de build)
 ├── models/    SQLAlchemy 2.0 + repository de funciones (sin relationship())
 ├── core/      engines en threads + lógica de negocio (sin Qt, salvo el bus)
-└── ui/        PySide6 + QFluentWidgets (ventana única con pestañas)
+└── ui/        PySide6 + QFluentWidgets (ventana principal con pestañas; cada pestaña se puede llevar a una ventana secundaria, ver `ui/window_manager.py` y `ui/pestanas.py`)
 ```
 
 ## Concurrencia y comunicación
