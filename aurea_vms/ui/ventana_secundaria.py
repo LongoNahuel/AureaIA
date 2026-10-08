@@ -43,10 +43,13 @@ class VentanaSecundaria(QMainWindow):
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
         self.tabs = PestanasMovibles(self)
-        self.tabs.tabCloseRequested.connect(lambda i: principal.cerrar_pestana(self, i))
-        self.tabs.menu_pedido.connect(lambda w, pos: principal.menu_de_pestana(self, w, pos))
-        self.tabs.tabAddRequested.connect(lambda: principal.nueva_vista_en_vivo(self))
+        # Metodos y no lambdas: una lambda que captura `self` conectada a una
+        # signal de un hijo arma un ciclo por C++ que el GC no ve.
+        self.tabs.tabCloseRequested.connect(self._cerrar_pestana)
+        self.tabs.menu_pedido.connect(self._menu_de_pestana)
+        self.tabs.tabAddRequested.connect(self._nueva_vista_en_vivo)
         self.tabs.cambio.connect(principal.marcar_cambio)
+        self.tabs.arrastre_soltado.connect(principal.soltar_pestana)
         self.tabs.tabBar.setAddButtonVisible(principal.puede_ver_en_vivo())
         layout.addWidget(self.tabs)
         self.setCentralWidget(central)
@@ -60,6 +63,15 @@ class VentanaSecundaria(QMainWindow):
         geometria = principal.geometry()
         self.resize(geometria.size())
         self.move(geometria.topLeft() + _corrimiento(numero))
+
+    def _cerrar_pestana(self, index: int) -> None:
+        self._principal.cerrar_pestana(self, index)
+
+    def _menu_de_pestana(self, widget: QWidget, pos: QPoint) -> None:
+        self._principal.menu_de_pestana(self, widget, pos)
+
+    def _nueva_vista_en_vivo(self) -> None:
+        self._principal.nueva_vista_en_vivo(self)
 
     def _abrir_alarma(self, alarm_event_id: int) -> None:
         """Clic en un popup de esta ventana: si Alarmas no esta abierta en

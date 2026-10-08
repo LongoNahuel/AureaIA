@@ -5,9 +5,18 @@ por categoria, y una pestaña por cada modulo que se va abriendo desde ahi
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from functools import partial
+
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QHBoxLayout,
+    QMainWindow,
+    QVBoxLayout,
+    QWidget,
+)
 from qfluentwidgets import BodyLabel, ComboBox, FluentIcon, PushButton
 
 from aurea_vms.core import app_prefs, app_state, auth, desktop_notify
@@ -191,6 +200,7 @@ class MainWindow(QMainWindow):
         self.tabs = PestanasMovibles(self)
         self.tabs.tabCloseRequested.connect(lambda i: self.cerrar_pestana(self, i))
         self.tabs.menu_pedido.connect(lambda w, pos: self.menu_de_pestana(self, w, pos))
+        self.tabs.arrastre_soltado.connect(self.soltar_pestana)
         # El "+" abre una Vista en Vivo nueva (antes no hacia nada).
         self.tabs.tabAddRequested.connect(lambda: self.nueva_vista_en_vivo(self))
         self.tabs.tabBar.setAddButtonVisible(self.puede_ver_en_vivo())
@@ -491,6 +501,36 @@ class MainWindow(QMainWindow):
         menu = pestanas.armar_menu(self.ventanas, ventana, widget, self.nueva_ventana, ventana)
         if menu is not None:
             menu.exec(pos)
+
+    def soltar_pestana(self, widget: QWidget, pos: QPoint) -> None:
+        """Una pestaña arrastrada afuera de su barra y soltada en `pos`
+        (global). Diferido: `mover` quita la pestaña, y su boton es el que
+        todavia esta entregando el soltar del mouse."""
+        QTimer.singleShot(0, self, partial(self._soltar, widget, pos))
+
+    def _soltar(self, widget: QWidget, pos: QPoint) -> None:
+        origen = self.ventanas.ventana_de(widget)
+        if origen is None:  # la pagina se cerro mientras tanto
+            return
+        destino = self._ventana_en(pos)
+        if destino is not None and destino is not origen:
+            pestanas.llevar_a(widget, origen, destino)
+        elif origen is not self and origen.tabs.count() == 1:
+            # La unica pestaña de una secundaria: se lleva la ventana entera
+            # en vez de abrir otra y cerrar esta.
+            pestanas.poner_bajo_el_cursor(origen, pos)
+            origen.raise_()
+            origen.activateWindow()
+        else:
+            # Afuera de toda ventana, o sobre la misma (con la principal
+            # maximizada no hay "afuera"): ventana nueva bajo el cursor.
+            pestanas.desacoplar(widget, origen, self.nueva_ventana, pos)
+
+    def _ventana_en(self, pos: QPoint) -> QWidget | None:
+        """La ventana de la app que esta bajo `pos`, si hay una."""
+        debajo = QApplication.widgetAt(pos)
+        ventana = debajo.window() if debajo is not None else None
+        return ventana if ventana in self.ventanas.ventanas() else None
 
     def cerrar_pestana(self, ventana: QWidget, index: int) -> None:
         widget = ventana.tabs.widget(index)
