@@ -10,9 +10,16 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
 from qfluentwidgets import BodyLabel, ComboBox, FluentIcon, PushButton
 
-from aurea_vms.core import app_state, auth, desktop_notify
+from aurea_vms.core import app_prefs, app_state, auth, desktop_notify
 from aurea_vms.core.event_bus import event_bus
-from aurea_vms.core.events import AlarmEvent
+from aurea_vms.core.events import (
+    RETENCION_AL_TOPE,
+    RETENCION_EVIDENCIA_PROTEGIDA,
+    RETENCION_PREFS_ILEGIBLES,
+    RETENCION_SIN_CONFIGURAR,
+    AlarmEvent,
+    RetentionStatus,
+)
 from aurea_vms.core.permissions import Perm, can
 from aurea_vms.models import repository
 from aurea_vms.models.user import ROLE_LABELS
@@ -33,7 +40,7 @@ from aurea_vms.ui.modules.live_view import LiveViewModule
 from aurea_vms.ui.modules.sites_zones_module import SitesZonesModule
 from aurea_vms.ui.modules.system_module import SystemModule
 from aurea_vms.ui.modules.user_management_module import UserManagementModule
-from aurea_vms.ui.notify import confirm, warn
+from aurea_vms.ui.notify import confirm, warn, warn_con_accion
 from aurea_vms.ui.pestanas import HOME_ROUTE_KEY, PestanasMovibles
 from aurea_vms.ui.ventana_secundaria import VentanaSecundaria
 from aurea_vms.ui.widgets.global_alert_popup import GlobalAlertPopupLayer
@@ -92,6 +99,31 @@ MODULE_PERMISSIONS = {
 MULTI_INSTANCIA = (LiveViewModule, IntelligentViewModule)
 
 AUTOGUARDADO_MS = 2000
+
+# Donde se configura la retencion, para el boton "Configurar" de sus avisos.
+RETENCION_SECCION = ("Audio y Video", "Grabando")
+AVISOS_RETENCION = {
+    RETENCION_SIN_CONFIGURAR: (
+        "Retención sin configurar",
+        "No se borra ningún clip ni captura hasta que un admin la guarde, y el disco "
+        "se puede llenar.",
+    ),
+    RETENCION_PREFS_ILEGIBLES: (
+        "Retención suspendida",
+        "No se pudieron leer las preferencias: no se borra nada hasta que se vuelva a "
+        "guardar la retención.",
+    ),
+    RETENCION_AL_TOPE: (
+        "Retención: borrado grande",
+        "La última pasada borró {deleted} archivos ({mb:.1f} MB) y quedan más vencidos: "
+        "sigue de a poco. Si no es lo esperado, revisá la retención.",
+    ),
+    RETENCION_EVIDENCIA_PROTEGIDA: (
+        "Media sobre el tope",
+        "Lo que queda por encima del tamaño máximo es evidencia de incidentes en "
+        "investigación y no se borra. Cerrá esos incidentes o subí el tope.",
+    ),
+}
 
 
 def module_index(module_cls: type) -> int:
@@ -179,6 +211,18 @@ class MainWindow(QMainWindow):
         )
         event_bus.alarm.connect(self._on_global_alarm, Qt.ConnectionType.QueuedConnection)
         event_bus.site_filter_changed.connect(self._on_site_filter_changed)
+        # Avisos de la retencion (Fase R2): solo al admin, que es quien la
+        # puede configurar; uno por tipo y por sesion.
+        self._avisos_retencion: set[str] = set()
+        if auth.is_admin():
+            event_bus.retention_status.connect(
+                self.avisar_retencion, Qt.ConnectionType.QueuedConnection
+            )
+            # Sin esperar la primera pasada del worker (60 s): si no esta
+            # configurada, se avisa apenas se muestra la ventana. Con `self`
+            # de contexto: si la ventana se borra antes (logout inmediato),
+            # el timer se cancela en vez de llamar sobre un objeto muerto.
+            QTimer.singleShot(0, self, self._avisar_si_retencion_sin_configurar)
 
         # Capa de popups de alarma, visible sobre cualquier pestaña. Se
         # autoajusta a su contenido (ver GlobalAlertPopupLayer) y queda
@@ -281,6 +325,27 @@ class MainWindow(QMainWindow):
                 f"Alarma ({event.severity}) — {device_name}",
                 f"{event.object_class} detectado con {event.confidence:.0%} de confianza.",
             )
+
+    def _avisar_si_retencion_sin_configurar(self) -> None:
+        if not app_prefs.retencion_configurada():
+            self.avisar_retencion(RetentionStatus(RETENCION_SIN_CONFIGURAR))
+
+    def avisar_retencion(self, status: RetentionStatus) -> None:
+        """Slot de event_bus.retention_status (QueuedConnection): un aviso
+        que se queda, con "Configurar", en la ventana que se esta mirando."""
+        aviso = AVISOS_RETENCION.get(status.tipo)
+        if aviso is None or status.tipo in self._avisos_retencion or not auth.is_admin():
+            return
+        self._avisos_retencion.add(status.tipo)
+        titulo, texto = aviso
+        texto = texto.format(deleted=status.deleted, mb=status.freed_bytes / 1024**2)
+        warn_con_accion(
+            self.ventanas.ventana_activa(), titulo, texto, "Configurar", self.abrir_retencion
+        )
+
+    def abrir_retencion(self) -> None:
+        """Sistema > Audio y Video > Grabando."""
+        self._on_home_shortcut(module_index(SystemModule), *RETENCION_SECCION)
 
     def abrir_paleta(self, ventana: QWidget) -> None:
         """Ctrl+K desde cualquier ventana: lo que se abra nuevo va a ESA

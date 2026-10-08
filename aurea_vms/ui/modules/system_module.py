@@ -42,7 +42,7 @@ from aurea_vms.config.settings import settings
 from aurea_vms.core import app_prefs, auth
 from aurea_vms.core.stream_manager import stream_manager
 from aurea_vms.models import repository
-from aurea_vms.ui.notify import notify, warn
+from aurea_vms.ui.notify import confirm, notify, warn
 from aurea_vms.ui.theme import apply_theme
 from aurea_vms.ui.widgets.ptz_control_panel import PtzControlPanel
 
@@ -205,20 +205,30 @@ class SystemModule(QWidget):
         form.addRow("Pre-buffer:", BodyLabel(f"{settings.clip_pre_seconds} s"))
         form.addRow("Post-captura:", BodyLabel(f"{settings.clip_post_seconds} s"))
 
-        retention_days_spin = SpinBox()
-        retention_days_spin.setRange(1, 365)
-        retention_days_spin.setSuffix(" días")
-        retention_days_spin.setValue(app_prefs.get_retention_days())
-        retention_days_spin.valueChanged.connect(app_prefs.set_retention_days)
-        form.addRow("Retención de media:", retention_days_spin)
+        # La retencion borra evidencia: no se guarda al mover un valor, sino
+        # con "Guardar retención", que confirma (Fase R2, 2026-10-08). Sin
+        # eso no se poda nada (ver core/app_prefs.py). Sin configurar, los
+        # valores de arranque son una sugerencia (7 dias, 5 GB).
+        self.retencion_dias = SpinBox()
+        self.retencion_dias.setRange(app_prefs.RETENCION_MIN_DIAS, 365)
+        self.retencion_dias.setSuffix(" días")
+        self.retencion_dias.setValue(app_prefs.get_retention_days())
+        form.addRow("Retención de media:", self.retencion_dias)
 
-        retention_gb_spin = DoubleSpinBox()
-        retention_gb_spin.setRange(0.5, 10000.0)
-        retention_gb_spin.setDecimals(1)
-        retention_gb_spin.setSuffix(" GB")
-        retention_gb_spin.setValue(app_prefs.get_retention_max_gb())
-        retention_gb_spin.valueChanged.connect(app_prefs.set_retention_max_gb)
-        form.addRow("Tamaño máximo total:", retention_gb_spin)
+        self.retencion_gb = DoubleSpinBox()
+        self.retencion_gb.setRange(app_prefs.RETENCION_MIN_GB, 10000.0)
+        self.retencion_gb.setDecimals(1)
+        self.retencion_gb.setSuffix(" GB")
+        self.retencion_gb.setValue(app_prefs.get_retention_max_gb())
+        form.addRow("Tamaño máximo total:", self.retencion_gb)
+
+        self.retencion_estado = CaptionLabel()
+        self.retencion_estado.setWordWrap(True)
+        form.addRow(self.retencion_estado)
+        self.guardar_retencion = PrimaryPushButton(FluentIcon.SAVE, "Guardar retención")
+        self.guardar_retencion.clicked.connect(self._guardar_retencion)
+        form.addRow(self.guardar_retencion)
+        self._mostrar_estado_retencion()
 
         note = CaptionLabel(
             "Esta fase no graba en continuo: solo se guarda un clip corto "
@@ -228,6 +238,38 @@ class SystemModule(QWidget):
         note.setWordWrap(True)
         form.addRow(note)
         return _page(card)
+
+    def _mostrar_estado_retencion(self) -> None:
+        fecha = app_prefs.confirmada_el()
+        if fecha is None:
+            self.retencion_estado.setText(
+                "Sin configurar: no se borra ningún clip ni captura hasta que la guardes."
+            )
+        else:
+            self.retencion_estado.setText(
+                f"Configurada el {fecha:%d/%m/%Y %H:%M}. Lo vencido se borra de a poco, "
+                "cada 30 minutos."
+            )
+
+    def _guardar_retencion(self) -> None:
+        dias = self.retencion_dias.value()
+        gb = self.retencion_gb.value()
+        if not confirm(
+            self,
+            "Guardar retención",
+            f"Se van a borrar los clips y capturas de más de {dias} días, y lo más "
+            f"viejo cuando la media pase de {gb:.1f} GB. La evidencia de incidentes "
+            "en investigación no se borra. Cada pasada borra como mucho el 10 % "
+            "de la media (entre 50 y 500 archivos). ¿Confirmás?",
+        ):
+            return
+        try:
+            app_prefs.confirmar_retencion(dias, gb)
+        except (ValueError, OSError) as exc:
+            warn(self, "Retención", f"No se pudo guardar: {exc}")
+            return
+        self._mostrar_estado_retencion()
+        notify(self, "Retención guardada", f"{dias} días, hasta {gb:.1f} GB.")
 
     # --- Sistema > Inicio -------------------------------------------------
 

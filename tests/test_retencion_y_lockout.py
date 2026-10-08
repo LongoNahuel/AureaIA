@@ -59,12 +59,14 @@ class TestEscrituraAtomica:
 
 
 class TestLecturaEstricta:
-    def test_sin_archivo_son_los_defaults(self):
-        assert app_prefs.leer_retencion() == (7.0, 5.0)
+    def test_sin_archivo_esta_sin_configurar(self):
+        """Antes eran los defaults (7 dias, 5 GB) y se podaba en silencio."""
+        with pytest.raises(app_prefs.RetencionSinConfigurar):
+            app_prefs.leer_retencion()
+        assert app_prefs.retencion_configurada() is False
 
-    def test_con_valores_guardados(self):
-        app_prefs.set_retention_days(90)
-        app_prefs.set_retention_max_gb(500)
+    def test_con_valores_confirmados(self):
+        app_prefs.confirmar_retencion(90, 500)
 
         assert app_prefs.leer_retencion() == (90.0, 500.0)
 
@@ -74,10 +76,12 @@ class TestLecturaEstricta:
             '{"retention_days": 90, "retention_max',  # truncado
             "",  # vacio
             "[1, 2]",  # JSON que no es un objeto
-            '{"retention_days": "noventa"}',
-            '{"retention_days": 0}',  # podar con 0 dias es borrar todo
-            '{"retention_max_gb": 0.1}',  # debajo del minimo de la UI
-            '{"retention_days": null}',
+            '{"retention_days": "noventa", "retention_max_gb": 5, "retention_confirmada": "x"}',
+            # podar con 0 dias es borrar todo
+            '{"retention_days": 0, "retention_max_gb": 5, "retention_confirmada": "x"}',
+            # debajo del minimo de la UI
+            '{"retention_days": 7, "retention_max_gb": 0.1, "retention_confirmada": "x"}',
+            '{"retention_days": null, "retention_max_gb": 5, "retention_confirmada": "x"}',
         ],
     )
     def test_un_archivo_ilegible_o_invalido_levanta(self, contenido):
@@ -130,7 +134,7 @@ class TestRetencion:
     def test_con_el_json_truncado_no_poda_nada(self, camara_con_media_vieja, caplog):
         """El caso que motivo la fase: el operador configuro 90 dias, un corte
         trunco el JSON, y los defaults (7 dias) se llevaban el clip de hace 10."""
-        app_prefs.set_retention_days(90)
+        app_prefs.confirmar_retencion(90, 500)
         _prefs().write_text('{"retention_days": 90, "reten', encoding="utf-8")
 
         with caplog.at_level("ERROR", logger=retention.__name__):
@@ -142,7 +146,7 @@ class TestRetencion:
 
     def test_con_las_preferencias_sanas_poda_lo_que_corresponde(self, camara_con_media_vieja):
         """Control: el mismo clip, con 7 dias configurados, se va."""
-        app_prefs.set_retention_days(7)
+        app_prefs.confirmar_retencion(7, 5)
 
         _una_pasada()
 
@@ -153,8 +157,7 @@ class TestRetencion:
         monkeypatch.setattr(
             retention, "prune", lambda **kw: llamadas.append(kw) or {"deleted": 0, "freed_bytes": 0}
         )
-        app_prefs.set_retention_days(90)
-        app_prefs.set_retention_max_gb(500)
+        app_prefs.confirmar_retencion(90, 500)
 
         _una_pasada()
 

@@ -17,7 +17,12 @@ from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session
 
 from aurea_vms.core.credential_store import ClavePerdidaError
-from aurea_vms.models.alarm_event import STATUS_ACKNOWLEDGED, STATUS_NEW, STATUS_RESOLVED
+from aurea_vms.models.alarm_event import (
+    STATUS_ACKNOWLEDGED,
+    STATUS_INVESTIGATING,
+    STATUS_NEW,
+    STATUS_RESOLVED,
+)
 from aurea_vms.models.alarm_event import AlarmEvent as AlarmEventRow
 from aurea_vms.models.alarm_rule import AlarmRule
 from aurea_vms.models.analytics_config import AnalyticsConfig
@@ -563,12 +568,33 @@ def list_media_for_events(event_ids: list[int]) -> dict[int, list[MediaAsset]]:
 def list_media_oldest_first(
     *, older_than: float | None = None, limit: int = 500
 ) -> list[MediaAsset]:
-    """Para la retencion: candidatos a purga, mas viejo primero."""
+    """Para la retencion: candidatos a purga, mas viejo primero.
+
+    **Nunca devuelve evidencia de un incidente en investigacion**
+    (2026-10-07): la media atada a una alarma "en_investigacion" no es
+    candidata, ni por edad ni por tamaño. Solo esa: en la practica nadie
+    resuelve las alarmas (en la base de desarrollo, las 104 estaban en
+    "nueva"), y proteger todo lo no resuelto dejaba la retencion sin podar
+    nada y llenaba el disco. "Investigar" es la marca deliberada de un
+    operador. La media sin alarma (o cuya alarma se borro: SET NULL) es
+    candidata."""
     with get_session() as session:
-        query = session.query(MediaAsset)
+        query = (
+            session.query(MediaAsset)
+            .outerjoin(AlarmEventRow, MediaAsset.alarm_event_id == AlarmEventRow.id)
+            .filter(
+                (MediaAsset.alarm_event_id.is_(None))
+                | (AlarmEventRow.status != STATUS_INVESTIGATING)
+            )
+        )
         if older_than is not None:
             query = query.filter(MediaAsset.timestamp < older_than)
         return list(query.order_by(MediaAsset.timestamp).limit(limit).all())
+
+
+def count_media() -> int:
+    with get_session() as session:
+        return session.query(func.count(MediaAsset.id)).scalar()
 
 
 def total_media_size_bytes() -> int:

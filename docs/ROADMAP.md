@@ -71,6 +71,17 @@ que se trabajan ese mismo día:
 
 ## Datos
 
+- ~~**La retención borraba evidencia sin que nadie lo decidiera**~~ —
+  resuelto el 07-08/10 (rama `fix/retencion-segura`, fases R1, R1b y R2).
+  Sin retención confirmada en Sistema > Audio y Video > Grabando no se poda.
+  Se protege la evidencia «en investigación» y hay un tope por pasada. El
+  admin ve un aviso con «Configurar». **A consultar con Nahuel o el
+  cliente**:
+  - cuántos días exige un casino;
+  - si hace falta "retener por orden judicial" un incidente ya resuelto;
+  - si los avisos también tienen que llegar a un supervisor (hoy, solo al
+    admin).
+
 - ~~**Las migraciones no son portables**~~ — resuelto el 07/10 (rama
   `feat/migraciones-portables`). Las revisiones y la adopción usan el
   inspector y `TRUE`/`FALSE`, y `AUREA_DB_URL` apunta la app a un servidor.

@@ -95,3 +95,14 @@ def _reset_site_filter():
     from aurea_vms.core import app_state
 
     app_state.reset()
+
+
+@pytest.fixture(autouse=True)
+def _prefs_aisladas(tmp_path, monkeypatch):
+    """preferences.json de cada test, en su tmp_path. Sin esto, los tests
+    que arman MainWindow o Sistema leian (y podian escribir) el
+    data/preferences.json real de quien corre la suite (Fase R2: la
+    ventana lee la retencion al abrir)."""
+    from aurea_vms.core import app_prefs
+
+    monkeypatch.setattr(app_prefs, "_PREFS_PATH", tmp_path / "preferences.json")
