@@ -71,6 +71,14 @@ que se trabajan ese mismo día:
 
 ## Datos
 
+- **Retención segura (R1 hecha el 07/10, R2 pendiente).** Sin retención
+  configurada y confirmada no se poda; solo se protege la evidencia «en
+  investigación»; hay un tope por pasada. **Falta R2 (UI)**: el botón
+  «Guardar retención», que confirma, y los avisos al admin. Sin R2 nadie
+  puede activar la retención: **R1 y R2 se mergean juntas.** A consultar con
+  Nahuel o el cliente: cuántos días exige un casino, y si hace falta
+  "retener por orden judicial" un incidente ya resuelto.
+
 - ~~**Las migraciones no son portables**~~ — resuelto el 07/10 (rama
   `feat/migraciones-portables`). Las revisiones y la adopción usan el
   inspector y `TRUE`/`FALSE`, y `AUREA_DB_URL` apunta la app a un servidor.

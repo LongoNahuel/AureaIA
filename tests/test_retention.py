@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from aurea_vms.core import media_store, retention
+from aurea_vms.core import app_prefs, media_store, retention
 from aurea_vms.models import repository
 
 AHORA = 1_000_000_000.0
@@ -96,11 +96,15 @@ class TestPrunePorTamano:
 class TestPruneSinNada:
     def test_sin_media_no_falla(self, temp_db):
         stats = retention.prune(max_age_days=7, max_total_gb=5.0, now=AHORA)
-        assert stats == {"deleted": 0, "freed_bytes": 0}
+        assert stats == {"deleted": 0, "freed_bytes": 0, "al_tope": False}
 
 
 class TestWorker:
-    def test_corre_pasadas_periodicas_y_se_detiene(self, monkeypatch, temp_db):
+    def test_corre_pasadas_periodicas_y_se_detiene(self, monkeypatch, temp_db, tmp_path):
+        # Retencion configurada en un preferences.json propio: antes este
+        # test leia el del data-dir real (y sin configurar ya no poda).
+        monkeypatch.setattr(app_prefs, "_PREFS_PATH", tmp_path / "preferences.json")
+        app_prefs.confirmar_retencion(7, 5)
         llamadas: list[float] = []
 
         def fake_prune(**_kwargs):

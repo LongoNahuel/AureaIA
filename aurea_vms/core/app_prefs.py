@@ -14,6 +14,20 @@ borrando evidencia que tenia que conservar. Ahora:
   Un corte deja el archivo viejo o el nuevo, nunca uno a medias.
 - `leer_retencion()` es estricta: con el archivo ilegible, o con valores
   de retencion invalidos, levanta `PrefsIlegibles` y la retencion no poda.
+- **Sin configurar no es "7 dias"** (2026-10-07). Si el archivo no trae las
+  DOS claves de retencion (no existe, o el operador nunca la guardo),
+  `leer_retencion()` levanta `RetencionSinConfigurar` y la retencion no
+  poda. Antes valian los defaults (7 dias, 5 GB) en silencio: la base de
+  desarrollo de Daniel perdio 190 archivos al arrancar despues de 39 dias
+  sin correr, y a un casino le habria pasado lo mismo con su evidencia.
+  Se piden las dos: con solo los dias guardados, el tope de 5 GB por
+  defecto igual borraba por tamaño.
+- **Y tiene que estar confirmada** (`retention_confirmada`, la graba
+  `confirmar_retencion`, que usa el boton de Sistema). Hasta el 07/10 cada
+  setter escribia los defaults mezclados: cambiar el tema grababa 7 dias y
+  5 GB. Un archivo con esas claves no se distingue de una eleccion real, asi
+  que las instalaciones previas quedan "sin configurar" hasta que un admin
+  confirme (decision de Daniel: no borra y avisa).
 - Los getters de la UI (tema, marca) siguen cayendo a los defaults, para
   que un JSON roto no deje la app sin abrir; lo loguean una vez.
 - Guardar una preferencia sobre un archivo ilegible lo aparta primero
@@ -44,6 +58,8 @@ _DEFAULTS = {
 # eligio nadie, y podar con 0 dias es borrar todo.
 RETENCION_MIN_DIAS = 1
 RETENCION_MIN_GB = 0.5
+# Marca de que un admin eligio la retencion (ver el docstring del modulo).
+RETENCION_CONFIRMADA = "retention_confirmada"
 
 _lock = threading.Lock()
 _avisado = False
@@ -54,9 +70,19 @@ class PrefsIlegibles(Exception):
     invalidos."""
 
 
+class RetencionSinConfigurar(Exception):
+    """Nadie configuro la retencion: no hay dias ni tope que respetar, asi
+    que no se borra nada (ver el docstring del modulo)."""
+
+
 def _leer_estricto() -> dict:
+    return {**_DEFAULTS, **_leer_crudo()}
+
+
+def _leer_crudo() -> dict:
+    """Lo que dice el archivo, sin defaults: {} si no existe."""
     if not _PREFS_PATH.exists():
-        return dict(_DEFAULTS)
+        return {}
     try:
         with open(_PREFS_PATH, encoding="utf-8") as handle:
             data = json.load(handle)
@@ -64,7 +90,7 @@ def _leer_estricto() -> dict:
         raise PrefsIlegibles(f"{_PREFS_PATH}: {exc}") from exc
     if not isinstance(data, dict):
         raise PrefsIlegibles(f"{_PREFS_PATH}: se esperaba un objeto JSON")
-    return {**_DEFAULTS, **data}
+    return data
 
 
 def _read() -> dict:
@@ -78,6 +104,20 @@ def _read() -> dict:
             _avisado = True
             logger.error("Preferencias ilegibles, se usan los valores por defecto: %s", exc)
         return dict(_DEFAULTS)
+
+
+def _guardar(**cambios: object) -> None:
+    """Guarda SOLO lo que cambia, sobre lo que ya dice el archivo. Antes cada
+    setter escribia `_read()`, que trae los defaults mezclados: cambiar el
+    tema grababa `retention_days: 7` y `retention_max_gb: 5`, y la retencion
+    quedaba "configurada" sin que nadie la eligiera. Con el archivo
+    ilegible se parte de cero (y _write aparta el ilegible)."""
+    try:
+        data = _leer_crudo()
+    except PrefsIlegibles:
+        data = {}
+    data.update(cambios)
+    _write(data)
 
 
 def _write(data: dict) -> None:
@@ -105,9 +145,14 @@ def _write(data: dict) -> None:
 
 def leer_retencion() -> tuple[float, float]:
     """(dias, GB) para podar. Estricta: levanta PrefsIlegibles si el archivo
-    no se puede leer o los valores no son numeros validos. Quien poda con
-    esto no tiene que caer a los defaults: podar de mas borra evidencia."""
-    data = _leer_estricto()
+    no se puede leer o los valores no son numeros validos, y
+    RetencionSinConfigurar si falta alguno de los dos. Quien poda con esto
+    no tiene que caer a los defaults: podar de mas borra evidencia."""
+    data = _leer_crudo()
+    if "retention_days" not in data or "retention_max_gb" not in data:
+        raise RetencionSinConfigurar(f"{_PREFS_PATH}: sin días ni tope de retención guardados")
+    if not data.get(RETENCION_CONFIRMADA):
+        raise RetencionSinConfigurar(f"{_PREFS_PATH}: la retención nunca se confirmó en Sistema")
     try:
         dias = float(data["retention_days"])
         gb = float(data["retention_max_gb"])
@@ -118,15 +163,36 @@ def leer_retencion() -> tuple[float, float]:
     return dias, gb
 
 
+def confirmar_retencion(dias: float, max_gb: float) -> None:
+    """Lo que hace el boton "Guardar retención" de Sistema: dias, tope y la
+    marca de que alguien los eligio, en una sola escritura atomica. Valida
+    contra los minimos de la UI antes de escribir."""
+    if not (dias >= RETENCION_MIN_DIAS and max_gb >= RETENCION_MIN_GB):
+        raise ValueError(f"retención fuera de rango ({dias} días, {max_gb} GB)")
+    _guardar(
+        retention_days=int(dias),
+        retention_max_gb=float(max_gb),
+        **{RETENCION_CONFIRMADA: datetime.now().isoformat(timespec="seconds")},
+    )
+
+
+def retencion_configurada() -> bool:
+    """Para la UI: True si la retencion tiene dias y tope guardados y
+    validos (o sea, si la proxima pasada va a podar)."""
+    try:
+        leer_retencion()
+    except (PrefsIlegibles, RetencionSinConfigurar):
+        return False
+    return True
+
+
 def get_theme() -> str:
     """ "dark" | "light"."""
     return _read().get("theme", "dark")
 
 
 def set_theme(theme: str) -> None:
-    data = _read()
-    data["theme"] = theme
-    _write(data)
+    _guardar(theme=theme)
 
 
 def get_retention_days() -> int:
@@ -134,9 +200,7 @@ def get_retention_days() -> int:
 
 
 def set_retention_days(days: int) -> None:
-    data = _read()
-    data["retention_days"] = int(days)
-    _write(data)
+    _guardar(retention_days=int(days))
 
 
 def get_retention_max_gb() -> float:
@@ -144,9 +208,7 @@ def get_retention_max_gb() -> float:
 
 
 def set_retention_max_gb(max_gb: float) -> None:
-    data = _read()
-    data["retention_max_gb"] = float(max_gb)
-    _write(data)
+    _guardar(retention_max_gb=float(max_gb))
 
 
 def intelligent_branding_enabled() -> bool:
@@ -154,9 +216,7 @@ def intelligent_branding_enabled() -> bool:
 
 
 def set_intelligent_branding_enabled(enabled: bool) -> None:
-    data = _read()
-    data["intelligent_branding"] = bool(enabled)
-    _write(data)
+    _guardar(intelligent_branding=bool(enabled))
 
 
 def get_brand_name() -> str:
