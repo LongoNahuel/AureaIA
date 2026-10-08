@@ -25,7 +25,7 @@ from aurea_vms.core.analytics.registry import (
 from aurea_vms.core.incident_rules import INCIDENT_CLASSES
 from aurea_vms.models import repository
 from aurea_vms.models.alarm_rule import SEVERITIES, SEVERITY_MEDIUM, AlarmRule
-from aurea_vms.ui.labels import display_class
+from aurea_vms.ui.labels import SEVERITY_LABELS, display_class
 from aurea_vms.ui.notify import warn
 
 ANALYZER_CLASSES: dict[str, list[str]] = {
@@ -37,7 +37,6 @@ ANALYZER_CLASSES: dict[str, list[str]] = {
 
 ALL_DEVICES_LABEL = "Todas las cámaras"
 
-SEVERITY_LABELS = {"critico": "Crítico", "alto": "Alto", "medio": "Medio", "info": "Info"}
 
 DAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
 

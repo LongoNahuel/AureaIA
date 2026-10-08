@@ -1,9 +1,8 @@
 """Configuración del sistema: menú lateral agrupado (Audio y Video /
 Sistema / Operación), al estilo EZStation. Lo real -- video de las
 cámaras (ONVIF) y tráfico, monitor de recursos, log, seguridad (cambio de
-contraseña), PTZ, capturas/clips de evento -- convive con secciones que todavía no tienen
-funcionalidad propia (marcadas "Próximamente"), sin inventar nada que la
-app no haga de verdad."""
+contraseña), PTZ, capturas/clips de evento. Sin secciones "Próximamente"
+(Fase 1 de la interfaz, 2026-10-08): lo que la app no hace no se muestra."""
 
 from __future__ import annotations
 
@@ -48,12 +47,6 @@ from aurea_vms.ui.widgets.video_config_panel import VideoConfigPanel
 LOG_TAIL_LINES = 300
 RESOURCE_REFRESH_MS = 2000
 
-PLACEHOLDER_NOTES = {
-    "Alarma": "La configuración de reglas de alarma vive en los módulos Alarmas y Alertas.",
-    "Servicio": "Próximamente: administración de servicios del sistema.",
-    "Visualización de atributos": "Próximamente: superposición de atributos detectados sobre el video en vivo.",
-}
-
 
 def _card(title: str) -> tuple[HeaderCardWidget, QWidget]:
     card = HeaderCardWidget()
@@ -92,13 +85,6 @@ class SystemModule(QWidget):
         self._add_page("Sistema", "Sistema", self._build_appearance_page())
         self._add_page("Sistema", "Registro", self._build_logs_page())
         self._add_page("Sistema", "Seguridad", self._build_security_page())
-        self._add_page("Operación", "Alarma", self._build_placeholder_page("Alarma"))
-        self._add_page("Operación", "Servicio", self._build_placeholder_page("Servicio"))
-        self._add_page(
-            "Operación",
-            "Visualización de atributos",
-            self._build_placeholder_page("Visualización de atributos"),
-        )
         self._add_page("Operación", "PTZ", self._build_ptz_page())
 
         for i in range(self.nav_tree.topLevelItemCount()):
@@ -170,16 +156,6 @@ class SystemModule(QWidget):
                 if index is not None:
                     self.pages.setCurrentIndex(index)
                 return
-
-    # --- Audio y Video > Video (placeholder) / Alarma, Servicio, Atributos -----------
-
-    def _build_placeholder_page(self, key: str) -> QWidget:
-        card, content = _card(key)
-        layout = QVBoxLayout(content)
-        label = BodyLabel(PLACEHOLDER_NOTES[key])
-        label.setWordWrap(True)
-        layout.addWidget(label)
-        return _page(card)
 
     # --- Audio y Video > Instantánea -------------------------------------------------
 

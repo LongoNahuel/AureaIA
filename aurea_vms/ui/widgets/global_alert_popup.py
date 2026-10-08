@@ -21,10 +21,9 @@ from qfluentwidgets import (
 from aurea_vms.core.events import AlarmEvent
 from aurea_vms.core.permissions import Perm, can
 from aurea_vms.models import repository
-from aurea_vms.ui.labels import display_class
+from aurea_vms.ui.labels import SEVERITY_LABELS, display_class
 from aurea_vms.ui.theme import SEVERITY_COLORS
 
-SEVERITY_LABELS = {"critico": "Crítico", "alto": "Alto", "medio": "Medio", "info": "Info"}
 # 12s como el prototipo NOVA: 8s se quedaba corto para leer y decidir si
 # reconocer desde el popup (los criticos igual persisten hasta reconocer).
 AUTO_DISMISS_MS = 12000

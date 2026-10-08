@@ -14,11 +14,10 @@ from aurea_vms.core.analytics.registry import ANALYZER_DISPLAY_NAMES
 from aurea_vms.models import repository
 from aurea_vms.models.alarm_rule import AlarmRule
 from aurea_vms.ui.dialogs.alarm_rule_dialog import ALL_DEVICES_LABEL, AlarmRuleDialog
-from aurea_vms.ui.labels import display_class
+from aurea_vms.ui.labels import SEVERITY_LABELS, display_class
 from aurea_vms.ui.notify import confirm, warn
 
 COLUMNS = ["Cámara", "Analizador", "Clases", "Severidad", "Estado"]
-SEVERITY_LABELS = {"critico": "Crítico", "alto": "Alto", "medio": "Medio", "info": "Info"}
 
 
 class AlertConfigModule(QWidget):

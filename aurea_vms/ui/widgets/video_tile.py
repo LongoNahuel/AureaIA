@@ -800,7 +800,9 @@ class VideoTile(QWidget):
             eventos=dict(self._latest_events),
             nombre=self._device.name if self._device else "",
             marcas=self._smart_marks,
-            marca=self._branding_enabled(),
+            # La marca solo en el modo inteligente (Fase 1 de la interfaz,
+            # 2026-10-08): en Vista en Vivo era un chip mas sobre cada camara.
+            marca=self._intelligent_mode and self._branding_enabled(),
             nombre_marca=self._brand_name,
             vista=vista,
             zoom=self.zoom_level(),

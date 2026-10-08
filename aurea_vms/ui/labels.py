@@ -5,6 +5,29 @@ se traducen al momento de mostrarlos."""
 
 from __future__ import annotations
 
+from aurea_vms.models.alarm_event import (
+    STATUS_ACKNOWLEDGED,
+    STATUS_INVESTIGATING,
+    STATUS_NEW,
+    STATUS_RESOLVED,
+)
+
+# Estado de un incidente. "Sin reconocer" es STATUS_NEW en todas las
+# pantallas (antes Inicio decia "sin reconocer", Vista Inteligente "activas"
+# y el Dashboard "Pendiente" para todo lo no resuelto).
+ALARM_STATUS_LABELS: dict[str, str] = {
+    STATUS_NEW: "Sin reconocer",
+    STATUS_ACKNOWLEDGED: "Reconocida",
+    STATUS_INVESTIGATING: "En investigación",
+    STATUS_RESOLVED: "Resuelta",
+}
+SEVERITY_LABELS: dict[str, str] = {
+    "critico": "Crítico",
+    "alto": "Alto",
+    "medio": "Medio",
+    "info": "Info",
+}
+
 CLASS_LABELS_ES: dict[str, str] = {
     "person": "Persona",
     "car": "Auto",

@@ -1,141 +1,80 @@
-"""Panel de estado general del sistema, en la pantalla de Inicio: cuantas
-camaras estan online, alarmas sin reconocer y analiticas corriendo -- para
-ver "como esta todo" de un vistazo, sin entrar a cada modulo. Se
-actualiza solo cada pocos segundos mientras la pestaña este visible."""
+"""Panel de estado general del sistema, en la pantalla de Inicio: camaras en
+linea, incidentes sin reconocer y en investigacion, y analiticas activas --
+para ver "como esta todo" de un vistazo, sin entrar a cada modulo. Respeta
+el sitio elegido arriba y se actualiza solo mientras la pestaña se ve.
+
+Fase 1 de la interfaz (2026-10-08): las cuatro cifras en la misma tarjeta
+(KpiTile) que Vista Inteligente y el Dashboard de Eventos. "Sin reconocer"
+cuenta los incidentes nuevos; antes contaba todo lo no resuelto (tambien los
+ya reconocidos) y no seguia el filtro de sitio.
+"""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, SimpleCardWidget, StrongBodyLabel, TitleLabel
+from qfluentwidgets import StrongBodyLabel
 
+from aurea_vms.core import app_state
 from aurea_vms.core.analytics_engine import analytics_engine
+from aurea_vms.core.event_bus import event_bus
 from aurea_vms.models import repository
-from aurea_vms.ui.theme import enable_tabular_numbers
+from aurea_vms.models.alarm_event import STATUS_INVESTIGATING, STATUS_NEW
+from aurea_vms.ui.theme import SPACE
+from aurea_vms.ui.widgets.kpi_tile import KpiTile
 
-# Mismos colores de estado que Dispositivos (online/offline/desconocido) --
-# reservados para estado, no se reciclan para otra cosa.
-COLOR_ONLINE = QColor("#3fb950")
-COLOR_OFFLINE = QColor("#e5534b")
-COLOR_UNKNOWN = QColor("#6e7681")
 REFRESH_MS = 5000
 
 
-class _DonutChart(QWidget):
-    """Donut liviano dibujado a mano (sin sumar una libreria de graficos
-    solo para esto) -- proporciones de camaras por estado, con el total en
-    el centro."""
+def cameras_summary(site_id: int | None) -> tuple[str, str, str]:
+    """(valor, tono, detalle) de la tarjeta de camaras: "6/7" en rojo si
+    alguna esta desconectada."""
+    by_status = repository.count_devices_by_status(site_id)
+    total = sum(by_status.values())
+    online = by_status.get("online", 0)
+    offline = by_status.get("offline", 0)
+    unknown = total - online - offline
+    if offline:
+        tone, detail = "alert", f"{offline} desconectada{'s' if offline > 1 else ''}"
+    elif unknown:
+        tone, detail = "neutral", f"{unknown} sin probar"
+    else:
+        tone, detail = ("ok" if total else "neutral"), ""
+    return f"{online}/{total}", tone, detail
 
+
+def alarm_summary(site_id: int | None) -> tuple[int, int]:
+    """(sin reconocer, en investigacion) del sitio."""
+    return (
+        repository.count_alarm_events(site_id=site_id, status=STATUS_NEW),
+        repository.count_alarm_events(site_id=site_id, status=STATUS_INVESTIGATING),
+    )
+
+
+class DashboardPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._segments: list[tuple[float, QColor]] = []
-        self._center_text = "0"
-        self.setFixedSize(96, 96)
-
-    def sizeHint(self) -> QSize:  # noqa: N802 - override de Qt
-        return QSize(96, 96)
-
-    def set_data(self, segments: list[tuple[float, QColor]], center_text: str) -> None:
-        self._segments = [s for s in segments if s[0] > 0]
-        self._center_text = center_text
-        self.update()
-
-    def paintEvent(self, event) -> None:  # noqa: N802 - override de Qt
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        pen_width = 12
-        rect = QRectF(
-            pen_width / 2, pen_width / 2, self.width() - pen_width, self.height() - pen_width
-        )
-        total = sum(value for value, _ in self._segments)
-
-        pen = QPen()
-        pen.setWidth(pen_width)
-        pen.setCapStyle(Qt.PenCapStyle.FlatCap)
-
-        if total <= 0:
-            pen.setColor(QColor("#2a3441"))
-            painter.setPen(pen)
-            painter.drawArc(rect, 0, 360 * 16)
-        else:
-            start_angle = 90 * 16
-            for value, color in self._segments:
-                span = -round(360 * 16 * (value / total))
-                pen.setColor(color)
-                painter.setPen(pen)
-                painter.drawArc(rect, start_angle, span)
-                start_angle += span
-
-        painter.setPen(QColor("#e5e7eb"))
-        font = painter.font()
-        font.setPointSize(15)
-        font.setBold(True)
-        painter.setFont(font)
-        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._center_text)
-
-
-class _StatTile(QWidget):
-    def __init__(self, title: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
-
-        self.value_label = TitleLabel("—", self)
-        enable_tabular_numbers(self.value_label)
-        layout.addWidget(self.value_label)
-
-        caption = CaptionLabel(title, self)
-        caption.setWordWrap(True)
-        layout.addWidget(caption)
-
-    def set_value(self, text: str) -> None:
-        self.value_label.setText(text)
-
-
-class DashboardPanel(SimpleCardWidget):
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setStyleSheet("SimpleCardWidget { background-color: rgba(16, 21, 30, 225); }")
-
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(20, 16, 20, 16)
-        outer.setSpacing(10)
-        outer.addWidget(StrongBodyLabel("Estado del sistema"))
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(SPACE["s"])
+        outer.addWidget(StrongBodyLabel("Estado del sistema", self))
 
-        body = QHBoxLayout()
-        body.setSpacing(24)
+        row = QHBoxLayout()
+        row.setSpacing(SPACE["m"])
+        self.cameras_tile = KpiTile("Cámaras en línea", self)
+        self.unacknowledged_tile = KpiTile("Sin reconocer", self)
+        self.investigating_tile = KpiTile("En investigación", self)
+        self.analytics_tile = KpiTile("Analíticas activas", self)
+        for tile in (
+            self.cameras_tile,
+            self.unacknowledged_tile,
+            self.investigating_tile,
+            self.analytics_tile,
+        ):
+            row.addWidget(tile, stretch=1)
+        outer.addLayout(row)
 
-        self.donut = _DonutChart(self)
-        body.addWidget(self.donut)
-
-        legend = QVBoxLayout()
-        legend.setSpacing(4)
-        self.online_caption = CaptionLabel("● En línea: —", self)
-        self.online_caption.setStyleSheet(f"color: {COLOR_ONLINE.name()};")
-        self.offline_caption = CaptionLabel("● Desconectadas: —", self)
-        self.offline_caption.setStyleSheet(f"color: {COLOR_OFFLINE.name()};")
-        self.unknown_caption = CaptionLabel("● Sin probar: —", self)
-        self.unknown_caption.setStyleSheet(f"color: {COLOR_UNKNOWN.name()};")
-        legend.addWidget(self.online_caption)
-        legend.addWidget(self.offline_caption)
-        legend.addWidget(self.unknown_caption)
-        legend.addStretch(1)
-        body.addLayout(legend)
-
-        body.addSpacing(12)
-
-        self.alarms_tile = _StatTile("Alarmas sin reconocer")
-        body.addWidget(self.alarms_tile)
-
-        self.analytics_tile = _StatTile("Analíticas corriendo")
-        body.addWidget(self.analytics_tile)
-
-        body.addStretch(1)
-        outer.addLayout(body)
-
+        event_bus.site_filter_changed.connect(self._on_site_filter_changed)
         self._timer = QTimer(self)
         self._timer.setInterval(REFRESH_MS)
         self._timer.timeout.connect(self.refresh)
@@ -151,22 +90,13 @@ class DashboardPanel(SimpleCardWidget):
         self._timer.stop()
         super().hideEvent(event)
 
+    def _on_site_filter_changed(self, _site_id: object) -> None:
+        self.refresh()
+
     def refresh(self) -> None:
-        # Un GROUP BY en vez de traer todos los dispositivos cada 5s para
-        # contarlos por estado en Python.
-        por_estado = repository.count_devices_by_status()
-        online = por_estado.get("online", 0)
-        offline = por_estado.get("offline", 0)
-        total = sum(por_estado.values())
-        unknown = total - online - offline
-
-        self.donut.set_data(
-            [(online, COLOR_ONLINE), (offline, COLOR_OFFLINE), (unknown, COLOR_UNKNOWN)],
-            str(total),
-        )
-        self.online_caption.setText(f"● En línea: {online}")
-        self.offline_caption.setText(f"● Desconectadas: {offline}")
-        self.unknown_caption.setText(f"● Sin probar: {unknown}")
-
-        self.alarms_tile.set_value(str(repository.count_pending_alarm_events()))
-        self.analytics_tile.set_value(str(analytics_engine.running_count()))
+        site_id = app_state.current_site_id
+        self.cameras_tile.set_value(*cameras_summary(site_id))
+        unacknowledged, investigating = alarm_summary(site_id)
+        self.unacknowledged_tile.set_value(unacknowledged, "alert" if unacknowledged else "ok")
+        self.investigating_tile.set_value(investigating, "warn" if investigating else "neutral")
+        self.analytics_tile.set_value(analytics_engine.running_count())

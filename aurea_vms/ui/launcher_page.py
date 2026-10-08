@@ -22,7 +22,6 @@ from qfluentwidgets import (
 
 from aurea_vms.ui import icons
 from aurea_vms.ui.widgets.dashboard_panel import DashboardPanel
-from aurea_vms.ui.widgets.video_background import VideoBackground
 
 MODULE_COLORS = {
     "Vista en Vivo": "#3b82f6",
@@ -234,8 +233,12 @@ class LauncherPage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("QScrollArea{background: transparent; border: none;}")
 
-        overlay = QColor(8, 11, 18, 175)
-        container = VideoBackground(icons.launcher_background_video_path(), overlay, scroll)
+        # Superficie lisa (Fase 1 de la interfaz, 2026-10-08): el video de
+        # fondo le bajaba el contraste a las cifras y a las tarjetas. La marca
+        # queda en el login.
+        container = QWidget(scroll)
+        container.setObjectName("launcherSurface")
+        container.setStyleSheet("#launcherSurface { background: transparent; }")
         scroll.setWidget(container)
 
         outer = QVBoxLayout(container)

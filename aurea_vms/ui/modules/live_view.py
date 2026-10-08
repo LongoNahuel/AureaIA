@@ -27,7 +27,6 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
-    QFrame,
     QGridLayout,
     QHBoxLayout,
     QSplitter,
@@ -50,11 +49,13 @@ from aurea_vms.core.analytics_engine import analytics_engine
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.models import repository
 from aurea_vms.ui import icons
+from aurea_vms.ui.theme import SPACE
 from aurea_vms.ui.widgets.analytics_dashboard import AnalyticsDashboard
-from aurea_vms.ui.widgets.branded_background import BrandedBackground
+from aurea_vms.ui.widgets.dashboard_panel import alarm_summary, cameras_summary
 from aurea_vms.ui.widgets.device_tree import DeviceTreeWidget
 from aurea_vms.ui.widgets.face_gallery import FaceGallery
 from aurea_vms.ui.widgets.face_strip import FaceStrip
+from aurea_vms.ui.widgets.kpi_tile import KpiTile
 from aurea_vms.ui.widgets.line_crossing_panel import LineCrossingPanel
 from aurea_vms.ui.widgets.monitor_tamper_panel import MonitorTamperPanel
 from aurea_vms.ui.widgets.people_count_panel import PeopleCountPanel
@@ -66,29 +67,6 @@ DEFAULT_LAYOUT_INDEX = 1  # 2x2
 
 MODE_NORMAL = 0
 MODE_SMART = 1
-
-
-class _InsightCard(QFrame):
-    def __init__(self, title: str, accent: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setStyleSheet(
-            "QFrame { background: rgba(8, 20, 38, 205); border: 1px solid rgba(86, 171, 224, 70);"
-            " border-radius: 10px; }"
-        )
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 9, 14, 9)
-        layout.setSpacing(1)
-        self.value = BodyLabel("—", self)
-        self.value.setStyleSheet(
-            f"font-size: 20px; font-weight: 700; color: {accent}; background: transparent;"
-        )
-        caption = CaptionLabel(title, self)
-        caption.setStyleSheet("color: #a9c4d8; background: transparent;")
-        layout.addWidget(self.value)
-        layout.addWidget(caption)
-
-    def set_value(self, value: int | str) -> None:
-        self.value.setText(str(value))
 
 
 class LiveViewModule(QWidget):
@@ -109,6 +87,10 @@ class LiveViewModule(QWidget):
             tile.clicked.connect(self._on_tile_clicked)
             tile.doubleClicked.connect(self._on_tile_double_clicked)
             tile.device_assigned.connect(lambda _device_id, t=tile: self._on_tile_device_changed(t))
+            # Vista Inteligente: recuadros en modo inteligente desde el arranque
+            # (lleva la marca; ver VideoTile._escena). _set_mode ya no se llama
+            # desde que se saco el selector de modo.
+            tile.set_intelligent_mode(smart_only)
             tile.device_assigned.connect(self._avisar_cambio)
 
         self.device_tree = DeviceTreeWidget(self)
@@ -210,19 +192,6 @@ class LiveViewModule(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addWidget(self.splitter)
 
-        self._background: BrandedBackground | None = None
-        if smart_only:
-            from PySide6.QtGui import QColor
-
-            self._background = BrandedBackground(
-                icons.algorithm_background_pixmap(),
-                overlay=QColor(5, 12, 24, 125),
-                parent=self,
-            )
-            self._background.setGeometry(self.rect())
-            self._background.lower()
-            self.splitter.setStyleSheet("QSplitter { background: transparent; }")
-
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._exit_fullscreen)
 
         self._apply_grid(*GRID_LAYOUTS[DEFAULT_LAYOUT_INDEX])
@@ -239,25 +208,21 @@ class LiveViewModule(QWidget):
     def _build_insight_cards(self, parent: QWidget) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setContentsMargins(0, 2, 0, 4)
-        row.setSpacing(8)
-        self._insight_devices = _InsightCard("Cámaras", "#72c7ff", parent)
-        self._insight_online = _InsightCard("En línea", "#4ade80", parent)
-        self._insight_alerts = _InsightCard("Alertas activas", "#fbbf24", parent)
-        self._insight_analytics = _InsightCard("Analíticas", "#c4b5fd", parent)
-        for card in (
-            self._insight_devices,
-            self._insight_online,
-            self._insight_alerts,
-            self._insight_analytics,
-        ):
-            row.addWidget(card, stretch=1)
+        row.setSpacing(SPACE["m"])
+        # Las mismas cifras y la misma tarjeta que el estado del sistema de
+        # Inicio (widgets/dashboard_panel.py).
+        self._insight_cameras = KpiTile("Cámaras en línea", parent)
+        self._insight_alerts = KpiTile("Sin reconocer", parent)
+        self._insight_analytics = KpiTile("Analíticas activas", parent)
+        for tile in (self._insight_cameras, self._insight_alerts, self._insight_analytics):
+            row.addWidget(tile, stretch=1)
         return row
 
     def _refresh_insight_cards(self) -> None:
-        devices = repository.list_devices(site_id=app_state.current_site_id)
-        self._insight_devices.set_value(len(devices))
-        self._insight_online.set_value(sum(device.status == "online" for device in devices))
-        self._insight_alerts.set_value(repository.count_pending_alarm_events())
+        site_id = app_state.current_site_id
+        self._insight_cameras.set_value(*cameras_summary(site_id))
+        unacknowledged, _investigating = alarm_summary(site_id)
+        self._insight_alerts.set_value(unacknowledged, "alert" if unacknowledged else "ok")
         self._insight_analytics.set_value(analytics_engine.running_count())
 
     def _build_side_panel(self) -> QWidget:
@@ -334,11 +299,6 @@ class LiveViewModule(QWidget):
             tile.set_intelligent_mode(mode == MODE_SMART)
             if mode == MODE_NORMAL and tile is not self._expanded_tile:
                 tile.set_stream_kind("sub")
-
-    def resizeEvent(self, event) -> None:  # noqa: N802 - override de Qt
-        if self._background is not None:
-            self._background.setGeometry(self.rect())
-        super().resizeEvent(event)
 
     def _build_toolbar(self) -> QHBoxLayout:
         toolbar = QHBoxLayout()

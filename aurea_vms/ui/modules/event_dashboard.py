@@ -22,7 +22,6 @@ from qfluentwidgets import (
     PushButton,
     StrongBodyLabel,
     TableWidget,
-    TitleLabel,
 )
 
 from aurea_vms.core import app_state, media_store
@@ -31,15 +30,18 @@ from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import AlarmEvent as AlarmEventDTO
 from aurea_vms.core.events import ClipReadyEvent
 from aurea_vms.models import repository
+from aurea_vms.models.alarm_event import STATUS_INVESTIGATING, STATUS_NEW, STATUS_RESOLVED
 from aurea_vms.models.media_asset import KIND_CLIP
-from aurea_vms.ui.labels import display_class
-from aurea_vms.ui.theme import severity_soft_qcolor, severity_text_qcolor
+from aurea_vms.ui.labels import ALARM_STATUS_LABELS, SEVERITY_LABELS, display_class
+from aurea_vms.ui.theme import TONES, severity_dot
+from aurea_vms.ui.widgets.kpi_tile import KpiTile
 
 REFRESH_MS = 5000
 # Filas que se pintan en la tabla. Los contadores de las tarjetas ya NO
 # salen de esta pagina: son COUNT agregados sobre toda la tabla.
 ROW_LIMIT = 200
-SEVERITY_LABELS = {"critico": "Crítico", "alto": "Alto", "medio": "Medio", "info": "Info"}
+# Tono del estado en la tabla; lo que no figura queda en el color del texto.
+STATUS_TONES = {STATUS_NEW: "alert", STATUS_INVESTIGATING: "warn", STATUS_RESOLVED: "ok"}
 COLUMNS = ["Hora", "Cámara", "Analítica", "Incidente", "Severidad", "Estado", "Clip"]
 ANALYTIC_COLORS = {
     "monitor_tamper": "#f59e0b",
@@ -49,27 +51,6 @@ ANALYTIC_COLORS = {
     "motion_detection": "#22c55e",
     "unknown": "#64748b",
 }
-
-
-class _MetricCard(QWidget):
-    def __init__(self, title: str, accent: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setStyleSheet(
-            f"QWidget {{ background-color: rgba(16, 21, 30, 225);"
-            f" border: 1px solid {accent}55; border-radius: 10px; }}"
-        )
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 10)
-        layout.setSpacing(2)
-        self.value = TitleLabel("—", self)
-        self.value.setStyleSheet(f"color: {accent}; background: transparent;")
-        layout.addWidget(self.value)
-        caption = CaptionLabel(title, self)
-        caption.setStyleSheet("background: transparent;")
-        layout.addWidget(caption)
-
-    def set_value(self, value: str) -> None:
-        self.value.setText(value)
 
 
 class _IncidentGraph(QWidget):
@@ -148,10 +129,10 @@ class EventDashboardModule(QWidget):
 
         metrics = QHBoxLayout()
         metrics.setSpacing(10)
-        self.total_card = _MetricCard("Incidentes", "#60a5fa", self)
-        self.active_card = _MetricCard("Pendientes", "#f59e0b", self)
-        self.clip_card = _MetricCard("Clips disponibles", "#22c55e", self)
-        self.type_card = _MetricCard("Analítica dominante", "#c084fc", self)
+        self.total_card = KpiTile("Incidentes", self)
+        self.active_card = KpiTile("Sin reconocer", self)
+        self.clip_card = KpiTile("Clips disponibles", self)
+        self.type_card = KpiTile("Analítica dominante", self)
         for card in (self.total_card, self.active_card, self.clip_card, self.type_card):
             metrics.addWidget(card, stretch=1)
 
@@ -236,7 +217,8 @@ class EventDashboardModule(QWidget):
     def _refresh_summary(self, site_id: int | None) -> None:
         counts = Counter(self._analytics_name(event) for event in self._events)
         self.total_card.set_value(str(repository.count_alarm_events(site_id=site_id)))
-        self.active_card.set_value(str(repository.count_pending_alarm_events(site_id=site_id)))
+        unacknowledged = repository.count_alarm_events(site_id=site_id, status=STATUS_NEW)
+        self.active_card.set_value(unacknowledged, "alert" if unacknowledged else "ok")
         self.clip_card.set_value(
             str(sum(self._clip_path(event.id) is not None for event in self._events))
         )
@@ -271,13 +253,17 @@ class EventDashboardModule(QWidget):
         for column, value in enumerate(values):
             self.table.setItem(row, column, QTableWidgetItem(value))
 
-        severity = QTableWidgetItem(SEVERITY_LABELS.get(event.severity, event.severity))
-        severity.setForeground(severity_text_qcolor(event.severity, True))
-        severity.setBackground(severity_soft_qcolor(event.severity))
+        severity = QTableWidgetItem(
+            severity_dot(event.severity), SEVERITY_LABELS.get(event.severity, event.severity)
+        )
         self.table.setItem(row, 4, severity)
 
-        status = QTableWidgetItem("Resuelta" if event.status == "resuelta" else "Pendiente")
-        status.setForeground(QColor("#22c55e" if event.status == "resuelta" else "#f59e0b"))
+        # El estado de verdad: antes todo lo no resuelto decia "Pendiente",
+        # tambien lo ya reconocido. Solo lo que pide accion lleva color.
+        status = QTableWidgetItem(ALARM_STATUS_LABELS.get(event.status, event.status))
+        tone = STATUS_TONES.get(event.status)
+        if tone is not None:
+            status.setForeground(QColor(TONES[tone]))
         self.table.setItem(row, 5, status)
 
         path = self._clip_path(event.id)

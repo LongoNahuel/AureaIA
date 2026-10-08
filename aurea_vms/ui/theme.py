@@ -4,7 +4,8 @@ oscura (pedido de Nahuel, 2026-10-08): ya no hay toggle en Sistema."""
 
 from __future__ import annotations
 
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 from qfluentwidgets import Theme, setTheme
 
@@ -59,6 +60,35 @@ def enable_tabular_numbers(widget) -> None:
 # Colores de estado de camara (online/offline/sin probar) -- reservados
 # para estado, no reciclarlos para otra semantica.
 STATUS_COLORS = {"online": "#3fb950", "offline": "#e5534b", "unknown": "#6e7681"}
+
+# Fase 1 de la interfaz (2026-10-08): el color dice estado y nada mas. Tonos
+# de las tarjetas de numeros (widgets/kpi_tile.py): neutro, bien, atencion,
+# actuar ya.
+TONES = {
+    "neutral": "#e5e7eb",
+    "ok": STATUS_COLORS["online"],
+    "warn": "#f59e0b",
+    "alert": SEVERITY_COLORS["critico"],
+}
+# Escalas de espaciado y de tipografia (px) de los componentes nuevos.
+SPACE = {"xs": 4, "s": 8, "m": 12, "l": 16, "xl": 24}
+FONT_PX = {"caption": 12, "body": 13, "title": 18, "kpi": 28}
+
+
+def severity_dot(severity: str, size: int = 10) -> QIcon:
+    """Un punto del color de la severidad, para el icono de la celda: marca
+    la fila sin pintar la celda entera. Cuando todo era critico, la tabla
+    quedaba roja de punta a punta y el color ya no distinguia nada."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(severity_qcolor(severity))
+    painter.drawEllipse(0, 0, size, size)
+    painter.end()
+    return QIcon(pixmap)
+
 
 _DARK_PALETTE = {
     "BG_PRIMARY": "#161c26",

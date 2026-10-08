@@ -54,27 +54,19 @@ from aurea_vms.models import repository
 from aurea_vms.models.alarm_event import (
     STATUS_ACKNOWLEDGED,
     STATUS_INVESTIGATING,
-    STATUS_NEW,
     STATUS_RESOLVED,
 )
 from aurea_vms.models.alarm_event import AlarmEvent as AlarmEventRow
 from aurea_vms.models.media_asset import KIND_CLIP, KIND_SNAPSHOT
-from aurea_vms.ui.labels import display_class
+from aurea_vms.ui.labels import ALARM_STATUS_LABELS as STATUS_LABELS
+from aurea_vms.ui.labels import SEVERITY_LABELS, display_class
 from aurea_vms.ui.notify import notify, warn
-from aurea_vms.ui.theme import severity_soft_qcolor, severity_text_qcolor
+from aurea_vms.ui.theme import severity_dot
 
 COLUMNS = ["Fecha y hora", "Canal", "Incidente", "Severidad", "Estado", "Captura", "Clip"]
 THUMBNAIL_SIZE = QSize(72, 40)
 PAGE_SIZE = 100
 PREVIEW_SIZE = QSize(640, 400)
-
-STATUS_LABELS = {
-    STATUS_NEW: "Nueva",
-    STATUS_ACKNOWLEDGED: "Reconocida",
-    STATUS_INVESTIGATING: "En investigación",
-    STATUS_RESOLVED: "Resuelta",
-}
-SEVERITY_LABELS = {"critico": "Crítico", "alto": "Alto", "medio": "Medio", "info": "Info"}
 
 
 def _when(timestamp: float, with_year: bool = False) -> str:
@@ -390,14 +382,12 @@ class AlarmModule(QWidget):
             item.setToolTip(text)
             self.table.setItem(row, column, item)
 
+        # Punto de color + texto (Fase 1 de la interfaz, 2026-10-08): el chip
+        # con fondo pintaba la tabla entera cuando todo era critico.
         severity_item = QTableWidgetItem(
-            SEVERITY_LABELS.get(alarm_event.severity, alarm_event.severity)
+            severity_dot(alarm_event.severity),
+            SEVERITY_LABELS.get(alarm_event.severity, alarm_event.severity),
         )
-        # Chip discreto (texto en el color de severidad + fondo soft 12%,
-        # tokens NOVA) en vez del bloque de color pleno que dominaba la
-        # tabla entera cuando habia muchas filas de la misma severidad.
-        severity_item.setForeground(severity_text_qcolor(alarm_event.severity, dark=True))
-        severity_item.setBackground(severity_soft_qcolor(alarm_event.severity))
         self.table.setItem(row, 3, severity_item)
         self.table.setItem(
             row, 4, QTableWidgetItem(STATUS_LABELS.get(alarm_event.status, alarm_event.status))
