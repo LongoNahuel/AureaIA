@@ -96,7 +96,7 @@ class TestPrunePorTamano:
 class TestPruneSinNada:
     def test_sin_media_no_falla(self, temp_db):
         stats = retention.prune(max_age_days=7, max_total_gb=5.0, now=AHORA)
-        assert stats == {"deleted": 0, "freed_bytes": 0, "al_tope": False}
+        assert stats == {"deleted": 0, "freed_bytes": 0, "al_tope": False, "protegida": False}
 
 
 class TestWorker:

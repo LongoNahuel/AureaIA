@@ -23,11 +23,14 @@ borrando evidencia que tenia que conservar. Ahora:
   Se piden las dos: con solo los dias guardados, el tope de 5 GB por
   defecto igual borraba por tamaño.
 - **Y tiene que estar confirmada** (`retention_confirmada`, la graba
-  `confirmar_retencion`, que usa el boton de Sistema). Hasta el 07/10 cada
-  setter escribia los defaults mezclados: cambiar el tema grababa 7 dias y
-  5 GB. Un archivo con esas claves no se distingue de una eleccion real, asi
+  `confirmar_retencion`, que usa el boton de Sistema > Audio y Video >
+  Grabando). Hasta el 07/10 cada setter escribia los defaults mezclados:
+  cambiar el tema grababa 7 dias y 5 GB. Un archivo con esas claves no se distingue de una eleccion real, asi
   que las instalaciones previas quedan "sin configurar" hasta que un admin
   confirme (decision de Daniel: no borra y avisa).
+- **Solo numeros finitos** (2026-10-08). JSON acepta `Infinity` y `NaN`
+  editados a mano; un tope infinito hacia que la pasada se cayera con
+  `OverflowError` sin podar ni lo vencido. Son `PrefsIlegibles`.
 - Los getters de la UI (tema, marca) siguen cayendo a los defaults, para
   que un JSON roto no deje la app sin abrir; lo loguean una vez.
 - Guardar una preferencia sobre un archivo ilegible lo aparta primero
@@ -38,6 +41,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import threading
 from datetime import datetime
@@ -60,6 +64,8 @@ RETENCION_MIN_DIAS = 1
 RETENCION_MIN_GB = 0.5
 # Marca de que un admin eligio la retencion (ver el docstring del modulo).
 RETENCION_CONFIRMADA = "retention_confirmada"
+# Donde la confirma un admin, para los avisos (ui/modules/system_module.py).
+DONDE_SE_CONFIGURA = "Sistema > Audio y Video > Grabando"
 
 _lock = threading.Lock()
 _avisado = False
@@ -152,22 +158,36 @@ def leer_retencion() -> tuple[float, float]:
     if "retention_days" not in data or "retention_max_gb" not in data:
         raise RetencionSinConfigurar(f"{_PREFS_PATH}: sin días ni tope de retención guardados")
     if not data.get(RETENCION_CONFIRMADA):
-        raise RetencionSinConfigurar(f"{_PREFS_PATH}: la retención nunca se confirmó en Sistema")
+        raise RetencionSinConfigurar(
+            f"{_PREFS_PATH}: la retención nunca se confirmó en {DONDE_SE_CONFIGURA}"
+        )
     try:
         dias = float(data["retention_days"])
         gb = float(data["retention_max_gb"])
     except (TypeError, ValueError) as exc:
         raise PrefsIlegibles(f"{_PREFS_PATH}: valores de retención inválidos ({exc})") from exc
-    if not (dias >= RETENCION_MIN_DIAS and gb >= RETENCION_MIN_GB):
+    if not _en_rango(dias, gb):
         raise PrefsIlegibles(f"{_PREFS_PATH}: retención fuera de rango ({dias} días, {gb} GB)")
     return dias, gb
 
 
+def _en_rango(dias: float, gb: float) -> bool:
+    """Finitos y sobre los minimos de la UI. Un NaN no pasa ninguna
+    comparacion, pero un infinito si: por eso el isfinite."""
+    return (
+        math.isfinite(dias)
+        and math.isfinite(gb)
+        and dias >= RETENCION_MIN_DIAS
+        and gb >= RETENCION_MIN_GB
+    )
+
+
 def confirmar_retencion(dias: float, max_gb: float) -> None:
-    """Lo que hace el boton "Guardar retención" de Sistema: dias, tope y la
-    marca de que alguien los eligio, en una sola escritura atomica. Valida
-    contra los minimos de la UI antes de escribir."""
-    if not (dias >= RETENCION_MIN_DIAS and max_gb >= RETENCION_MIN_GB):
+    """Lo que hace el boton "Guardar retención" (DONDE_SE_CONFIGURA): dias,
+    tope y la marca de que alguien los eligio, en una sola escritura
+    atomica. Valida antes de escribir (finitos y sobre los minimos de la
+    UI)."""
+    if not _en_rango(dias, max_gb):
         raise ValueError(f"retención fuera de rango ({dias} días, {max_gb} GB)")
     _guardar(
         retention_days=int(dias),

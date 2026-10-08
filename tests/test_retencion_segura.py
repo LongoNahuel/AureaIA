@@ -8,6 +8,7 @@ A un casino que actualiza o prende una PC apagada le pasaba lo mismo.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from types import SimpleNamespace
@@ -65,11 +66,9 @@ def _alarma(device_id: int, estado: str) -> int:
 
 
 def _una_pasada() -> None:
-    worker = retention.RetentionWorker(interval_s=60, first_delay_s=0)
-    worker.start()
-    time.sleep(0.3)
-    worker.stop()
-    worker.join(2)
+    """Una vuelta del worker, sincronica. Antes arrancaba el hilo y dormia
+    0,3 s: en una maquina cargada la pasada podia no haber terminado."""
+    retention.RetentionWorker().pasada()
 
 
 def _configurar(dias: float = 7, gb: float = 5) -> None:
@@ -144,7 +143,7 @@ class TestEvidenciaProtegida:
 
         assert repository.get_media_asset(suelta.id) is None
 
-    def test_tampoco_se_poda_por_tamaño_y_se_avisa(self, camara, caplog):
+    def test_tampoco_se_poda_por_tamaño_y_se_marca(self, camara):
         protegida = _media(
             camara.id,
             AHORA - DIA,
@@ -153,12 +152,27 @@ class TestEvidenciaProtegida:
         )
         suelta = _media(camara.id, AHORA - 2 * DIA, size=1024**2)
 
-        with caplog.at_level(logging.WARNING, logger=retention.__name__):
-            stats = retention.prune(max_age_days=365, max_total_gb=1 / 1024, now=AHORA)
+        stats = retention.prune(max_age_days=365, max_total_gb=1 / 1024, now=AHORA)
 
         assert repository.get_media_asset(protegida.id) is not None
         assert repository.get_media_asset(suelta.id) is None  # lo que si se podia
         assert stats["deleted"] == 1
+        assert stats["protegida"] is True
+
+    def test_el_worker_lo_avisa(self, camara, monkeypatch, caplog):
+        _media(
+            camara.id,
+            time.time() - DIA,
+            alarma=_alarma(camara.id, STATUS_INVESTIGATING),
+            size=2 * 1024**2,
+        )
+        # El minimo de la UI es 0,5 GB: se baja el tope a 1 MB para no
+        # escribir medio giga en el test.
+        monkeypatch.setattr(app_prefs, "leer_retencion", lambda: (365.0, 1 / 1024))
+
+        with caplog.at_level(logging.WARNING, logger=retention.__name__):
+            _una_pasada()
+
         assert "evidencia de incidentes en investigación" in caplog.text
 
 
@@ -201,6 +215,39 @@ class TestTopePorPasada:
         assert stats["deleted"] == 10
         assert stats["al_tope"] is False
 
+    def test_borrar_justo_el_tope_no_es_llegar_al_tope(self, camara):
+        """Con exactamente 50 vencidos se borran los 50 y no queda nada: el
+        ERROR de "queda mas por borrar" mentia."""
+        for i in range(50):
+            _media(camara.id, AHORA - 40 * DIA + i)
+
+        stats = retention.prune(max_age_days=7, max_total_gb=100, now=AHORA)
+
+        assert stats["deleted"] == 50
+        assert stats["al_tope"] is False
+
+    def test_uno_mas_que_el_tope_si(self, camara):
+        for i in range(51):
+            _media(camara.id, AHORA - 40 * DIA + i)
+
+        stats = retention.prune(max_age_days=7, max_total_gb=100, now=AHORA)
+
+        assert stats["deleted"] == 50
+        assert stats["al_tope"] is True
+
+    def test_tope_justo_por_edad_y_queda_por_tamaño(self, camara):
+        """La poda por edad agota lo vencido justo en el tope, pero sigue
+        sobre el tope de GB: eso si es "queda mas"."""
+        for i in range(50):
+            _media(camara.id, AHORA - 40 * DIA + i, size=1024**2)
+        for i in range(5):
+            _media(camara.id, AHORA - DIA + i, size=1024**2)
+
+        stats = retention.prune(max_age_days=7, max_total_gb=1 / 1024, now=AHORA)
+
+        assert stats["deleted"] == 50
+        assert stats["al_tope"] is True
+
     def test_el_worker_lo_loguea_en_error(self, camara, caplog):
         _configurar(dias=7)
         for i in range(60):
@@ -220,8 +267,6 @@ class TestLasOtrasPreferenciasNoConfiguranLaRetencion:
         app_prefs.set_intelligent_branding_enabled(False)
 
         assert app_prefs.retencion_configurada() is False
-        import json
-
         assert json.loads(app_prefs._PREFS_PATH.read_text(encoding="utf-8")) == {
             "theme": "light",
             "intelligent_branding": False,
@@ -263,6 +308,29 @@ class TestConfirmacion:
 
         assert app_prefs.retencion_configurada() is False
 
+    @pytest.mark.parametrize("valor", [float("inf"), float("-inf"), float("nan")])
+    @pytest.mark.parametrize("clave", ["retention_days", "retention_max_gb"])
+    def test_un_valor_no_finito_es_ilegible(self, clave, valor):
+        """JSON acepta Infinity y NaN editados a mano. Con el tope infinito,
+        prune se caia con OverflowError y no podaba ni lo vencido. (NaN y
+        -Infinity ya los frenaba la comparacion contra el minimo.)"""
+        datos = {"retention_days": 7, "retention_max_gb": 5.0, "retention_confirmada": "x"}
+        datos[clave] = valor
+        app_prefs._PREFS_PATH.write_text(json.dumps(datos), encoding="utf-8")
+
+        with pytest.raises(app_prefs.PrefsIlegibles):
+            app_prefs.leer_retencion()
+        assert app_prefs.retencion_configurada() is False
+
+    @pytest.mark.parametrize(
+        ("dias", "gb"), [(float("inf"), 5), (7, float("inf")), (float("nan"), 5), (7, float("nan"))]
+    )
+    def test_confirmar_un_valor_no_finito_no_escribe(self, dias, gb):
+        with pytest.raises(ValueError):
+            app_prefs.confirmar_retencion(dias, gb)
+
+        assert not app_prefs._PREFS_PATH.exists()
+
     def test_con_la_marca_y_sin_el_tope_no_poda_ni_rompe(self, camara):
         """Un archivo editado a mano: sin la clave, leer_retencion levantaba
         KeyError, que el worker no captura, y se llevaba puesto el hilo."""
@@ -273,3 +341,54 @@ class TestConfirmacion:
         assert app_prefs.retencion_configurada() is False
         with pytest.raises(app_prefs.RetencionSinConfigurar):
             app_prefs.leer_retencion()
+
+
+class TestAvisosQueNoSeRepiten:
+    """Los WARNING salian en cada pasada (cada 30 minutos) y tapaban el log."""
+
+    def _avisos(self, caplog, texto: str) -> int:
+        return sum(texto in r.getMessage() for r in caplog.records)
+
+    def test_sin_configurar_avisa_una_vez(self, caplog):
+        worker = retention.RetentionWorker()
+
+        with caplog.at_level(logging.WARNING, logger=retention.__name__):
+            for _ in range(3):
+                worker.pasada()
+
+        assert self._avisos(caplog, "Retención sin configurar") == 1
+
+    def test_si_se_configura_y_se_desconfigura_avisa_de_nuevo(self, temp_db, caplog):
+        worker = retention.RetentionWorker()
+
+        with caplog.at_level(logging.WARNING, logger=retention.__name__):
+            worker.pasada()
+            _configurar()
+            worker.pasada()
+            app_prefs._PREFS_PATH.unlink()
+            worker.pasada()
+
+        assert self._avisos(caplog, "Retención sin configurar") == 2
+
+    def test_evidencia_protegida_avisa_una_vez_por_racha(self, temp_db, monkeypatch, caplog):
+        _configurar()
+        resultados = iter([True, True, False, True])
+
+        def prune_falso(**_kwargs):
+            protegida = next(resultados)
+            return {"deleted": 0, "freed_bytes": 0, "al_tope": False, "protegida": protegida}
+
+        monkeypatch.setattr(retention, "prune", prune_falso)
+        worker = retention.RetentionWorker()
+
+        with caplog.at_level(logging.WARNING, logger=retention.__name__):
+            for _ in range(4):
+                worker.pasada()
+
+        assert self._avisos(caplog, "evidencia de incidentes en investigación") == 2
+
+    def test_el_aviso_dice_donde_se_configura(self, caplog):
+        with caplog.at_level(logging.WARNING, logger=retention.__name__):
+            retention.RetentionWorker().pasada()
+
+        assert "Sistema > Audio y Video > Grabando" in caplog.text
