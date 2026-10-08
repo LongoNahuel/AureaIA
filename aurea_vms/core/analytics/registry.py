@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from aurea_vms.core.analytics.base import Analyzer
 from aurea_vms.core.analytics.consumption_analyzer import ConsumptionAnalyzer
+from aurea_vms.core.analytics.digital_zoom import ZoomedAnalyzer, active_zoom, zoomed_config
 from aurea_vms.core.analytics.face_detection_analyzer import FaceDetectionAnalyzer
 from aurea_vms.core.analytics.line_crossing_analyzer import LineCrossingAnalyzer
 from aurea_vms.core.analytics.monitor_tamper_analyzer import MonitorTamperAnalyzer
@@ -48,6 +49,19 @@ def _roi_from_config(config: AnalyticsConfig) -> tuple[int, int, int, int] | Non
 
 
 def create_analyzer(config: AnalyticsConfig) -> Analyzer:
+    """El analizador de una configuracion. Con el zoom digital activo corre
+    sobre el recorte (ver digital_zoom.py)."""
+    region = active_zoom(config.analyzer_name, config.params)
+    if region is None:
+        return _create(config)
+    zoomed, kept, zone_count = zoomed_config(config, region)
+    mode = zoomed.params.get("modo")
+    if zone_count and not kept and mode != ROULETTE_MODE:
+        raise ValueError("Ninguna zona queda dentro del zoom digital")
+    return ZoomedAnalyzer(_create(zoomed), region, kept, zone_count)
+
+
+def _create(config: AnalyticsConfig) -> Analyzer:
     params = config.params or {}
 
     # Compatibilidad de API para configuraciones antiguas: la UI ya no expone

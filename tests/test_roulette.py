@@ -251,3 +251,20 @@ class TestDialogo:
     def test_blackjack_no_se_puede_guardar(self, dialog):
         dialog.mode_combo.setCurrentIndex(dialog.mode_combo.findData("blackjack"))
         assert "BlackJack" in dialog.validate()
+
+
+def test_una_ruleta_nueva_arranca_en_25_fps(qtbot, temp_db):
+    """Sin configuracion previa el dialogo arranca en golpes con el tope
+    global (5 fps); al pasar a ruleta quedaba en 5 en vez de 25 (2026-10-07)."""
+    from aurea_vms.models import repository
+    from aurea_vms.ui.dialogs.monitor_tamper_config_dialog import MonitorTamperConfigDialog
+
+    device = repository.add_device(name="Mesa", ip="10.0.0.1", rtsp_main_url="rtsp://c/x")
+    dialog = MonitorTamperConfigDialog(device)
+    qtbot.addWidget(dialog)
+
+    dialog.mode_combo.setCurrentIndex(dialog.mode_combo.findData("ruleta"))
+    assert dialog.fps_spin.value() == 25
+
+    dialog.mode_combo.setCurrentIndex(dialog.mode_combo.findData("consumo"))
+    assert dialog.fps_spin.value() == 5

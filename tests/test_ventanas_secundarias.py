@@ -285,3 +285,63 @@ class TestPantallaCompleta:
 
         vivo._exit_fullscreen()
         assert not segunda.isFullScreen()
+
+
+class TestClicEnElPopupConVariasVentanas:
+    """Merge de zoom-digital (2026-10-08): el clic en un popup abre Alarmas
+    con el incidente. La version de la rama leia `self.tabs.currentWidget()`
+    de la principal, y con Alarmas en otra ventana enfocaba otro modulo; y
+    solo la capa de popups de la principal estaba conectada."""
+
+    @pytest.fixture()
+    def enfocados(self, monkeypatch):
+        from aurea_vms.ui.modules.alarm_module import AlarmModule
+
+        llamados: list[tuple[object, int]] = []
+
+        def focus_event(modulo, alarm_event_id):
+            llamados.append((modulo, alarm_event_id))
+            return True
+
+        monkeypatch.setattr(AlarmModule, "focus_event", focus_event)
+        return llamados
+
+    def test_alarmas_en_otra_ventana_recibe_el_incidente(self, principal, enfocados):
+        from aurea_vms.ui.modules.alarm_module import AlarmModule
+
+        alarmas = _abrir(principal, AlarmModule)
+        _desacoplar(principal, alarmas)
+        _abrir(principal, SystemModule)  # la pestaña actual de la principal
+
+        principal.alert_layer.open_alarm_requested.emit(42)
+
+        assert enfocados == [(alarmas, 42)]
+
+    def test_el_popup_de_una_secundaria_abre_alarmas_ahi(self, principal, enfocados):
+        from aurea_vms.ui.modules.alarm_module import AlarmModule
+
+        otra = _desacoplar(principal, _abrir(principal, SystemModule))
+
+        otra.alert_layer.open_alarm_requested.emit(7)
+
+        ventana, alarmas = principal.ventanas.buscar_modulo(AlarmModule)
+        assert isinstance(alarmas, AlarmModule)
+        assert ventana is otra
+        assert enfocados == [(alarmas, 7)]
+
+    def test_ajustes_avanzados_con_analizadores_en_otra_ventana(self, principal, monkeypatch):
+        from aurea_vms.ui.modules.analytics_config import AnalyticsConfigModule
+
+        enfocados: list[tuple[object, int]] = []
+        monkeypatch.setattr(
+            AnalyticsConfigModule,
+            "focus_device",
+            lambda modulo, device_id: enfocados.append((modulo, device_id)),
+        )
+        analizadores = _abrir(principal, AnalyticsConfigModule)
+        _desacoplar(principal, analizadores)
+        _abrir(principal, SystemModule)
+
+        principal._on_open_analytics_config_requested(8)
+
+        assert enfocados == [(analizadores, 8)]

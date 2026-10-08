@@ -347,8 +347,32 @@ class AlarmModule(QWidget):
         for row, alarm_event in enumerate(self._events):
             if alarm_event.id == alarm_event_id:
                 self.table.selectRow(row)
+                self.table.scrollToItem(self.table.item(row, 0))
                 return True
         return False
+
+    def focus_event(self, alarm_event_id: int) -> bool:
+        """Muestra un incidente en el detalle (clic en el popup de una
+        alarma). Saca los filtros de canal, incidente y estado que lo
+        esconderian y carga paginas hasta encontrarlo. False si no existe o
+        su camara esta fuera del sitio elegido."""
+        alarm_event = repository.get_alarm_event(alarm_event_id)
+        if alarm_event is None:
+            return False
+        self._fill_filters()
+        for combo, value in (
+            (self.channel_combo, alarm_event.device_id),
+            (self.class_combo, alarm_event.object_class),
+            (self.status_combo, alarm_event.status),
+        ):
+            if combo.currentData() not in (None, value):
+                combo.blockSignals(True)
+                combo.setCurrentIndex(0)
+                combo.blockSignals(False)
+        self._reload()
+        while not self.select_event(alarm_event_id) and self._has_more:
+            self._load_more()
+        return self.select_event(alarm_event_id)
 
     def _media_path(self, alarm_event_id: int, kind: str) -> str | None:
         for asset in self._media_by_event.get(alarm_event_id, []):

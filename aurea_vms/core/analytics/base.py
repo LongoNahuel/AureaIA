@@ -36,6 +36,11 @@ class AnalysisResult:
 
 class Analyzer(ABC):
     name: str
+    # Tamaño (ancho, alto) del cuadro completo cuando la analitica recibe un
+    # recorte (zoom digital, ver digital_zoom.py); None = el cuadro que llega
+    # es el completo. Las medidas pensadas como fraccion del cuadro se toman
+    # contra el completo, para que no cambien con el zoom.
+    source_size: tuple[int, int] | None = None
 
     @abstractmethod
     def process_frame(self, frame: np.ndarray, timestamp: float) -> AnalysisResult: ...

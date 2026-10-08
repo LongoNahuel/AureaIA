@@ -136,6 +136,10 @@ def module_index(module_cls: type) -> int:
     raise ValueError(f"{module_cls.__name__} no esta en MODULES")
 
 
+ALARMS_INDEX = module_index(AlarmModule)
+ANALYZERS_INDEX = module_index(AnalyticsConfigModule)
+
+
 def compute_visible_categories() -> dict:
     """Categorias del launcher visibles para el usuario en sesion, segun
     su matriz de permisos (funcion libre para poder testearla sin
@@ -228,6 +232,7 @@ class MainWindow(QMainWindow):
         # autoajusta a su contenido (ver GlobalAlertPopupLayer) y queda
         # oculta cuando no hay tarjetas -- no cubre toda la ventana.
         self.alert_layer = GlobalAlertPopupLayer(central)
+        self.alert_layer.open_alarm_requested.connect(self._on_open_alarm_requested)
 
         QShortcut(QKeySequence("Ctrl+K"), self, lambda: self.abrir_paleta(self))
 
@@ -347,6 +352,20 @@ class MainWindow(QMainWindow):
         """Sistema > Audio y Video > Grabando."""
         self._on_home_shortcut(module_index(SystemModule), *RETENCION_SECCION)
 
+    def _on_open_alarm_requested(self, alarm_event_id: int, destino: QWidget | None = None) -> None:
+        """Clic en el popup de una alarma: abre (o enfoca) Alarmas con ese
+        incidente en el detalle. Sin permiso, open_module_by_index avisa.
+        Si Alarmas no esta abierta, se abre en la ventana del popup
+        (`destino`); el aviso sale donde quedo el modulo."""
+        module = self.open_module_by_index(ALARMS_INDEX, destino)
+        focus_event = getattr(module, "focus_event", None)
+        if callable(focus_event) and not focus_event(alarm_event_id):
+            warn(
+                module,
+                "Alarmas",
+                "El incidente no está en la lista: su cámara no es del sitio elegido.",
+            )
+
     def abrir_paleta(self, ventana: QWidget) -> None:
         """Ctrl+K desde cualquier ventana: lo que se abra nuevo va a ESA
         ventana (lo ya abierto se enfoca donde este)."""
@@ -370,7 +389,7 @@ class MainWindow(QMainWindow):
     def _on_open_analytics_config_requested(self, device_id: int) -> None:
         """ "Ajustes avanzados" desde Dispositivos: abre/enfoca Analizadores
         con esta camara seleccionada."""
-        analytics_module = self.open_module_by_index(module_index(AnalyticsConfigModule))
+        analytics_module = self.open_module_by_index(ANALYZERS_INDEX)
         focus_device = getattr(analytics_module, "focus_device", None)
         if callable(focus_device):
             focus_device(device_id)

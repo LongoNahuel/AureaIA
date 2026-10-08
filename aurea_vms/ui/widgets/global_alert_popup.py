@@ -2,11 +2,13 @@
 solo dentro del modulo Alarmas): al dispararse una alarma aparece una
 tarjeta flotante en la esquina inferior derecha de la ventana principal,
 con accion "Reconocer" inline. Las criticas quedan fijas hasta que se
-las reconoce; el resto se auto-descarta a los pocos segundos."""
+las reconoce; el resto se auto-descarta a los pocos segundos. Un clic en la
+tarjeta abre el modulo Alarmas con ese incidente (open_alarm_requested)."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
@@ -27,6 +29,8 @@ SEVERITY_LABELS = {"critico": "Crítico", "alto": "Alto", "medio": "Medio", "inf
 # reconocer desde el popup (los criticos igual persisten hasta reconocer).
 AUTO_DISMISS_MS = 12000
 MAX_VISIBLE = 5
+CARD_BACKGROUND = "rgba(18, 23, 33, 240)"
+CARD_HOVER = "rgba(30, 38, 52, 245)"
 
 
 class _AlertCard(QWidget):
@@ -43,10 +47,12 @@ class _AlertCard(QWidget):
         # redondeado y la tarjeta quedaba invisible).
         self.setObjectName("alertCard")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(
-            f"QWidget#alertCard {{ background-color: rgba(18, 23, 33, 240); "
-            f"border-left: 3px solid {color}; border-radius: 6px; }}"
-        )
+        self._color = color
+        self._set_background(CARD_BACKGROUND)
+        # Toda la tarjeta es un enlace al incidente en Alarmas (salvo la
+        # cruz y "Reconocer", que tienen su propia accion).
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Ver el incidente en Alarmas")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 10, 10)
@@ -84,6 +90,35 @@ class _AlertCard(QWidget):
         if event.severity != "critico":
             QTimer.singleShot(AUTO_DISMISS_MS, self._dismiss)
 
+    def _set_background(self, background: str) -> None:
+        self.setStyleSheet(
+            f"QWidget#alertCard {{ background-color: {background}; "
+            f"border-left: 3px solid {self._color}; border-radius: 6px; }}"
+        )
+
+    def enterEvent(self, event) -> None:  # noqa: N802 - override de Qt
+        self._set_background(CARD_HOVER)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802 - override de Qt
+        self._set_background(CARD_BACKGROUND)
+        super().leaveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - override de Qt
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(
+            event.position().toPoint()
+        ):
+            self._open()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _open(self) -> None:
+        """Lleva al incidente en Alarmas. La tarjeta se cierra; la alarma
+        sigue pendiente hasta que se la reconozca."""
+        self._layer.open_alarm_requested.emit(self._event.alarm_event_id)
+        self._dismiss()
+
     def _acknowledge(self) -> None:
         from aurea_vms.models.alarm_event import STATUS_ACKNOWLEDGED
 
@@ -102,6 +137,9 @@ class GlobalAlertPopupLayer(QWidget):
     habia ninguna tarjeta), este widget se autoajusta a su contenido real
     y queda oculto por completo cuando no hay alertas -- asi no puede
     interceptar clicks fuera de si mismo."""
+
+    # Clic en una tarjeta: el id del incidente (fila de alarm_events).
+    open_alarm_requested = Signal(int)
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
