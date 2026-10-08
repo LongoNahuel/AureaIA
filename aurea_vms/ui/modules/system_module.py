@@ -1,7 +1,7 @@
 """Configuración del sistema: menú lateral agrupado (Audio y Video /
-Sistema / Operación), al estilo EZStation. Lo real -- monitor de
-recursos, log, apariencia, seguridad (cambio de contraseña), PTZ,
-capturas/clips de evento -- convive con secciones que todavía no tienen
+Sistema / Operación), al estilo EZStation. Lo real -- video de las
+cámaras (ONVIF) y tráfico, monitor de recursos, log, seguridad (cambio de
+contraseña), PTZ, capturas/clips de evento -- convive con secciones que todavía no tienen
 funcionalidad propia (marcadas "Próximamente"), sin inventar nada que la
 app no haga de verdad."""
 
@@ -33,7 +33,6 @@ from qfluentwidgets import (
     PushButton,
     SpinBox,
     StrongBodyLabel,
-    SwitchButton,
     TableWidget,
     TreeWidget,
 )
@@ -43,14 +42,13 @@ from aurea_vms.core import app_prefs, auth
 from aurea_vms.core.stream_manager import stream_manager
 from aurea_vms.models import repository
 from aurea_vms.ui.notify import confirm, notify, warn
-from aurea_vms.ui.theme import apply_theme
 from aurea_vms.ui.widgets.ptz_control_panel import PtzControlPanel
+from aurea_vms.ui.widgets.video_config_panel import VideoConfigPanel
 
 LOG_TAIL_LINES = 300
 RESOURCE_REFRESH_MS = 2000
 
 PLACEHOLDER_NOTES = {
-    "Video": "Próximamente: configuración de codec, resolución y calidad por cámara (vía ONVIF).",
     "Alarma": "La configuración de reglas de alarma vive en los módulos Alarmas y Alertas.",
     "Servicio": "Próximamente: administración de servicios del sistema.",
     "Visualización de atributos": "Próximamente: superposición de atributos detectados sobre el video en vivo.",
@@ -87,7 +85,7 @@ class SystemModule(QWidget):
         self.nav_tree.setFixedWidth(220)
         self.nav_tree.itemClicked.connect(self._on_nav_clicked)
 
-        self._add_page("Audio y Video", "Video", self._build_placeholder_page("Video"))
+        self._add_page("Audio y Video", "Video", self._build_video_page())
         self._add_page("Audio y Video", "Instantánea", self._build_snapshot_page())
         self._add_page("Audio y Video", "Grabando", self._build_recording_page())
         self._add_page("Sistema", "Inicio", self._build_home_page())
@@ -126,6 +124,7 @@ class SystemModule(QWidget):
         self._refresh_resources()
         self._refresh_logs()
         self.ptz_panel.reload_devices()
+        self.video_panel.reload_devices()
         super().showEvent(event)
 
     # --- navegacion -------------------------------------------------
@@ -312,22 +311,14 @@ class SystemModule(QWidget):
         layout = QVBoxLayout(content)
 
         row = QHBoxLayout()
-        row.addWidget(StrongBodyLabel("Modo oscuro"))
-        self.dark_mode_switch = SwitchButton(content)
-        self.dark_mode_switch.setChecked(app_prefs.get_theme() != "light")
-        self.dark_mode_switch.checkedChanged.connect(self._on_theme_toggled)
-        row.addWidget(self.dark_mode_switch)
+        row.addWidget(StrongBodyLabel("Tema"))
+        row.addWidget(BodyLabel("Oscuro"))
         row.addStretch(1)
         layout.addLayout(row)
-
-        hint = CaptionLabel("Se aplica al instante y se recuerda la próxima vez que abras la app.")
-        layout.addWidget(hint)
+        # Siempre oscuro (pedido de Nahuel, 2026-10-08); ver ui/theme.py.
+        layout.addWidget(CaptionLabel("La interfaz usa siempre el tema oscuro."))
 
         return _page(card)
-
-    def _on_theme_toggled(self, checked: bool) -> None:
-        apply_theme(checked)
-        app_prefs.set_theme("dark" if checked else "light")
 
     # --- Sistema > Registro -------------------------------------------------
 
@@ -391,6 +382,12 @@ class SystemModule(QWidget):
         self.new_password_edit.clear()
         self.confirm_password_edit.clear()
         notify(self, "Seguridad", "Contraseña actualizada correctamente.")
+
+    # --- Audio y Video > Video -------------------------------------------------
+
+    def _build_video_page(self) -> QWidget:
+        self.video_panel = VideoConfigPanel()
+        return _page(self.video_panel)
 
     # --- Operación > PTZ -------------------------------------------------
 

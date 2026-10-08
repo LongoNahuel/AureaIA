@@ -45,7 +45,7 @@ from qfluentwidgets import (
     TableWidget,
 )
 
-from aurea_vms.core import app_prefs, app_state, media_store
+from aurea_vms.core import app_state, media_store
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import AlarmEvent as AlarmEventDTO
 from aurea_vms.core.events import ClipReadyEvent
@@ -396,8 +396,7 @@ class AlarmModule(QWidget):
         # Chip discreto (texto en el color de severidad + fondo soft 12%,
         # tokens NOVA) en vez del bloque de color pleno que dominaba la
         # tabla entera cuando habia muchas filas de la misma severidad.
-        dark = app_prefs.get_theme() == "dark"
-        severity_item.setForeground(severity_text_qcolor(alarm_event.severity, dark))
+        severity_item.setForeground(severity_text_qcolor(alarm_event.severity, dark=True))
         severity_item.setBackground(severity_soft_qcolor(alarm_event.severity))
         self.table.setItem(row, 3, severity_item)
         self.table.setItem(

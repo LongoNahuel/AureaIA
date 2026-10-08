@@ -1,6 +1,6 @@
-"""Tema visual global: paleta oscura o clara aplicada a nivel QApplication
-(sidebar, botones, tablas, inputs, dialogos, scrollbars). El toggle vive en
-Sistema > Sistema > Apariencia."""
+"""Tema visual global: paleta oscura aplicada a nivel QApplication
+(sidebar, botones, tablas, inputs, dialogos, scrollbars). La app es siempre
+oscura (pedido de Nahuel, 2026-10-08): ya no hay toggle en Sistema."""
 
 from __future__ import annotations
 
@@ -263,13 +263,15 @@ QToolTip {{
 """
 
 
-def apply_theme(dark: bool) -> None:
-    """Aplica el tema (qfluentwidgets + QSS propio) a la QApplication ya
-    creada -- usado tanto al arrancar como desde el toggle de Apariencia."""
-    setTheme(Theme.DARK if dark else Theme.LIGHT)
+def apply_theme(_dark: bool = True) -> None:
+    """Aplica el tema oscuro (qfluentwidgets + QSS propio) a la QApplication
+    ya creada. Siempre oscuro: main.py todavia pasa la preferencia vieja
+    ("theme" en preferences.json), y una base de antes puede traer "light"
+    guardado sin forma de volver desde la UI. Por eso se ignora."""
+    setTheme(Theme.DARK)
     app = QApplication.instance()
     if app is not None:
-        app.setStyleSheet(build_stylesheet(dark))
+        app.setStyleSheet(build_stylesheet(dark=True))
 
 
 STYLESHEET = build_stylesheet(dark=True)
