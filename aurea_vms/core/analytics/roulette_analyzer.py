@@ -241,13 +241,15 @@ def _felt(small: np.ndarray) -> np.ndarray | None:
     return labels == 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
 
 
-def detect_table(frame: np.ndarray) -> np.ndarray | None:
+def detect_table(frame: np.ndarray, reference_width: int | None = None) -> np.ndarray | None:
     """La mesa a TABLE_SCALE: el paño agrandado TABLE_MARGIN (la baranda, donde
-    los jugadores apoyan las manos). Un espectador no la toca."""
+    los jugadores apoyan las manos). Un espectador no la toca. El margen es
+    una fraccion del ancho del cuadro completo (`reference_width` cuando
+    `frame` es un recorte del zoom digital)."""
     felt = _felt(cv2.resize(frame, None, fx=TABLE_SCALE, fy=TABLE_SCALE))
     if felt is None:
         return None
-    margin = max(1, int(TABLE_MARGIN * frame.shape[1] * TABLE_SCALE))
+    margin = max(1, int(TABLE_MARGIN * (reference_width or frame.shape[1]) * TABLE_SCALE))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * margin + 1, 2 * margin + 1))
     return cv2.dilate(felt.astype(np.uint8), kernel) > 0
 
@@ -614,7 +616,7 @@ class RouletteAnalyzer(Analyzer):
         if self._table_at is not None and timestamp - self._table_at < TABLE_REFRESH_S:
             return
         self._table_at = timestamp
-        table = detect_table(frame)
+        table = detect_table(frame, self.source_size[0] if self.source_size else None)
         if table is not None:
             self._table = table if self._table is None else (self._table | table)
 
@@ -756,6 +758,7 @@ class RouletteAnalyzer(Analyzer):
 
         people = []
         if self._hands is not None:
+            self._hands.reference_size = self.source_size
             self._look_at_table(frame, timestamp)
             people = self._update_hands(frame, timestamp)
         hands = [

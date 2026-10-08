@@ -52,11 +52,19 @@ class VentanaSecundaria(QMainWindow):
         self.setCentralWidget(central)
 
         self.alert_layer = GlobalAlertPopupLayer(central)
+        # Un metodo y no una lambda: la lambda que captura `self` arma un
+        # ciclo por C++ que el GC no ve (ver la nota de main_window).
+        self.alert_layer.open_alarm_requested.connect(self._abrir_alarma)
         QShortcut(QKeySequence("Ctrl+K"), self, lambda: principal.abrir_paleta(self))
 
         geometria = principal.geometry()
         self.resize(geometria.size())
         self.move(geometria.topLeft() + _corrimiento(numero))
+
+    def _abrir_alarma(self, alarm_event_id: int) -> None:
+        """Clic en un popup de esta ventana: si Alarmas no esta abierta en
+        ninguna, se abre aca, donde el operador esta mirando."""
+        self._principal._on_open_alarm_requested(alarm_event_id, self)
 
     def pestana_salio(self) -> None:
         """La llama pestanas.mover cuando una pagina se va de aca."""

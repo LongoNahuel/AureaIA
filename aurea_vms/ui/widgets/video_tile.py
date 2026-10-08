@@ -2,7 +2,12 @@
 StreamWorker, con overlay OSD (nombre de camara + hora) y las detecciones
 del analizador activo. La camara se asigna arrastrando un item desde
 DeviceTreeWidget o con doble click (al tile seleccionado); un click en el
-tile lo marca como "seleccionado" (borde de acento) para ese flujo."""
+tile lo marca como "seleccionado" (borde de acento) para ese flujo.
+
+Zoom digital: la rueda del mouse acerca o aleja la vista sobre el punto del
+cursor y, con zoom, arrastrar mueve la vista. Desde el menu del tile, la
+analitica puede correr sobre ese mismo zoom o sobre el cuadro completo (ver
+ui/analysis_zoom.py)."""
 
 from __future__ import annotations
 
@@ -26,6 +31,7 @@ from PySide6.QtGui import (
     QPainterPath,
     QPen,
     QPixmap,
+    QWheelEvent,
 )
 from PySide6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 from qfluentwidgets import Action, FluentIcon, RoundMenu
@@ -33,13 +39,15 @@ from shiboken6 import isValid
 
 from aurea_vms.config.settings import settings
 from aurea_vms.core import app_prefs
+from aurea_vms.core.analytics.digital_zoom import OUTSIDE_ZOOM, ZOOM_ANALYZERS, active_zoom
 from aurea_vms.core.analytics.registry import ANALYZER_DISPLAY_NAMES
 from aurea_vms.core.event_bus import event_bus
 from aurea_vms.core.events import Detection, DetectionEvent
+from aurea_vms.core.permissions import Perm, can
 from aurea_vms.core.stream_manager import stream_manager
 from aurea_vms.models import repository
 from aurea_vms.models.device import Device
-from aurea_vms.ui import icons, render_pool
+from aurea_vms.ui import analysis_zoom, icons, render_pool
 from aurea_vms.ui.labels import display_class, display_rotor_event
 from aurea_vms.ui.theme import STATUS_COLORS
 from aurea_vms.ui.widgets.analytics_visuals import (
@@ -118,6 +126,14 @@ ROUND_STYLE = {
 NEW_GAME_FLASH_S = 4.0
 # Cuanto dura el resaltado de la linea tras un cruce.
 LINE_FLASH_S = 1.5
+# Zoom digital de la vista: cuanto acerca cada paso de la rueda del mouse y
+# hasta cuanto. Solo cambia lo que se ve; la analitica tiene su propio zoom
+# (params["zoom_digital"], ver core/analytics/digital_zoom.py).
+ZOOM_STEP = 1.25
+MAX_ZOOM = 8.0
+# El recorte que analiza la analitica cuando corre sobre el zoom digital.
+ANALYSIS_ZOOM_COLOR = QColor("#facc15")
+OUTSIDE_ZOOM_COLOR = QColor("#6e7681")
 
 
 def _fit(frame: np.ndarray, size: QSize) -> np.ndarray:
@@ -174,6 +190,12 @@ class _Escena:
     marcas: bool
     marca: bool
     nombre_marca: str
+    # Zoom digital: la parte del cuadro que se muestra, en pixeles del cuadro
+    # (None = el cuadro entero), y el nivel para el chip (1.0 = sin zoom).
+    # Van aca porque la rueda y el arrastre cambian la vista mientras el
+    # pool dibuja.
+    vista: tuple[int, int, int, int] | None = None
+    zoom: float = 1.0
 
 
 class _VideoDisplay(QLabel):
@@ -281,6 +303,15 @@ class VideoTile(QWidget):
         # sobre el cuadro en que se calcularon (ver SYNC_*).
         self._recent_frames: deque[tuple[float, np.ndarray]] = deque(maxlen=SYNC_FRAMES)
         self._shown_ts = 0.0
+        # Zoom digital de la vista: la parte del cuadro que se muestra, en
+        # fracciones del cuadro; (0, 0, 1, 1) es sin zoom. Mientras se arrastra,
+        # donde empezo y la vista de ese momento.
+        self._view = QRectF(0, 0, 1, 1)
+        self._pan_from: tuple[QPointF, QRectF] | None = None
+        # El ultimo cuadro dibujado: su tamaño en pixeles y donde quedo, en
+        # coordenadas del tile (para llevar el mouse al cuadro).
+        self._frame_size = (0, 0)
+        self._video_rect = QRectF()
         # Todas las vistas usan exclusivamente el flujo principal. El
         # substream puede seguir configurado en el dispositivo para pruebas,
         # pero nunca se abre desde la interfaz.
@@ -327,6 +358,8 @@ class VideoTile(QWidget):
         self._analytics_configs = []
         self._last_rendered_ts = 0.0
         self._last_rendered_size = QSize()
+        self._frame_size = (0, 0)
+        self._set_view(QRectF(0, 0, 1, 1))
 
         device = repository.get_device(device_id) if device_id is not None else None
         if device is None:
@@ -412,7 +445,38 @@ class VideoTile(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         self.clicked.emit(self)
+        if event.button() == Qt.MouseButton.LeftButton and self.is_zoomed():
+            self._pan_from = (event.position(), QRectF(self._view))
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if self._pan_from is None or self._video_rect.isEmpty():
+            super().mouseMoveEvent(event)
+            return
+        start, view = self._pan_from
+        delta = event.position() - start
+        self._set_view(
+            view.translated(
+                -delta.x() / self._video_rect.width() * view.width(),
+                -delta.y() / self._video_rect.height() * view.height(),
+            )
+        )
+        event.accept()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if self._pan_from is not None:
+            self._pan_from = None
+            self._update_cursor()
+        super().mouseReleaseEvent(event)
+
+    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
+        steps = event.angleDelta().y() / 120
+        if self._device is None or not steps:
+            super().wheelEvent(event)
+            return
+        self.zoom_by(ZOOM_STEP**steps, event.position())
+        event.accept()
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         self.doubleClicked.emit(self)
@@ -443,10 +507,134 @@ class VideoTile(QWidget):
         if self._device is None:
             return
         menu = RoundMenu(parent=self)
+        anchor = QPointF(pos)
+        zoom_in = Action(FluentIcon.ZOOM_IN, "Acercar aquí")
+        zoom_in.triggered.connect(lambda: self.zoom_by(2.0, anchor))
+        menu.addAction(zoom_in)
+        if self.is_zoomed():
+            reset = Action(FluentIcon.ZOOM_OUT, "Quitar zoom (ver todo)")
+            reset.triggered.connect(self.reset_zoom)
+            menu.addAction(reset)
+        configs = self._zoom_configs()
+        if configs:
+            menu.addSeparator()
+        for config in configs:
+            self._add_analysis_zoom_actions(menu, config)
+        menu.addSeparator()
         action = Action(FluentIcon.CLOSE, "Quitar cámara")
         action.triggered.connect(lambda: self.assign_device(None))
         menu.addAction(action)
         menu.exec(self.mapToGlobal(pos))
+
+    def _add_analysis_zoom_actions(self, menu: RoundMenu, config) -> None:
+        """Sobre que corre la analitica: este zoom o el cuadro completo, y ver
+        el zoom que analiza. Cambiarlo pide permiso de configurar analiticas."""
+        region = active_zoom(config.analyzer_name, config.params)
+        manage = can(Perm.ANALYTICS_CONFIG)
+        short = SHORT_NAMES.get(config.analyzer_name, config.analyzer_name)
+        if self.is_zoomed() and self._frame_size != (0, 0):
+            view = self._view_pixels(*self._frame_size)
+            if view != region:
+                action = Action(FluentIcon.ZOOM, f"{short}: analizar este zoom")
+                action.setEnabled(manage)
+                action.triggered.connect(
+                    lambda: analysis_zoom.set_analysis_zoom(self.window(), config, view)
+                )
+                menu.addAction(action)
+        if region is None:
+            return
+        show = Action(FluentIcon.VIEW, f"{short}: ver el zoom analizado")
+        show.triggered.connect(lambda: self.show_region(region))
+        menu.addAction(show)
+        full = Action(FluentIcon.FIT_PAGE, f"{short}: analizar el cuadro completo")
+        full.setEnabled(manage)
+        full.triggered.connect(lambda: analysis_zoom.set_analysis_zoom(self.window(), config, None))
+        menu.addAction(full)
+
+    def _zoom_configs(self) -> list:
+        return [c for c in self._analytics_configs if c.analyzer_name in ZOOM_ANALYZERS]
+
+    # --- zoom digital de la vista -----------------------------------------------
+
+    def is_zoomed(self) -> bool:
+        return self._view != QRectF(0, 0, 1, 1)
+
+    def zoom_level(self) -> float:
+        return 1.0 / max(self._view.width(), self._view.height())
+
+    def zoom_by(self, factor: float, anchor: QPointF | None = None) -> None:
+        """Acerca (factor > 1) o aleja la vista dejando quieto el punto del
+        cuadro que esta bajo `anchor` (coordenadas del tile); sin `anchor`,
+        el centro. Alejando hasta ver todo, la vista vuelve al cuadro
+        completo."""
+        view = self._view
+        u, v = self._view_point(anchor) if anchor is not None else (0.5, 0.5)
+        width, height = view.width() / factor, view.height() / factor
+        if max(width, height) >= 1.0:
+            self.reset_zoom()
+            return
+        smallest = min(width, height)
+        if smallest < 1.0 / MAX_ZOOM:
+            width, height = (
+                width / smallest / MAX_ZOOM,
+                height / smallest / MAX_ZOOM,
+            )
+        x = view.x() + u * view.width() - u * width
+        y = view.y() + v * view.height() - v * height
+        self._set_view(QRectF(x, y, width, height))
+
+    def reset_zoom(self) -> None:
+        self._set_view(QRectF(0, 0, 1, 1))
+
+    def show_region(self, region: tuple[int, int, int, int]) -> None:
+        """Lleva la vista a `region`, en pixeles del cuadro (el zoom que
+        analiza la analitica)."""
+        frame_w, frame_h = self._frame_size
+        if not frame_w or not frame_h:
+            return
+        x, y, w, h = region
+        self._set_view(QRectF(x / frame_w, y / frame_h, w / frame_w, h / frame_h))
+
+    def _set_view(self, view: QRectF) -> None:
+        width, height = min(1.0, view.width()), min(1.0, view.height())
+        x = max(0.0, min(view.x(), 1.0 - width))
+        y = max(0.0, min(view.y(), 1.0 - height))
+        view = QRectF(x, y, width, height)
+        if view == self._view:
+            return
+        self._view = view
+        # Un cuadro que el pool arma con la vista anterior ya no se muestra
+        # (como al cambiar de camara): si no, el zoom viejo parpadea.
+        self._generacion += 1
+        self._update_cursor()
+        self._invalidate_render()
+        if self._device is not None:
+            self._refresh_frame()
+
+    def _update_cursor(self) -> None:
+        if self.is_zoomed():
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+        else:
+            self.unsetCursor()
+
+    def _view_pixels(self, frame_w: int, frame_h: int) -> tuple[int, int, int, int]:
+        """La vista en pixeles del cuadro: (x, y, ancho, alto)."""
+        view = self._view
+        width = max(1, min(frame_w, round(view.width() * frame_w)))
+        height = max(1, min(frame_h, round(view.height() * frame_h)))
+        x = max(0, min(frame_w - width, round(view.x() * frame_w)))
+        y = max(0, min(frame_h - height, round(view.y() * frame_h)))
+        return x, y, width, height
+
+    def _view_point(self, pos: QPointF) -> tuple[float, float]:
+        """Donde cae `pos` (coordenadas del tile) sobre el video mostrado, en
+        fracciones de su ancho y alto; el centro si todavia no se dibujo."""
+        rect = self._video_rect
+        if rect.isEmpty():
+            return 0.5, 0.5
+        u = (pos.x() - rect.x()) / rect.width()
+        v = (pos.y() - rect.y()) / rect.height()
+        return max(0.0, min(1.0, u)), max(0.0, min(1.0, v))
 
     # --- render -------------------------------------------------
 
@@ -574,18 +762,23 @@ class VideoTile(QWidget):
             return
 
         height, width = frame.shape[:2]
-        fitted = QSize(width, height).scaled(target_size, Qt.AspectRatioMode.KeepAspectRatio)
+        x, y, view_w, view_h = view = self._view_pixels(width, height)
+        fitted = QSize(view_w, view_h).scaled(target_size, Qt.AspectRatioMode.KeepAspectRatio)
         if fitted.isEmpty():  # tile todavia sin tamaño (antes de mostrarse)
             return
         # Achicar, convertir y dibujar las marcas va al pool de render (Fase
         # V1b): aca solo se toma la foto del estado que el overlay lee. El
         # cuadro es una referencia (los StreamWorker lo reemplazan, no lo
         # pisan) y los eventos, una copia del dict, que la GUI sigue tocando.
-        escena = self._escena()
+        # El recorte del zoom digital tambien se hace en el pool: `view` ya
+        # quedo fijo en la escena.
+        zoomed = self.is_zoomed()
+        escena = self._escena(view if zoomed else None)
         generacion = self._generacion
 
         def armar() -> QImage:
-            return self._draw_overlay(frame_to_image(frame, fitted), width, height, escena)
+            shown = frame[y : y + view_h, x : x + view_w] if zoomed else frame
+            return self._draw_overlay(frame_to_image(shown, fitted), width, height, escena)
 
         render_pool.pool().enviar(
             self._clave_render, armar, lambda imagen: self._mostrar(imagen, generacion)
@@ -593,14 +786,24 @@ class VideoTile(QWidget):
         self._last_rendered_ts = frame_ts
         self._last_rendered_size = target_size
         self._shown_ts = max(self._shown_ts, frame_ts)
+        self._frame_size = (width, height)
+        area = QRectF(self.video_label.geometry())
+        self._video_rect = QRectF(
+            area.x() + (area.width() - fitted.width()) / 2,
+            area.y() + (area.height() - fitted.height()) / 2,
+            fitted.width(),
+            fitted.height(),
+        )
 
-    def _escena(self) -> _Escena:
+    def _escena(self, vista: tuple[int, int, int, int] | None = None) -> _Escena:
         return _Escena(
             eventos=dict(self._latest_events),
             nombre=self._device.name if self._device else "",
             marcas=self._smart_marks,
             marca=self._branding_enabled(),
             nombre_marca=self._brand_name,
+            vista=vista,
+            zoom=self.zoom_level(),
         )
 
     def _mostrar(self, imagen: QImage, generacion: int) -> None:
@@ -636,9 +839,15 @@ class VideoTile(QWidget):
         recuadro viene en `escena`, salvo las configs de analiticas (una
         lista que la GUI reemplaza entera, nunca muta) y el destello de la
         linea (solo lo toca el render, uno en curso por recuadro). Con un
-        QPixmap (tests, GUI) dibuja sobre una copia."""
+        QPixmap (tests, GUI) dibuja sobre una copia.
+
+        Con zoom digital, `escena.vista` es la parte del cuadro que muestra
+        el canvas, en pixeles del cuadro; sin ella, el cuadro entero. Las
+        marcas vienen en pixeles del cuadro: se dibujan corridas al origen
+        de la vista."""
         if escena is None:
             escena = self._escena()
+        view_x, view_y, view_w, view_h = escena.vista or (0, 0, frame_w, frame_h)
         result = canvas if isinstance(canvas, QImage) else QPixmap(canvas)
         painter = QPainter(result)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -655,8 +864,8 @@ class VideoTile(QWidget):
         )
         timestamp = dt.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         self._draw_osd_text(painter, result.width(), 8, Qt.AlignmentFlag.AlignRight, timestamp)
-        scale_x = result.width() / frame_w
-        scale_y = result.height() / frame_h
+        scale_x = result.width() / view_w
+        scale_y = result.height() / view_h
         now = time.time()
         # Solo lecturas frescas: si un analizador se detuvo o se colgo, sus
         # ultimas cajas no pueden quedar dibujadas como si fueran en vivo.
@@ -666,13 +875,15 @@ class VideoTile(QWidget):
             if now - event.timestamp <= STALE_AFTER_S
         }
         if not escena.marcas:
+            self._draw_zoom_chips(painter, result.height(), escena.zoom)
             painter.end()
             return result
 
-        self._draw_people_heatmap(painter, fresh, result.width(), result.height())
+        # Lo que va sobre el cuadro, corrido al origen de la vista.
+        painter.save()
+        painter.translate(-view_x * scale_x, -view_y * scale_y)
+        self._draw_people_heatmap(painter, fresh, frame_w * scale_x, frame_h * scale_y)
         self._draw_analytics_guides(painter, fresh, scale_x, scale_y, now)
-        self._draw_analytics_status(painter, fresh, result.width())
-
         for analyzer_name, event in fresh.items():
             color = ANALYTIC_COLORS.get(analyzer_name, DETECTION_STROKE)
             for det in event.detections:
@@ -680,11 +891,76 @@ class VideoTile(QWidget):
                     self._draw_motion_mark(painter, det.polygon, scale_x, scale_y, color)
                 else:
                     self._draw_detection_box(painter, det, scale_x, scale_y, color, analyzer_name)
-
         self._draw_hands(painter, fresh, scale_x, scale_y, result.width())
+        self._draw_analysis_zoom(painter, scale_x, scale_y, (view_x, view_y, view_w, view_h))
+        painter.restore()
+
+        self._draw_analytics_status(painter, fresh, result.width())
+        self._draw_zoom_chips(painter, result.height(), escena.zoom)
         self._draw_incident_mark(painter, fresh, result.width(), result.height(), now)
         painter.end()
         return result
+
+    def _draw_analysis_zoom(
+        self,
+        painter: QPainter,
+        scale_x: float,
+        scale_y: float,
+        view: tuple[int, int, int, int],
+    ) -> None:
+        """El recorte que analiza la analitica, si corre sobre el zoom
+        digital: esquinas y borde punteado. No se dibuja si la vista ya esta
+        adentro del recorte (se ve solo lo analizado)."""
+        view_x, view_y, view_w, view_h = view
+        for config in self._zoom_configs():
+            region = active_zoom(config.analyzer_name, config.params)
+            if region is None:
+                continue
+            x, y, w, h = region
+            if (
+                x <= view_x
+                and y <= view_y
+                and x + w >= view_x + view_w
+                and y + h >= view_y + view_h
+            ):
+                continue
+            rect = QRectF(x * scale_x, y * scale_y, w * scale_x, h * scale_y)
+            pen = QPen(ANALYSIS_ZOOM_COLOR)
+            pen.setWidthF(1.4)
+            pen.setStyle(Qt.PenStyle.DotLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(rect)
+            self._draw_corner_brackets(painter, rect, ANALYSIS_ZOOM_COLOR, 1.6)
+            self._draw_guide_label(painter, rect.topLeft(), "Zoom analizado", ANALYSIS_ZOOM_COLOR)
+
+    def _draw_zoom_chips(self, painter: QPainter, height: int, zoom: float) -> None:
+        """Abajo a la izquierda: el zoom de la vista y, si la analitica corre
+        sobre el zoom digital, que no mira el cuadro entero. Corre en el pool:
+        el nivel llega en `zoom` (de la escena) y las configs son una lista
+        que la GUI reemplaza entera, como en el resto del overlay."""
+        chips = []
+        if any(active_zoom(c.analyzer_name, c.params) for c in self._zoom_configs()):
+            chips.append(("Analítica sobre el zoom", ANALYSIS_ZOOM_COLOR))
+        if zoom > 1.0:
+            level = f"{zoom:.1f}".replace(".", ",")
+            chips.append((f"Zoom {level}×", QColor("#e5e7eb")))
+        metrics = painter.fontMetrics()
+        y = height - 28.0
+        for text, color in chips:
+            rect = QRectF(8, y, metrics.horizontalAdvance(text) + 26.0, 20)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(15, 23, 42, 215))
+            painter.drawRoundedRect(rect, 6, 6)
+            painter.setBrush(color)
+            painter.drawEllipse(QPointF(rect.left() + 10, rect.center().y()), 3.5, 3.5)
+            painter.setPen(QColor("#e5e7eb"))
+            painter.drawText(
+                rect.adjusted(18, 0, -6, 0),
+                int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+                text,
+            )
+            y -= 24
 
     def _draw_hands(
         self,
@@ -810,6 +1086,13 @@ class VideoTile(QWidget):
                 zone_text = None
                 screens = metrics.get("zonas") if name == "monitor_tamper" else None
                 zone_alert = False
+                if (
+                    screens
+                    and index < len(screens)
+                    and screens[index].get("estado") == OUTSIDE_ZOOM
+                ):
+                    self._draw_outside_zone(painter, rect, index)
+                    continue
                 if metrics.get("modo") == "ruleta":
                     zone = screens[index] if screens and index < len(screens) else {}
                     armed = bool((metrics.get("ronda") or {}).get("pano_armado"))
@@ -873,6 +1156,18 @@ class VideoTile(QWidget):
                 self._draw_crossing_line(
                     painter, config, line, metrics, scale_x, scale_y, now < self._line_flash_until
                 )
+
+    def _draw_outside_zone(self, painter: QPainter, rect: QRectF, index: int) -> None:
+        """Una zona que quedo fuera del zoom de la analitica: no se analiza."""
+        pen = QPen(OUTSIDE_ZOOM_COLOR)
+        pen.setWidthF(1.2)
+        pen.setStyle(Qt.PenStyle.DotLine)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(rect)
+        self._draw_guide_label(
+            painter, rect.topLeft(), f"Zona {index + 1} · fuera del zoom", OUTSIDE_ZOOM_COLOR
+        )
 
     @staticmethod
     def _roulette_zone_style(
@@ -1177,10 +1472,13 @@ class VideoTile(QWidget):
         else:
             rect = QRectF(point.x() + 5, point.y() + 5, width, 18)
         # Que no se salga del cuadro (etiquetas de flechas cerca del borde).
+        # Con zoom el cuadro se dibuja corrido: se acota en pixeles del tile.
         device = painter.device()
         if device is not None:
-            rect.moveLeft(max(2.0, min(rect.left(), device.width() - width - 2)))
-            rect.moveTop(max(2.0, min(rect.top(), device.height() - 20.0)))
+            transform = painter.worldTransform()
+            dx, dy = transform.dx(), transform.dy()
+            rect.moveLeft(max(2.0 - dx, min(rect.left(), device.width() - width - 2 - dx)))
+            rect.moveTop(max(2.0 - dy, min(rect.top(), device.height() - 20.0 - dy)))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(8, 15, 24, 220))
         painter.drawRoundedRect(rect, 4, 4)

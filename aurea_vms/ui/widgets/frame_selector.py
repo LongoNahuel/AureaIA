@@ -1,12 +1,16 @@
 """Widget que muestra un snapshot de una camara y permite dibujar con el
 mouse un rectangulo (ROI) o una linea (cruce de linea) sobre el frame.
-Traduce coordenadas del widget escalado a pixeles del frame original."""
+Traduce coordenadas del widget escalado a pixeles del frame original.
+
+Zoom digital: guarda aparte un rectangulo de zoom (capture_zoom: el proximo
+rectangulo que se dibuje es el zoom) y puede mostrar solo esa parte del
+cuadro (set_view). Todo se devuelve en pixeles del cuadro completo."""
 
 from __future__ import annotations
 
 import cv2
 import numpy as np
-from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPaintEvent, QPen, QPixmap
 from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
 
@@ -15,9 +19,14 @@ Rect = tuple[int, int, int, int]
 
 SELECTION_COLOR = QColor("#3b82f6")
 DRAG_COLOR = QColor("#facc15")
+ZOOM_COLOR = QColor("#facc15")
+# Lado minimo del zoom, en pixeles del cuadro (ver digital_zoom.MIN_ZOOM_SIDE).
+MIN_ZOOM_SIDE = 32
 
 
 class FrameSelectorWidget(QLabel):
+    zoom_changed = Signal(object)  # el rectangulo del zoom (x, y, w, h) o None
+
     def __init__(self, mode: str, parent: QWidget | None = None, *, max_rects: int = 1) -> None:
         super().__init__(parent)
         if mode not in ("rect", "rects", "line"):
@@ -31,6 +40,9 @@ class FrameSelectorWidget(QLabel):
         self._selection: Rect | None = None
         self._selections: list[Rect] = []
         self._line: tuple[Point, Point] | None = None
+        self._zoom: Rect | None = None
+        self._capture_zoom = False
+        self._view: Rect | None = None
 
         self.setMinimumSize(320, 180)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -72,6 +84,40 @@ class FrameSelectorWidget(QLabel):
         self._line = None
         self.update()
 
+    # --- zoom digital -------------------------------------------------------
+
+    def set_zoom_rect(self, rect: Rect | None) -> None:
+        self._zoom = tuple(rect) if rect is not None else None
+        self.update()
+
+    def zoom_rect(self) -> Rect | None:
+        return self._zoom
+
+    def capture_zoom(self, enabled: bool = True) -> None:
+        """El proximo rectangulo que se dibuje es el zoom, no una zona."""
+        self._capture_zoom = enabled
+        self.setCursor(Qt.CursorShape.CrossCursor if enabled else Qt.CursorShape.ArrowCursor)
+
+    def is_capturing_zoom(self) -> bool:
+        return self._capture_zoom
+
+    def set_view(self, rect: Rect | None) -> None:
+        """Muestra solo `rect` del cuadro (None: el cuadro entero)."""
+        self._view = tuple(rect) if rect is not None else None
+        self.update()
+
+    def view(self) -> Rect | None:
+        return self._view
+
+    def _shown(self) -> Rect:
+        """La parte del cuadro que se muestra, acotada al cuadro."""
+        height, width = self._frame.shape[:2]
+        if self._view is None:
+            return (0, 0, width, height)
+        x, y, w, h = self._view
+        x, y = max(0, min(x, width - 1)), max(0, min(y, height - 1))
+        return (x, y, max(1, min(w, width - x)), max(1, min(h, height - y)))
+
     def paintEvent(self, event: QPaintEvent) -> None:
         if self._frame is None:
             super().paintEvent(event)
@@ -79,7 +125,9 @@ class FrameSelectorWidget(QLabel):
 
         painter = QPainter(self)
 
-        rgb = cv2.cvtColor(self._frame, cv2.COLOR_BGR2RGB)
+        view_x, view_y, view_w, view_h = self._shown()
+        shown = self._frame[view_y : view_y + view_h, view_x : view_x + view_w]
+        rgb = cv2.cvtColor(shown, cv2.COLOR_BGR2RGB)
         height, width, _ = rgb.shape
         image = QImage(rgb.data, width, height, 3 * width, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(image).scaled(
@@ -92,6 +140,20 @@ class FrameSelectorWidget(QLabel):
         offset_y = (self.height() - pixmap.height()) // 2
         self._pixmap_rect = QRect(offset_x, offset_y, pixmap.width(), pixmap.height())
         painter.drawPixmap(self._pixmap_rect, pixmap)
+        painter.setClipRect(self._pixmap_rect)
+
+        if self._zoom is not None:
+            zoom = self._frame_rect_to_widget(self._zoom)
+            if zoom is not None:
+                pen = QPen(ZOOM_COLOR, 2)
+                pen.setStyle(Qt.PenStyle.DashLine)
+                painter.setPen(pen)
+                painter.drawRect(zoom)
+                painter.drawText(
+                    zoom.adjusted(6, 4, -6, -4),
+                    int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop),
+                    "Zoom digital",
+                )
 
         pen = QPen(SELECTION_COLOR, 2)
         painter.setPen(pen)
@@ -108,8 +170,8 @@ class FrameSelectorWidget(QLabel):
                 painter.drawLine(p1, p2)
 
         if self._drag_start is not None and self._drag_current is not None:
-            painter.setPen(QPen(DRAG_COLOR, 2))
-            if self._mode in ("rect", "rects"):
+            painter.setPen(QPen(ZOOM_COLOR if self._capture_zoom else DRAG_COLOR, 2))
+            if self._mode in ("rect", "rects") or self._capture_zoom:
                 painter.drawRect(QRect(self._drag_start, self._drag_current).normalized())
             else:
                 painter.drawLine(self._drag_start, self._drag_current)
@@ -123,17 +185,17 @@ class FrameSelectorWidget(QLabel):
             min(max(point.x(), self._pixmap_rect.left()), self._pixmap_rect.right()),
             min(max(point.y(), self._pixmap_rect.top()), self._pixmap_rect.bottom()),
         )
-        height, width = self._frame.shape[:2]
+        view_x, view_y, width, height = self._shown()
         rel_x = (clamped.x() - self._pixmap_rect.x()) / self._pixmap_rect.width()
         rel_y = (clamped.y() - self._pixmap_rect.y()) / self._pixmap_rect.height()
-        return int(rel_x * width), int(rel_y * height)
+        return view_x + int(rel_x * width), view_y + int(rel_y * height)
 
     def _frame_point_to_widget(self, point: Point) -> QPoint | None:
         if self._frame is None or self._pixmap_rect.isNull():
             return None
-        height, width = self._frame.shape[:2]
-        x = self._pixmap_rect.x() + (point[0] / width) * self._pixmap_rect.width()
-        y = self._pixmap_rect.y() + (point[1] / height) * self._pixmap_rect.height()
+        view_x, view_y, width, height = self._shown()
+        x = self._pixmap_rect.x() + ((point[0] - view_x) / width) * self._pixmap_rect.width()
+        y = self._pixmap_rect.y() + ((point[1] - view_y) / height) * self._pixmap_rect.height()
         return QPoint(int(x), int(y))
 
     def _frame_rect_to_widget(self, rect: Rect) -> QRectF | None:
@@ -167,7 +229,14 @@ class FrameSelectorWidget(QLabel):
         self._drag_start = None
         self._drag_current = None
 
-        if start_frame is not None and end_frame is not None:
+        if self._capture_zoom and start_frame is not None and end_frame is not None:
+            (x1, y1), (x2, y2) = start_frame, end_frame
+            w, h = abs(x2 - x1), abs(y2 - y1)
+            if w >= MIN_ZOOM_SIDE and h >= MIN_ZOOM_SIDE:
+                self._zoom = (min(x1, x2), min(y1, y2), w, h)
+                self.capture_zoom(False)
+                self.zoom_changed.emit(self._zoom)
+        elif start_frame is not None and end_frame is not None:
             if self._mode in ("rect", "rects"):
                 x1, y1 = start_frame
                 x2, y2 = end_frame

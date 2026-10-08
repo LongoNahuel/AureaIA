@@ -343,6 +343,9 @@ class TableHands:
         self._tracks: list[_Track] = []
         self._next_id = 0
         self._frames = 0
+        # El cuadro completo cuando se analiza un recorte (zoom digital):
+        # PERSON_MAX_AREA es una fraccion de el, no del recorte.
+        self.reference_size: tuple[int, int] | None = None
 
     @property
     def croupier_located(self) -> bool:
@@ -351,7 +354,8 @@ class TableHands:
     def people(self, frame: np.ndarray) -> list[Person]:
         height, width = frame.shape[:2]
         if self._frames % PEOPLE_EVERY == 0:
-            limit = PERSON_MAX_AREA * width * height
+            reference_w, reference_h = self.reference_size or (width, height)
+            limit = PERSON_MAX_AREA * reference_w * reference_h
             detections = [
                 d
                 for d in self._detector.detect(frame, ["person"], PERSON_MIN_CONFIDENCE)
