@@ -205,9 +205,11 @@ que se trabajan ese mismo día:
 Hecho: las fases V1, V1b, V2, V3 y V4 de `sesiones/2026-10-07.md`.
 Queda:
 
-- **V5: arrastrar una pestaña afuera de la barra.** Hoy se desacopla por el
-  menú contextual. Depende de la plataforma (X11, Wayland y Windows): hay
-  que probarlo a mano en las tres.
+- ~~**V5: arrastrar una pestaña afuera de la barra**~~ — hecha el 08/10.
+  Afuera de la barra abre una ventana bajo el cursor, y soltada sobre otra
+  ventana de la app pasa a esa. Falta probarla a mano en Windows; en
+  Wayland la ventana no queda bajo el cursor (el menú contextual sigue
+  estando).
 - **Probar a mano con 2 monitores reales y en el build de Windows.** Daniel
   lo probó en X11 con un solo monitor: desacoplar anda bien y la
   disposición se guarda.
