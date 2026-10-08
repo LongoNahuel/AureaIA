@@ -288,6 +288,10 @@ class _SesionCompartida:
 _sesiones: dict[str, _SesionCompartida] = {}
 _lock = threading.Lock()
 
+# Opcion de sesion de onnxruntime: si los hilos intra-op giran esperando
+# trabajo (default "1") o duermen ("0"). Ver _crear_sesion.
+ALLOW_SPINNING = "session.intra_op.allow_spinning"
+
 
 def _crear_sesion(ruta_modelo: str) -> onnxruntime.InferenceSession:
     options = onnxruntime.SessionOptions()
@@ -299,6 +303,13 @@ def _crear_sesion(ruta_modelo: str) -> onnxruntime.InferenceSession:
     # de captura de cada camara y la UI; una sola sesion saca esa contencion.
     # O sea que no hubo trade-off RAM/CPU: se gano en las dos.
     options.intra_op_num_threads = 2
+    # Los hilos intra-op duermen entre inferencias en vez de quedar girando
+    # (el default de onnxruntime). Medido el 2026-10-08 con las 3 analiticas
+    # del rig a 5 fps: con el mismo throughput, el proceso bajo de 174-213 %
+    # a 92-135 % de CPU, la latencia mediana de detect() subio 2-5 ms y la
+    # capacidad maxima (2 hilos sin pausa) quedo igual, ~48 inferencias/s.
+    # Una analitica que no satura el CPU no tiene por que quemarlo esperando.
+    options.add_session_config_entry(ALLOW_SPINNING, "0")
     return onnxruntime.InferenceSession(
         ruta_modelo, sess_options=options, providers=["CPUExecutionProvider"]
     )
