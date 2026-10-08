@@ -22,7 +22,8 @@ despues de que la base de desarrollo perdiera 190 archivos en un arranque):
 Los avisos de "sin configurar" y de "evidencia protegida" salen una vez
 cuando el estado aparece, no en cada pasada (2026-10-08): repetidos cada 30
 minutos tapaban el resto del log. Si el estado se va y vuelve, se avisa de
-nuevo.
+nuevo. Cada aviso tambien sale por event_bus.retention_status, para el
+toast del admin (Fase R2).
 """
 
 from __future__ import annotations
@@ -32,6 +33,14 @@ import threading
 import time
 
 from aurea_vms.core import app_prefs, media_store
+from aurea_vms.core.event_bus import event_bus
+from aurea_vms.core.events import (
+    RETENCION_AL_TOPE,
+    RETENCION_EVIDENCIA_PROTEGIDA,
+    RETENCION_PREFS_ILEGIBLES,
+    RETENCION_SIN_CONFIGURAR,
+    RetentionStatus,
+)
 from aurea_vms.models import repository
 from aurea_vms.models.media_asset import MediaAsset
 
@@ -174,7 +183,7 @@ class RetentionWorker(threading.Thread):
             dias, gb = app_prefs.leer_retencion()
         except app_prefs.RetencionSinConfigurar:
             self._avisar_una_vez(
-                "sin_configurar",
+                RETENCION_SIN_CONFIGURAR,
                 "Retención sin configurar: no se borra nada. Configurala en %s "
                 "(días y tamaño máximo) para que la media vieja se pode.",
                 app_prefs.DONDE_SE_CONFIGURA,
@@ -185,8 +194,9 @@ class RetentionWorker(threading.Thread):
             # operador configuro conservar (ver core/app_prefs.py). Se
             # saltea la pasada y se reintenta en la proxima.
             logger.error("Retención suspendida: no se pudieron leer las preferencias (%s)", exc)
+            event_bus.retention_status.emit(RetentionStatus(RETENCION_PREFS_ILEGIBLES))
             return
-        self._avisados.discard("sin_configurar")
+        self._avisados.discard(RETENCION_SIN_CONFIGURAR)
         try:
             stats = prune(max_age_days=dias, max_total_gb=gb)
         except Exception:
@@ -194,13 +204,13 @@ class RetentionWorker(threading.Thread):
             return
         if stats.get("protegida"):
             self._avisar_una_vez(
-                "protegida",
+                RETENCION_EVIDENCIA_PROTEGIDA,
                 "Retención: se pasó el tope de %.1f GB y lo que queda es evidencia de "
                 "incidentes en investigación o media recién creada: no se borra.",
                 gb,
             )
         else:
-            self._avisados.discard("protegida")
+            self._avisados.discard(RETENCION_EVIDENCIA_PROTEGIDA)
         if stats.get("al_tope"):
             logger.error(
                 "Retención: la pasada llegó al tope (%d archivos, %.1f MB) y queda más "
@@ -209,6 +219,13 @@ class RetentionWorker(threading.Thread):
                 stats["deleted"],
                 stats["freed_bytes"] / 1024**2,
                 app_prefs.DONDE_SE_CONFIGURA,
+            )
+            event_bus.retention_status.emit(
+                RetentionStatus(
+                    RETENCION_AL_TOPE,
+                    deleted=int(stats["deleted"]),
+                    freed_bytes=int(stats["freed_bytes"]),
+                )
             )
         elif stats["deleted"]:
             logger.info(
@@ -221,6 +238,7 @@ class RetentionWorker(threading.Thread):
         if estado not in self._avisados:
             self._avisados.add(estado)
             logger.warning(mensaje, *args)
+            event_bus.retention_status.emit(RetentionStatus(estado))
 
     def stop(self) -> None:
         self._stop_event.set()

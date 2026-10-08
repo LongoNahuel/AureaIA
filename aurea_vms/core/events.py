@@ -109,3 +109,20 @@ class DeviceStatusEvent:
 class ClipReadyEvent:
     alarm_event_id: int
     clip_path: str
+
+
+# Tipos de RetentionStatus (lo que la UI le avisa al admin).
+RETENCION_SIN_CONFIGURAR = "sin_configurar"
+RETENCION_PREFS_ILEGIBLES = "prefs_ilegibles"
+RETENCION_AL_TOPE = "al_tope"
+RETENCION_EVIDENCIA_PROTEGIDA = "evidencia_protegida"
+
+
+@dataclass(frozen=True)
+class RetentionStatus:
+    """Algo de la retencion que un admin tiene que saber (Fase R2,
+    2026-10-08). Lo emite el RetentionWorker; MainWindow lo muestra."""
+
+    tipo: str
+    deleted: int = 0
+    freed_bytes: int = 0

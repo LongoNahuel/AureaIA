@@ -16,6 +16,7 @@ from aurea_vms.core.events import (
     ClipReadyEvent,
     DetectionEvent,
     DeviceStatusEvent,
+    RetentionStatus,
 )
 
 
@@ -24,6 +25,8 @@ class EventBus(QObject):
     alarm = Signal(AlarmEvent)
     device_status = Signal(DeviceStatusEvent)
     clip_ready = Signal(ClipReadyEvent)
+    # Avisos de la retencion para el admin (RetentionWorker -> MainWindow).
+    retention_status = Signal(RetentionStatus)
     # UI-only: pedido de "Vista rapida" desde Dispositivos -> abrir/enfocar
     # Vista en Vivo con esta camara asignada. Lo emite un modulo (hilo
     # principal), lo escucha MainWindow (tambien hilo principal).

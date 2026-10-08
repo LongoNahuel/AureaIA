@@ -206,6 +206,17 @@ def retencion_configurada() -> bool:
     return True
 
 
+def confirmada_el() -> datetime | None:
+    """Para la UI: cuando se confirmo la retencion vigente, o None si no
+    esta configurada (o la marca no es una fecha)."""
+    if not retencion_configurada():
+        return None
+    try:
+        return datetime.fromisoformat(str(_leer_crudo().get(RETENCION_CONFIRMADA)))
+    except (PrefsIlegibles, ValueError):
+        return None
+
+
 def get_theme() -> str:
     """ "dark" | "light"."""
     return _read().get("theme", "dark")
