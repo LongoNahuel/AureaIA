@@ -138,6 +138,13 @@ que se trabajan ese mismo día:
 
 ## Empaquetado y despliegue
 
+- 🟠 **La PC del cliente tiene que estar en un plan de energía de
+  rendimiento.** El 08/10, en `power-saver` (CPU a ~830 MHz), YOLOX tardaba
+  81 ms contra 29 ms, las analíticas no llegaban a sus fps y la app se
+  trababa con un solo canal. Falta sumarlo a la guía de instalación
+  (Windows: «Alto rendimiento») y, quizás, que el smoke avise si el CPU
+  está muy por debajo de su frecuencia máxima.
+
 - `console=True` en el spec mientras el build madura; flip a `False` para la
   entrega final.
 - `main()` nunca llama a `app.setWindowIcon()` (`main.py:157-160`), así que el
@@ -200,6 +207,13 @@ que se trabajan ese mismo día:
   textos, guías y zonas) o achicar en el `StreamWorker`. Con marcas reales
   de analíticas el overlay cuesta más; falta medirlo con detecciones.
 
+- **Las analíticas corren siempre, se mire o no la cámara** (medido el
+  08/10, perfil `performance`): con 3 analíticas a 5 fps, los motores
+  consumen ~1,3-1,4 núcleos después de `allow_spinning=0`. En un casino la
+  detección tiene que seguir aunque nadie mire. Si hace falta bajar más, es
+  una decisión de producto con Nahuel: fps de análisis por cámara o por
+  tipo (ver `analytics_fps` en «Video / analíticas»).
+
 ## Multi-monitor (pestañas en varias ventanas, 07/10)
 
 Hecho: las fases V1, V1b, V2, V3 y V4 de `sesiones/2026-10-07.md`.
@@ -227,10 +241,12 @@ reprodujeron están en [`sesiones/2026-09-23.md`](../sesiones/2026-09-23.md).
   esperar. Aparece en `device_management.py:315-325`,
   `ptz_control_panel.py:88-95`, `onvif_discovery_dialog.py:62-66` y
   `analytics_config_dialog_base.py:163-168`.
-- 🟠 **La `MainWindow` vieja sigue viva tras cerrar sesión**: los lambdas que
-  capturan `self` (`main_window.py:177-179`, `live_view.py:204,207,234`) la
-  mantienen suscrita al `event_bus`. Con N cierres de sesión, cada alarma
-  suena y notifica N+1 veces.
+- ~~🟠 **La `MainWindow` vieja sigue viva tras cerrar sesión**~~ — resuelto
+  el 07/10 con `WA_DeleteOnClose` (ver «Hecho»). El 08/10 las lambdas que
+  capturaban `self` en `pestanas.py` y `ventana_secundaria.py` pasaron a
+  métodos. Quedan lambdas así en `live_view.py` (líneas 111 y 352) y en las
+  3 conexiones de la barra de la principal (`main_window.py:201-205`): no
+  fugan mientras la ventana se borre, pero conviene no sumar más.
 - 🟠 **`DuplicateError` sin capturar** en `sites_zones_module.py:263,269,287,293`
   y `user_management_module.py:195`: con los UNIQUE nuevos, una zona repetida
   no se guarda y no avisa nada. Solo `device_dialog.py` lo maneja.
@@ -303,6 +319,19 @@ Salieron de la revisión del 2026-09-24 de `f309d79`; el detalle está en
   Sitios → Zonas → Cámaras).
 
 ## Hecho
+
+- ~~Los hilos de ONNX giraban entre inferencias~~ — 08/10 (Fase P):
+  `allow_spinning=0` en la sesión compartida (YOLOX y RTMPose). Con el mismo
+  throughput, los motores bajan de 174-213 % a 92-141 % de CPU; la latencia
+  sube 2-5 ms y la capacidad máxima no cambia (~48 inferencias/s).
+- ~~Arrastrar una pestaña afuera de la barra~~ — 08/10 (V5): la lleva a la
+  ventana de la app que esté debajo o abre una nueva bajo el cursor.
+- ~~Zoom digital de Nahuel (`zoom-digital`)~~ — mergeado el 08/10, adaptado al
+  pool de render (la vista viaja en `_Escena`) y a varias ventanas: el clic
+  en un popup y «Ajustes avanzados» usan el widget que devuelve
+  `open_module_by_index`, y el popup de una secundaria también abre Alarmas.
+- ~~La suite leía el `data/preferences.json` real~~ — 08/10: el conftest lo
+  aísla en cada test.
 
 - ~~Las pestañas solo vivían en una ventana~~ — 07/10: cualquier pestaña
   (menos Inicio) se lleva a otra ventana por el menú contextual sin cortar
