@@ -75,19 +75,31 @@ SPACE = {"xs": 4, "s": 8, "m": 12, "l": 16, "xl": 24}
 FONT_PX = {"caption": 12, "body": 13, "title": 18, "kpi": 28}
 
 
-def severity_dot(severity: str, size: int = 10) -> QIcon:
-    """Un punto del color de la severidad, para el icono de la celda: marca
-    la fila sin pintar la celda entera. Cuando todo era critico, la tabla
-    quedaba roja de punta a punta y el color ya no distinguia nada."""
+def rgba(color: str, alpha: float) -> str:
+    """Un color con transparencia para hojas de estilo. Qt lee "#RRGGBBAA"
+    como "#AARRGGBB": "#f59e0b22" (ambar al 13 %) salia rojo oscuro."""
+    qcolor = QColor(color)
+    return f"rgba({qcolor.red()}, {qcolor.green()}, {qcolor.blue()}, {alpha:.2f})"
+
+
+def dot_icon(color: str | QColor, size: int = 10) -> QIcon:
+    """Un punto de color como icono (estado en tablas, chips y listas)."""
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(severity_qcolor(severity))
+    painter.setBrush(QColor(color))
     painter.drawEllipse(0, 0, size, size)
     painter.end()
     return QIcon(pixmap)
+
+
+def severity_dot(severity: str, size: int = 10) -> QIcon:
+    """Un punto del color de la severidad, para el icono de la celda: marca
+    la fila sin pintar la celda entera. Cuando todo era critico, la tabla
+    quedaba roja de punta a punta y el color ya no distinguia nada."""
+    return dot_icon(severity_qcolor(severity), size)
 
 
 _DARK_PALETTE = {

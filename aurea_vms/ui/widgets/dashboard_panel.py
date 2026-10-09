@@ -52,12 +52,15 @@ def alarm_summary(site_id: int | None) -> tuple[int, int]:
 
 
 class DashboardPanel(QWidget):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, title: str | None = "Estado del sistema"
+    ) -> None:
         super().__init__(parent)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(SPACE["s"])
-        outer.addWidget(StrongBodyLabel("Estado del sistema", self))
+        if title:
+            outer.addWidget(StrongBodyLabel(title, self))
 
         row = QHBoxLayout()
         row.setSpacing(SPACE["m"])

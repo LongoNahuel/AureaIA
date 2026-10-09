@@ -227,15 +227,18 @@ class AlarmModule(QWidget):
         detail_layout.addWidget(self.notes_edit)
         detail_layout.addLayout(notes_buttons)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal, self)
-        splitter.addWidget(table_side)
-        splitter.addWidget(detail)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        self.splitter.addWidget(table_side)
+        self.splitter.addWidget(detail)
+        self.splitter.setStretchFactor(0, 3)
+        self.splitter.setStretchFactor(1, 2)
+        # La lista primero (Fase 2 de la interfaz, 2026-10-08): el detalle
+        # arrancaba con mas de la mitad del ancho mostrando "Sin captura".
+        self.splitter.setSizes([620, 380])
 
         layout = QVBoxLayout(self)
         layout.addLayout(filters)
-        layout.addWidget(splitter, stretch=1)
+        layout.addWidget(self.splitter, stretch=1)
 
         event_bus.alarm.connect(self._on_alarm, Qt.ConnectionType.QueuedConnection)
         event_bus.clip_ready.connect(self._on_clip_ready, Qt.ConnectionType.QueuedConnection)
@@ -342,6 +345,13 @@ class AlarmModule(QWidget):
                 self.table.scrollToItem(self.table.item(row, 0))
                 return True
         return False
+
+    def show_status(self, status: str | None) -> None:
+        """Filtra por estado (la insignia de alertas de la barra superior
+        abre Alarmas en "Sin reconocer")."""
+        index = self.status_combo.findData(status)
+        if index >= 0:
+            self.status_combo.setCurrentIndex(index)
 
     def focus_event(self, alarm_event_id: int) -> bool:
         """Muestra un incidente en el detalle (clic en el popup de una

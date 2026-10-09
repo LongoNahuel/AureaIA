@@ -1,7 +1,13 @@
 """Ventana principal: una sola ventana con pestañas (al estilo Genetec
-Security Center) -- una pestaña "Inicio" fija con el launcher de tarjetas
-por categoria, y una pestaña por cada modulo que se va abriendo desde ahi
-(o se re-activa, si ya estaba abierta)."""
+Security Center) -- una pestaña "Inicio" fija con el resumen operativo, y
+una pestaña por cada modulo que se abre (o se re-activa, si ya estaba
+abierta).
+
+Fase 2 de la interfaz (2026-10-08): arriba, la barra con la marca, el
+estado global (camaras y alertas sin reconocer) y la sesion
+(widgets/top_bar.py); a la izquierda, el riel de navegacion
+(widgets/nav_rail.py), que abre los modulos con open_module_by_index igual
+que antes las tarjetas de Inicio."""
 
 from __future__ import annotations
 
@@ -17,7 +23,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from qfluentwidgets import BodyLabel, ComboBox, FluentIcon, PushButton
+from qfluentwidgets import FluentIcon
 
 from aurea_vms.core import app_prefs, app_state, auth, desktop_notify
 from aurea_vms.core.event_bus import event_bus
@@ -31,6 +37,7 @@ from aurea_vms.core.events import (
 )
 from aurea_vms.core.permissions import Perm, can
 from aurea_vms.models import repository
+from aurea_vms.models.alarm_event import STATUS_NEW
 from aurea_vms.models.user import ROLE_LABELS
 from aurea_vms.ui import icons, layout_store, pestanas, sound
 from aurea_vms.ui.dialogs.command_palette_dialog import (
@@ -52,7 +59,11 @@ from aurea_vms.ui.modules.user_management_module import UserManagementModule
 from aurea_vms.ui.notify import confirm, warn, warn_con_accion
 from aurea_vms.ui.pestanas import HOME_ROUTE_KEY, PestanasMovibles
 from aurea_vms.ui.ventana_secundaria import VentanaSecundaria
+from aurea_vms.ui.widgets.dashboard_panel import alarm_summary, cameras_summary
 from aurea_vms.ui.widgets.global_alert_popup import GlobalAlertPopupLayer
+from aurea_vms.ui.widgets.nav_rail import HOME as RAIL_HOME
+from aurea_vms.ui.widgets.nav_rail import NavRail
+from aurea_vms.ui.widgets.top_bar import TopBar
 from aurea_vms.ui.window_manager import WindowManager, route_key_de
 
 WINDOW_SIZE = (1320, 840)
@@ -70,8 +81,26 @@ MODULES = [
     ("Sistema", icons.icon_system, SystemModule),
     ("Usuarios", icons.icon_users, UserManagementModule),
     ("Sitios y Zonas", icons.icon_sites, SitesZonesModule),
-    ("Dashboard de Eventos", icons.icon_alarms, EventDashboardModule),
+    ("Dashboard de Eventos", icons.icon_dashboard, EventDashboardModule),
 ]
+
+# El riel: operacion arriba (con Inicio primero), configuracion abajo, con
+# rotulos cortos (el riel mide 80 px: "Dispositivos" en negrita entra justo).
+RAIL_OPERATION = [
+    ("Vista en Vivo", "En vivo"),
+    ("Vista Inteligente", "Inteligente"),
+    ("Alarmas", "Alarmas"),
+    ("Dashboard de Eventos", "Eventos"),
+]
+RAIL_CONFIGURATION = [
+    ("Dispositivos", "Dispositivos"),
+    ("Analizadores", "Analíticas"),
+    ("Alertas", "Reglas"),
+    ("Sitios y Zonas", "Sitios"),
+    ("Usuarios", "Usuarios"),
+    ("Sistema", "Sistema"),
+]
+STATUS_REFRESH_MS = 5000
 
 CATEGORIES = {
     "Operación": ["Vista en Vivo", "Vista Inteligente", "Alarmas", "Dashboard de Eventos"],
@@ -194,7 +223,15 @@ class MainWindow(QMainWindow):
         central_layout = QVBoxLayout(central)
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
-        central_layout.addLayout(self._build_header())
+        central_layout.addWidget(self._build_header())
+
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+        self.rail = self._build_rail()
+        self.rail.requested.connect(self._on_rail_requested)
+        body.addWidget(self.rail)
+        central_layout.addLayout(body, stretch=1)
 
         self.nombre = "principal"
         self.tabs = PestanasMovibles(self)
@@ -205,7 +242,10 @@ class MainWindow(QMainWindow):
         self.tabs.tabAddRequested.connect(lambda: self.nueva_vista_en_vivo(self))
         self.tabs.tabBar.setAddButtonVisible(self.puede_ver_en_vivo())
         self.tabs.cambio.connect(self.marcar_cambio)
-        central_layout.addWidget(self.tabs, stretch=1)
+        # El stacked, no la barra: TabWidget emite currentChanged solo al
+        # clickear una pestaña, no cuando open_module_by_index la cambia.
+        self.tabs.stackedWidget.currentChanged.connect(self._sync_rail)
+        body.addWidget(self.tabs, stretch=1)
 
         self.setCentralWidget(central)
 
@@ -213,9 +253,19 @@ class MainWindow(QMainWindow):
             MODULES, self._visible_categories(), auth.is_admin(), self.tabs
         )
         self.launcher.module_requested.connect(self.open_module_by_index)
-        self.launcher.shortcut_requested.connect(self._on_home_shortcut)
+        self.launcher.incident_requested.connect(self._on_open_alarm_requested)
+        self.launcher.camera_requested.connect(self._on_open_live_view_requested)
         self.tabs.addTab(self.launcher, "Inicio", FluentIcon.HOME, routeKey=HOME_ROUTE_KEY)
         self.tabs.setCurrentIndex(0)
+        self._sync_rail()
+
+        # Estado global de la barra y la insignia de Alarmas: cada 5 s, en
+        # cada alarma y al cambiar de sitio.
+        self._status_timer = QTimer(self)
+        self._status_timer.setInterval(STATUS_REFRESH_MS)
+        self._status_timer.timeout.connect(self.refresh_status)
+        self._status_timer.start()
+        self.refresh_status()
 
         event_bus.open_live_view_requested.connect(
             self._on_open_live_view_requested, Qt.ConnectionType.QueuedConnection
@@ -246,23 +296,17 @@ class MainWindow(QMainWindow):
 
         QShortcut(QKeySequence("Ctrl+K"), self, lambda: self.abrir_paleta(self))
 
-    def _build_header(self) -> QHBoxLayout:
-        row = QHBoxLayout()
-        row.setContentsMargins(14, 8, 14, 8)
-
-        row.addStretch(1)
-
+    def _build_header(self) -> TopBar:
         user = auth.current_user
         role_label = ROLE_LABELS.get(user.role, user.role) if user is not None else "?"
         name = user.username if user is not None else "?"
-        row.addWidget(BodyLabel(f"{name} · {role_label}"))
-        row.addSpacing(18)
+        self.top_bar = TopBar(name, role_label, self)
+        self.top_bar.logout_requested.connect(self._on_logout)
+        self.top_bar.alerts_clicked.connect(self._open_unacknowledged)
 
         # Selector global de sitio: filtra Vista en Vivo, Dispositivos y
         # Alarmas en toda la app (via app_state + site_filter_changed).
-        row.addWidget(BodyLabel("Sitio:"))
-        row.addSpacing(6)
-        self.site_combo = ComboBox()
+        self.site_combo = self.top_bar.site_combo
         self.site_combo.addItem("Todos los sitios", userData=None)
         for site in repository.list_sites():
             self.site_combo.addItem(site.name, userData=site.id)
@@ -271,18 +315,62 @@ class MainWindow(QMainWindow):
         self.site_combo.currentIndexChanged.connect(
             lambda _i: app_state.set_site_filter(self.site_combo.currentData())
         )
-        row.addWidget(self.site_combo)
-        row.addSpacing(10)
+        return self.top_bar
 
-        logout_button = PushButton(FluentIcon.RETURN, "Cerrar sesión")
-        logout_button.clicked.connect(self._on_logout)
-        row.addWidget(logout_button)
-        return row
+    def _build_rail(self) -> NavRail:
+        """Solo los modulos que el rol puede abrir."""
+        labels = [label for label, _icon, _cls in MODULES]
+
+        def items(pairs):
+            return [
+                (labels.index(label), short, MODULES[labels.index(label)][1])
+                for label, short in pairs
+                if can(MODULE_PERMISSIONS[label])
+            ]
+
+        operation = [(RAIL_HOME, "Inicio", icons.icon_home), *items(RAIL_OPERATION)]
+        return NavRail(operation, items(RAIL_CONFIGURATION), self)
+
+    def _on_rail_requested(self, index: int) -> None:
+        if index == RAIL_HOME:
+            self.tabs.setCurrentWidget(self.launcher)
+            self.activateWindow()
+        else:
+            self.open_module_by_index(index)
+
+    def _sync_rail(self, index: int | None = None) -> None:
+        """El riel marca el modulo de la pestaña activa de la principal."""
+        widget = (
+            self.tabs.widget(index)
+            if isinstance(index, int) and index >= 0
+            else self.tabs.currentWidget()
+        )
+        if widget is self.launcher:
+            self.rail.set_active(RAIL_HOME)
+            return
+        index = next(
+            (i for i, (_label, _icon, cls) in enumerate(MODULES) if type(widget) is cls), None
+        )
+        self.rail.set_active(index)
+
+    def refresh_status(self) -> None:
+        site_id = app_state.current_site_id
+        unacknowledged, _investigating = alarm_summary(site_id)
+        self.top_bar.set_status(cameras_summary(site_id), unacknowledged)
+        self.rail.set_badge(ALARMS_INDEX, unacknowledged)
+
+    def _open_unacknowledged(self) -> None:
+        """La insignia de alertas: Alarmas filtrada en "Sin reconocer"."""
+        module = self.open_module_by_index(ALARMS_INDEX)
+        show_status = getattr(module, "show_status", None)
+        if callable(show_status):
+            show_status(STATUS_NEW)
 
     def _on_site_filter_changed(self, site_id: object) -> None:
         """Propaga el filtro global de sitio a los DeviceTreeWidget de las
         pestañas ya abiertas, en todas las ventanas (las que se abran despues
         se inicializan con el filtro vigente en open_module_by_index)."""
+        self.refresh_status()
         for _ventana, widget in self.ventanas.modulos():
             device_tree = getattr(widget, "device_tree", None)
             if device_tree is not None and hasattr(device_tree, "set_site_filter"):
@@ -333,6 +421,7 @@ class MainWindow(QMainWindow):
         # tiene el foco; la principal si ninguna). Sonido y aviso de
         # escritorio, una sola vez: este slot existe solo en la principal.
         self.ventanas.ventana_activa().alert_layer.show_alarm(event, device_name)
+        self.refresh_status()
         if event.play_sound:
             sound.play_alarm()
         if event.notify_desktop:

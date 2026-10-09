@@ -69,6 +69,18 @@ def icon_alarms(color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -> QIcon:
     return load_icon("bell", color, size)
 
 
+def icon_home(color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -> QIcon:
+    return load_icon("house", color, size)
+
+
+def icon_dashboard(color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -> QIcon:
+    return load_icon("layout-dashboard", color, size)
+
+
+def icon_logout(color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -> QIcon:
+    return load_icon("log-out", color, size)
+
+
 def icon_alerts(color: str = DEFAULT_COLOR, size: int = DEFAULT_SIZE) -> QIcon:
     return load_icon("shield-alert", color, size)
 
